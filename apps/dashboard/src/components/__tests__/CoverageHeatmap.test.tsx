@@ -21,6 +21,7 @@ const m5: M5Summary = {
   windowDays: 7,
   highRiskKeys: ['prompt_injection/direct', 'denial_of_service/token_exhaustion'],
   coveredKeys: ['prompt_injection/direct'],
+  trackedKeys: ['misinformation/unsupported_claim'],
 }
 
 afterEach(cleanup)
@@ -56,11 +57,20 @@ describe('CoverageHeatmap', () => {
     expect(screen.getByRole('listitem', { name: /multi turn: untested$/ }).className).not.toContain('heat-high-risk')
   })
 
+  it('outlines tracked non-PRD high-risk cells differently and says they are outside M5', () => {
+    render(<CoverageHeatmap cells={cells} m5={m5} prdCategories={prdCategories} />)
+    const tile = screen.getByRole('listitem', { name: /unsupported claim: untested\. High risk, outside M5/ })
+    expect(tile.className).toContain('heat-tracked-risk')
+    expect(tile.className).not.toContain('heat-high-risk')
+  })
+
   it('reports M5 as covered high-risk cells out of the total', () => {
     render(<CoverageHeatmap cells={cells} m5={m5} prdCategories={prdCategories} />)
     expect(screen.getByText('M5: 1 of 6 high-risk cells covered (17%)')).toBeTruthy()
     expect(
-      screen.getByText('Covered = at least 20 attempts and a run in the last 7 days. Variant families are not yet counted.'),
+      screen.getByText(
+        'Covered = at least 20 attempts, at least one variant family exercised, and a run in the last 7 days.',
+      ),
     ).toBeTruthy()
   })
 

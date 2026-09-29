@@ -28,7 +28,7 @@ npm run typecheck -w apps/dashboard
 | `DASHBOARD_DATA_SOURCE` | `postgres` (default) or `fixtures`. There is no silent fallback: Postgres mode without `DATABASE_URL` fails at the first request. Fixture mode shows a "Demo data" badge in the sidebar. |
 | `DATABASE_URL` | Platform Postgres, migrated with `npm run migrate up` from the repo root. |
 | `NIGHTLY_BUDGET_USD` | Tonight's budget envelope for the queue view (default 25). |
-| `COVERAGE_MIN_ATTEMPTS` | Attempts a high-risk cell needs to count toward M5 (default 20). |
+| `COVERAGE_TARGET_ATTEMPTS` | Attempts a high-risk cell needs to count toward M5 (`target_attempts`, ARCHITECTURE.md 7.2; default 20). |
 | `NIGHTLY_CRON`, `NIGHTLY_TIMEZONE` | Used to work out tonight's run date for `requested_for` (defaults `0 1 * * *`, `America/Chicago`). |
 
 ## Data access
@@ -75,9 +75,13 @@ How the read models are derived:
   loads the Node-only validators; browser code uses type-only imports.
   The heatmap marks untested gaps in text.
 - **M5** (KEY_METRICS.md) is shown on the heatmap: the six PRD cells
-  THREAT_MODEL.md rates high risk are outlined (`src/server/m5.ts`), and a cell
-  counts as covered with at least `COVERAGE_MIN_ATTEMPTS` attempts and a run in
-  the last 7 days. The "variant family exercised" condition is not measured yet.
+  THREAT_MODEL.md rates high risk are outlined (`src/server/m5.ts`); a cell is
+  covered with at least `COVERAGE_TARGET_ATTEMPTS` attempts, at least one
+  variant family exercised, and a run in the last 7 days. The two misinformation
+  high cells get a dashed outline and are excluded from the fraction. Families
+  come from `coverage_snapshots.families_exercised` when that column exists,
+  otherwise they are counted live: distinct lineage roots (via
+  `parent_attempt_id`) among each cell's variant attempts.
 - **Tonight's queue** drains `ORDER BY position NULLS LAST, created_at`. Re-checks
   are appended at the end with a stored `estimated_cost_usd`; requests without
   a stored estimate show a family-size estimate (reruns) or $0 (campaigns).

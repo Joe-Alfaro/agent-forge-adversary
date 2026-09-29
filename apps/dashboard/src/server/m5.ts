@@ -22,6 +22,15 @@ export const M5_HIGH_RISK_CELLS: readonly TaxonomyCell[] = [
   highRisk('identity_role_exploitation', 'persona_hijacking'),
 ]
 
+/**
+ * High-risk cells outside PRD_CATEGORIES (THREAT_MODEL.md section 7, clinical
+ * misinformation). Shown on the heatmap, excluded from the M5 fraction.
+ */
+export const TRACKED_HIGH_RISK_CELLS: readonly TaxonomyCell[] = [
+  highRisk('misinformation', 'unsupported_claim'),
+  highRisk('misinformation', 'fabricated_citation'),
+]
+
 export interface M5Options {
   now: Date
   minAttempts: number
@@ -32,19 +41,26 @@ const DAY_MS = 86_400_000
 
 /**
  * KEY_METRICS.md M5: a high-risk cell is covered on the current version when it
- * has at least `minAttempts` attempts and a run within `windowDays`. The
- * "variant family exercised" condition is not measured yet (coverage_snapshots
- * has no family column), and the heatmap says so.
+ * has at least `minAttempts` attempts, at least one variant family exercised,
+ * and a run within `windowDays`.
  */
 export function computeM5(cells: readonly CoverageCell[], { now, minAttempts, windowDays }: M5Options): M5Summary {
   const byKey = new Map(cells.map((cell) => [cellKey(cell), cell]))
   const highRiskKeys = M5_HIGH_RISK_CELLS.map(cellKey)
   const coveredKeys = highRiskKeys.filter((key) => {
     const cell = byKey.get(key)
-    if (!cell?.lastRunAt || cell.attempts < minAttempts) {
+    if (!cell?.lastRunAt || cell.attempts < minAttempts || (cell.familiesExercised ?? 0) < 1) {
       return false
     }
     return now.getTime() - Date.parse(cell.lastRunAt) <= windowDays * DAY_MS
   })
-  return { total: highRiskKeys.length, covered: coveredKeys.length, minAttempts, windowDays, highRiskKeys, coveredKeys }
+  return {
+    total: highRiskKeys.length,
+    covered: coveredKeys.length,
+    minAttempts,
+    windowDays,
+    highRiskKeys,
+    coveredKeys,
+    trackedKeys: TRACKED_HIGH_RISK_CELLS.map(cellKey),
+  }
 }

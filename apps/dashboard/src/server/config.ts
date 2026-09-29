@@ -8,13 +8,13 @@ export interface QueueConfig {
   envelopeUsd: number
   timeZone: string
   runHour: number
-  /** KEY_METRICS.md M5 attempt threshold per high-risk cell (COVERAGE_MIN_ATTEMPTS). */
-  coverageMinAttempts?: number
+  /** M5 attempt target per high-risk cell (COVERAGE_TARGET_ATTEMPTS; target_attempts in §7.2). */
+  coverageTargetAttempts?: number
 }
 
 /** M5 counts a cell as covered only with a run in this many days. */
 export const M5_WINDOW_DAYS = 7
-const DEFAULT_COVERAGE_MIN_ATTEMPTS = 20
+const DEFAULT_COVERAGE_TARGET_ATTEMPTS = 20
 
 export type DashboardConfig = QueueConfig &
   ({ mode: 'fixtures' } | { mode: 'postgres'; connectionString: string })
@@ -25,14 +25,14 @@ const DEFAULT_ENVELOPE_USD = 25
 
 type Env = NodeJS.ProcessEnv
 
-function readMinAttempts(env: Env): number {
-  const raw = env.COVERAGE_MIN_ATTEMPTS
+function readTargetAttempts(env: Env): number {
+  const raw = env.COVERAGE_TARGET_ATTEMPTS
   if (raw === undefined || raw === '') {
-    return DEFAULT_COVERAGE_MIN_ATTEMPTS
+    return DEFAULT_COVERAGE_TARGET_ATTEMPTS
   }
   const value = Number(raw)
   if (!Number.isInteger(value) || value < 1) {
-    throw new Error(`COVERAGE_MIN_ATTEMPTS must be a positive integer, got "${raw}"`)
+    throw new Error(`COVERAGE_TARGET_ATTEMPTS must be a positive integer, got "${raw}"`)
   }
   return value
 }
@@ -41,7 +41,7 @@ function readMinAttempts(env: Env): number {
 export function m5Options(config: QueueConfig, now: Date) {
   return {
     now,
-    minAttempts: config.coverageMinAttempts ?? DEFAULT_COVERAGE_MIN_ATTEMPTS,
+    minAttempts: config.coverageTargetAttempts ?? DEFAULT_COVERAGE_TARGET_ATTEMPTS,
     windowDays: M5_WINDOW_DAYS,
   }
 }
@@ -68,7 +68,7 @@ export function resolveDashboardConfig(env: Env): DashboardConfig {
     envelopeUsd: readEnvelope(env),
     timeZone: env.NIGHTLY_TIMEZONE || DEFAULT_TIME_ZONE,
     runHour: runHourFromCron(env.NIGHTLY_CRON),
-    coverageMinAttempts: readMinAttempts(env),
+    coverageTargetAttempts: readTargetAttempts(env),
   }
   const mode = env.DASHBOARD_DATA_SOURCE || 'postgres'
   if (mode === 'fixtures') {

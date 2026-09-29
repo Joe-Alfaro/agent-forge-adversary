@@ -2,7 +2,20 @@ import { cellKey, coverageGrid, type GridCell, HEAT_LEVELS } from '../lib/covera
 import { formatDateTime, humanize } from '../lib/format.js'
 import type { CoverageCell, M5Summary } from '../lib/models.js'
 
-type RiskStatus = 'none' | 'covered' | 'uncovered'
+type RiskStatus = 'none' | 'covered' | 'uncovered' | 'tracked'
+
+const RISK_NOTE: Record<Exclude<RiskStatus, 'none'>, string> = {
+  covered: 'High risk, covered for M5',
+  uncovered: 'High risk, not covered for M5',
+  tracked: 'High risk, outside M5',
+}
+
+const RISK_CLASS: Record<RiskStatus, string> = {
+  none: '',
+  covered: ' heat-high-risk',
+  uncovered: ' heat-high-risk',
+  tracked: ' heat-tracked-risk',
+}
 
 function describeCell(cell: GridCell, risk: RiskStatus): string {
   const name = humanize(cell.subcategory)
@@ -11,12 +24,12 @@ function describeCell(cell: GridCell, risk: RiskStatus): string {
   if (risk === 'none') {
     return summary
   }
-  return `${summary}. High risk, ${risk === 'covered' ? 'covered' : 'not covered'} for M5`
+  return `${summary}. ${RISK_NOTE[risk]}`
 }
 
 function HeatTile({ cell, risk }: { cell: GridCell; risk: RiskStatus }) {
   const label = describeCell(cell, risk)
-  const riskClass = risk === 'none' ? '' : ' heat-high-risk'
+  const riskClass = RISK_CLASS[risk]
   if (cell.attempts === 0) {
     return (
       <li className={`heat-tile heat-untested${riskClass}`} aria-label={label} title={label}>
@@ -43,6 +56,9 @@ export interface CoverageHeatmapProps {
 
 function riskOf(cell: CoverageCell, m5: M5Summary): RiskStatus {
   const key = cellKey(cell)
+  if (m5.trackedKeys.includes(key)) {
+    return 'tracked'
+  }
   if (!m5.highRiskKeys.includes(key)) {
     return 'none'
   }
@@ -60,7 +76,7 @@ export function CoverageHeatmap({ cells, m5, prdCategories }: CoverageHeatmapPro
       <div className="m5-summary">
         <p className="m5-headline">{`M5: ${m5.covered} of ${m5.total} high-risk cells covered (${percent}%)`}</p>
         <p className="muted">
-          {`Covered = at least ${m5.minAttempts} attempts and a run in the last ${m5.windowDays} days. Variant families are not yet counted.`}
+          {`Covered = at least ${m5.minAttempts} attempts, at least one variant family exercised, and a run in the last ${m5.windowDays} days.`}
         </p>
       </div>
       <figcaption>
@@ -73,6 +89,7 @@ export function CoverageHeatmap({ cells, m5, prdCategories }: CoverageHeatmapPro
           more
           <span className="heat-swatch heat-untested" /> untested
           <span className="heat-swatch heat-high-risk" /> high risk (M5)
+          <span className="heat-swatch heat-tracked-risk" /> high risk (outside M5)
         </span>
       </figcaption>
       {rows.map((row) => {
