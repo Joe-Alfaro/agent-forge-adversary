@@ -5,6 +5,7 @@ import { moveItem } from '../lib/queue.js'
 import { nextRunDate } from '../lib/schedule.js'
 import { isExploitStatus } from '../lib/tickets.js'
 import type { QueueConfig } from './config.js'
+import { mergeCoverage, type TaxonomyCell } from './eval-taxonomy.js'
 import { mapMorningReport, mapQueueItem, mapRunSummary, mapTicket } from './pg-mappers.js'
 import type { DashboardRepository } from './repository.js'
 import { assertCanRecheck, assertRerunRequest, assertTransition, normalizeAssignee } from './rules.js'
@@ -13,6 +14,8 @@ export interface PgRepositoryOptions {
   pool: pg.Pool
   config: QueueConfig
   now?: () => Date
+  /** Attack taxonomy (from evals/), so untested cells show up; defaults to none. */
+  loadTaxonomy?: () => Promise<TaxonomyCell[]>
 }
 
 type Queryable = pg.Pool | pg.PoolClient
@@ -116,7 +119,12 @@ function sortedStrings(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string').sort()
 }
 
-export function createPgRepository({ pool, config, now = () => new Date() }: PgRepositoryOptions): DashboardRepository {
+export function createPgRepository({
+  pool,
+  config,
+  now = () => new Date(),
+  loadTaxonomy = async () => [],
+}: PgRepositoryOptions): DashboardRepository {
   async function transaction<T>(work: (client: pg.PoolClient) => Promise<T>): Promise<T> {
     const client = await pool.connect()
     try {
@@ -206,8 +214,9 @@ export function createPgRepository({ pool, config, now = () => new Date() }: PgR
     async getCoverage() {
       const latest = await pool.query('SELECT id, version FROM target_versions ORDER BY first_seen DESC, id DESC LIMIT 1')
       const version = latest.rows[0]
+      const taxonomy = await loadTaxonomy()
       if (!version) {
-        return { targetVersion: 'no target version yet', cells: [] }
+        return { targetVersion: 'no target version yet', cells: mergeCoverage([], taxonomy) }
       }
       const result = await pool.query(COVERAGE_SQL, [version.id])
       const cells = result.rows.map((row): CoverageCell => {
@@ -220,7 +229,7 @@ export function createPgRepository({ pool, config, now = () => new Date() }: PgR
         }
         return row.last_run_at instanceof Date ? { ...cell, lastRunAt: row.last_run_at.toISOString() } : cell
       })
-      return { targetVersion: String(version.version), cells }
+      return { targetVersion: String(version.version), cells: mergeCoverage(cells, taxonomy) }
     },
 
     async getCost(): Promise<CostSummary> {
