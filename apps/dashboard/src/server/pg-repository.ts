@@ -2,7 +2,7 @@ import type pg from 'pg'
 
 import { listTaxonomyCells, PRD_CATEGORIES, type TaxonomyCell } from '@agentforge/contracts'
 
-import { mergeCoverage } from '../lib/coverage.js'
+import { cellKey, mergeCoverage } from '../lib/coverage.js'
 import type { CostSummary, CoverageCell, RunSpend } from '../lib/models.js'
 import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
 import { nextRunDate } from '../lib/schedule.js'
@@ -110,9 +110,28 @@ const COVERAGE_SQL = `
   LEFT JOIN confirmed USING (category, subcategory)
   ORDER BY cells.category, cells.subcategory`
 
+/**
+ * Variant families per cell on version $1: distinct lineage roots (following
+ * parent_attempt_id) among the cell's variant attempts.
+ */
+const FAMILIES_SQL = `
+  WITH RECURSIVE lineage AS (
+    SELECT id, id AS root FROM attempts WHERE parent_attempt_id IS NULL
+    UNION ALL
+    SELECT a.id, l.root FROM attempts a JOIN lineage l ON a.parent_attempt_id = l.id
+  )
+  SELECT a.category, COALESCE(a.subcategory, '') AS subcategory,
+         count(DISTINCT l.root) FILTER (WHERE a.parent_attempt_id IS NOT NULL) AS families_exercised
+  FROM attempts a
+  JOIN lineage l ON l.id = a.id
+  WHERE a.target_version_id = $1
+  GROUP BY a.category, COALESCE(a.subcategory, '')`
+
 /** Materialized cells for version $1, with OWASP ids from that version's attempts. */
-const SNAPSHOT_SQL = `
+function snapshotSql(hasFamiliesColumn: boolean): string {
+  return `
   SELECT s.category, s.subcategory, s.attempts, s.confirmed, s.last_run_at,
+         ${hasFamiliesColumn ? 's.families_exercised' : 'NULL::integer AS families_exercised'},
          COALESCE((
            SELECT array_agg(DISTINCT o.owasp)
            FROM attempts a, unnest(a.owasp_ids) AS o(owasp)
@@ -123,6 +142,7 @@ const SNAPSHOT_SQL = `
   FROM coverage_snapshots s
   WHERE s.target_version_id = $1
   ORDER BY s.category, s.subcategory`
+}
 
 /** Queued requests up to tonight in drain order; $1 is tonight's run date. */
 function queueSql(lock: boolean): string {
@@ -232,10 +252,21 @@ export function createPgRepository({
           prdCategories: [...PRD_CATEGORIES],
         }
       }
-      const snapshot = await pool.query(SNAPSHOT_SQL, [version.id])
+      // Use coverage_snapshots.families_exercised as soon as the column exists; count live until then.
+      const familiesColumn = await pool.query(
+        `SELECT 1 FROM information_schema.columns
+         WHERE table_schema = current_schema() AND table_name = 'coverage_snapshots' AND column_name = 'families_exercised'`,
+      )
+      const snapshot = await pool.query(snapshotSql((familiesColumn.rowCount ?? 0) > 0), [version.id])
       const result = snapshot.rowCount ? snapshot : await pool.query(COVERAGE_SQL, [version.id])
+      const liveFamilies = await pool.query(FAMILIES_SQL, [version.id])
+      const familiesByKey = new Map(
+        liveFamilies.rows.map((row) => [cellKey({ category: String(row.category), subcategory: String(row.subcategory) }), Number(row.families_exercised)]),
+      )
       const mapped = result.rows.map(mapCoverageRow)
-      const cells = mapped.filter((cell): cell is CoverageCell => cell !== null)
+      const cells = mapped
+        .filter((cell): cell is CoverageCell => cell !== null)
+        .map((cell) => ({ ...cell, familiesExercised: cell.familiesExercised ?? familiesByKey.get(cellKey(cell)) ?? 0 }))
       if (cells.length < mapped.length) {
         console.warn(`coverage: ignored ${mapped.length - cells.length} cell(s) outside AttackTaxonomy v1`)
       }

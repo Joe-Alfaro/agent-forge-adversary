@@ -34,6 +34,8 @@ export interface CoverageCell {
   owaspIds: string[]
   attempts: number
   confirmed: number
+  /** Distinct variant families (roots with at least one variant) on this version. */
+  familiesExercised?: number
   lastRunAt?: string
 }
 
@@ -56,6 +58,8 @@ export interface M5Summary {
   highRiskKeys: string[]
   /** High-risk keys that currently count as covered. */
   coveredKeys: string[]
+  /** High-risk cells outside the PRD categories: shown, but not part of M5. */
+  trackedKeys: string[]
 }
 
 export interface RoleSpend {

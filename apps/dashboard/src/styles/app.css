@@ -431,3 +431,9 @@ button:disabled {
 .heat-swatch.heat-high-risk {
   outline-offset: -2px;
 }
+
+/* Non-PRD high-risk cells: dashed outline, so they read as tracked but outside M5. */
+.heat-tracked-risk {
+  outline: 2px dashed var(--text);
+  outline-offset: -2px;
+}

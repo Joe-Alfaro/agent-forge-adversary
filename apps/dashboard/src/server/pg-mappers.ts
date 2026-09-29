@@ -136,7 +136,9 @@ export function mapCoverageRow(row: unknown): CoverageCell | null {
     attempts: num(row, 'attempts'),
     confirmed: num(row, 'confirmed'),
   }
-  return withOptional(cell, 'lastRunAt', optionalIso(row, 'last_run_at'))
+  const families = field(row, 'families_exercised')
+  const withFamilies = withOptional(cell, 'familiesExercised', families === null || families === undefined ? undefined : num(row, 'families_exercised'))
+  return withOptional(withFamilies, 'lastRunAt', optionalIso(row, 'last_run_at'))
 }
 
 export function mapTicket(row: unknown): TicketRow {

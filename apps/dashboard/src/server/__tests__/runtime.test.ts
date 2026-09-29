@@ -26,13 +26,15 @@ describe('resolveDashboardConfig', () => {
       NIGHTLY_BUDGET_USD: '30',
       NIGHTLY_CRON: '0 2 * * *',
     })
-    expect(config).toMatchObject({ envelopeUsd: 30, runHour: 2, timeZone: 'America/Chicago', coverageMinAttempts: 20 })
+    expect(config).toMatchObject({ envelopeUsd: 30, runHour: 2, timeZone: 'America/Chicago', coverageTargetAttempts: 20 })
   })
 
-  it('reads the M5 attempt threshold and rejects a nonsensical one', () => {
-    expect(resolveDashboardConfig({ DASHBOARD_DATA_SOURCE: 'fixtures', COVERAGE_MIN_ATTEMPTS: '50' }).coverageMinAttempts).toBe(50)
-    expect(() => resolveDashboardConfig({ DASHBOARD_DATA_SOURCE: 'fixtures', COVERAGE_MIN_ATTEMPTS: '0' })).toThrow(
-      'COVERAGE_MIN_ATTEMPTS',
+  it('reads the M5 attempt target (target_attempts, §7.2) and rejects a nonsensical one', () => {
+    expect(
+      resolveDashboardConfig({ DASHBOARD_DATA_SOURCE: 'fixtures', COVERAGE_TARGET_ATTEMPTS: '50' }).coverageTargetAttempts,
+    ).toBe(50)
+    expect(() => resolveDashboardConfig({ DASHBOARD_DATA_SOURCE: 'fixtures', COVERAGE_TARGET_ATTEMPTS: '0' })).toThrow(
+      'COVERAGE_TARGET_ATTEMPTS',
     )
   })
 
