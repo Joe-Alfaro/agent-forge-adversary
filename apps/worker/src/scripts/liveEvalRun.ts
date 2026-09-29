@@ -100,8 +100,10 @@ async function main(): Promise<void> {
   console.log(envFile === null ? 'No AgentForge env file found.' : `Loaded env from ${envFile}`)
 
   const copilotBase = process.env.COPILOT_BASE_URL ?? 'https://copilot-evidence-production.up.railway.app/'
-  const tokenSecret = process.env.COPILOT_TOKEN_SECRET ?? ''
-  const judgeKey = process.env.ANTHROPIC_API_KEY_JUDGE ?? process.env.ANTHROPIC_API_KEY ?? ''
+  // Trim to rule out a trailing newline/whitespace in the env value.
+  const tokenSecret = (process.env.COPILOT_TOKEN_SECRET ?? '').trim()
+  const judgeKey = (process.env.ANTHROPIC_API_KEY_JUDGE ?? process.env.ANTHROPIC_API_KEY ?? '').trim()
+  const tokenTtlSeconds = Number(process.env.LIVE_TOKEN_TTL_SECONDS ?? '900')
   if (tokenSecret === '') {
     throw new Error('COPILOT_TOKEN_SECRET is not set in the env file')
   }
@@ -120,7 +122,7 @@ async function main(): Promise<void> {
     { now: () => Date.now(), sleep: (ms) => new Promise((r) => setTimeout(r, ms)), random: () => Math.random() },
     { rpm: 20, concurrency: 1, maxRetries: 5, backoffBaseMs: 500, backoffMaxMs: 30_000 },
   )
-  const copilot = new CopilotClient(transport, { baseUrl: copilotBase, tokenSecret, roleUserIds: ROLE_USER_IDS }, clock)
+  const copilot = new CopilotClient(transport, { baseUrl: copilotBase, tokenSecret, roleUserIds: ROLE_USER_IDS, tokenTtlSeconds }, clock)
   const adapter = new TargetAdapter({ copilot, clock, defaultTokenCeiling: 100_000 })
   const judgeModel = new AnthropicJudgeModel({ client: new Anthropic({ apiKey: judgeKey }) })
 
