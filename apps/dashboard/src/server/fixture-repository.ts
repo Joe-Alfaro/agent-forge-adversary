@@ -1,10 +1,13 @@
-import { mergeCoverage, type TaxonomyCell } from '../lib/coverage.js'
+import { listTaxonomyCells, PRD_CATEGORIES, type TaxonomyCell } from '@agentforge/contracts'
+
+import { mergeCoverage } from '../lib/coverage.js'
 import * as fixtures from '../lib/fixtures.js'
 import type { QueueItem, TonightQueue } from '../lib/models.js'
 import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
 import { nextRunDate } from '../lib/schedule.js'
 import type { TicketRow } from '../lib/tickets.js'
-import type { QueueConfig } from './config.js'
+import { m5Options, type QueueConfig } from './config.js'
+import { computeM5 } from './m5.js'
 import type { DashboardRepository } from './repository.js'
 import { assertCanRecheck, assertRerunRequest, assertTransition, normalizeAssignee } from './rules.js'
 
@@ -17,7 +20,7 @@ export interface FixtureRepositoryOptions {
   config: QueueConfig
   now?: () => Date
   seed?: FixtureSeed
-  /** Every cell the Coverage panel must show, tested or not. */
+  /** Every cell the Coverage panel must show, tested or not (defaults to AttackTaxonomy v1). */
   taxonomy?: readonly TaxonomyCell[]
 }
 
@@ -30,7 +33,7 @@ export function createFixtureRepository({
   config,
   now = () => new Date(),
   seed = { tickets: fixtures.tickets, queueItems: fixtures.queueItems },
-  taxonomy = [],
+  taxonomy = listTaxonomyCells(),
 }: FixtureRepositoryOptions): DashboardRepository {
   const store = structuredClone(seed)
 
@@ -81,7 +84,8 @@ export function createFixtureRepository({
 
     async getCoverage() {
       const coverage = structuredClone(fixtures.coverage)
-      return { ...coverage, cells: mergeCoverage(coverage.cells, taxonomy) }
+      const cells = mergeCoverage(coverage.cells, taxonomy)
+      return { ...coverage, cells, m5: computeM5(cells, m5Options(config, now())), prdCategories: [...PRD_CATEGORIES] }
     },
 
     async getCost() {

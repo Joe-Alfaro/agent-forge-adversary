@@ -1,12 +1,15 @@
 import type pg from 'pg'
 
-import { mergeCoverage, type TaxonomyCell } from '../lib/coverage.js'
+import { listTaxonomyCells, PRD_CATEGORIES, type TaxonomyCell } from '@agentforge/contracts'
+
+import { mergeCoverage } from '../lib/coverage.js'
 import type { CostSummary, CoverageCell, RunSpend } from '../lib/models.js'
 import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
 import { nextRunDate } from '../lib/schedule.js'
 import { isExploitStatus } from '../lib/tickets.js'
-import type { QueueConfig } from './config.js'
-import { mapMorningReport, mapQueueItem, mapRunSummary, mapTicket } from './pg-mappers.js'
+import { m5Options, type QueueConfig } from './config.js'
+import { computeM5 } from './m5.js'
+import { mapCoverageRow, mapMorningReport, mapQueueItem, mapRunSummary, mapTicket } from './pg-mappers.js'
 import type { DashboardRepository } from './repository.js'
 import { assertCanRecheck, assertRerunRequest, assertTransition, normalizeAssignee } from './rules.js'
 
@@ -14,7 +17,7 @@ export interface PgRepositoryOptions {
   pool: pg.Pool
   config: QueueConfig
   now?: () => Date
-  /** Every cell the Coverage panel must show, tested or not. */
+  /** Every cell the Coverage panel must show, tested or not (defaults to AttackTaxonomy v1). */
   taxonomy?: readonly TaxonomyCell[]
 }
 
@@ -138,18 +141,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const COST_RUN_WINDOW = 14
 const COST_DAYS = 30
 
-function sortedStrings(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return []
-  }
-  return value.filter((item): item is string => typeof item === 'string').sort()
-}
-
 export function createPgRepository({
   pool,
   config,
   now = () => new Date(),
-  taxonomy = [],
+  taxonomy = listTaxonomyCells(),
 }: PgRepositoryOptions): DashboardRepository {
   async function transaction<T>(work: (client: pg.PoolClient) => Promise<T>): Promise<T> {
     const client = await pool.connect()
@@ -228,21 +224,28 @@ export function createPgRepository({
       const latest = await pool.query('SELECT id, version FROM target_versions ORDER BY first_seen DESC, id DESC LIMIT 1')
       const version = latest.rows[0]
       if (!version) {
-        return { targetVersion: 'no target version yet', cells: mergeCoverage([], taxonomy) }
+        const empty = mergeCoverage([], taxonomy)
+        return {
+          targetVersion: 'no target version yet',
+          cells: empty,
+          m5: computeM5(empty, m5Options(config, now())),
+          prdCategories: [...PRD_CATEGORIES],
+        }
       }
       const snapshot = await pool.query(SNAPSHOT_SQL, [version.id])
       const result = snapshot.rowCount ? snapshot : await pool.query(COVERAGE_SQL, [version.id])
-      const cells = result.rows.map((row): CoverageCell => {
-        const cell: CoverageCell = {
-          category: String(row.category),
-          subcategory: row.subcategory === '' ? 'unspecified' : String(row.subcategory),
-          owaspIds: sortedStrings(row.owasp_ids),
-          attempts: Number(row.attempts),
-          confirmed: Number(row.confirmed),
-        }
-        return row.last_run_at instanceof Date ? { ...cell, lastRunAt: row.last_run_at.toISOString() } : cell
-      })
-      return { targetVersion: String(version.version), cells: mergeCoverage(cells, taxonomy) }
+      const mapped = result.rows.map(mapCoverageRow)
+      const cells = mapped.filter((cell): cell is CoverageCell => cell !== null)
+      if (cells.length < mapped.length) {
+        console.warn(`coverage: ignored ${mapped.length - cells.length} cell(s) outside AttackTaxonomy v1`)
+      }
+      const merged = mergeCoverage(cells, taxonomy)
+      return {
+        targetVersion: String(version.version),
+        cells: merged,
+        m5: computeM5(merged, m5Options(config, now())),
+        prdCategories: [...PRD_CATEGORIES],
+      }
     },
 
     async getCost(): Promise<CostSummary> {

@@ -26,7 +26,14 @@ describe('resolveDashboardConfig', () => {
       NIGHTLY_BUDGET_USD: '30',
       NIGHTLY_CRON: '0 2 * * *',
     })
-    expect(config).toMatchObject({ envelopeUsd: 30, runHour: 2, timeZone: 'America/Chicago' })
+    expect(config).toMatchObject({ envelopeUsd: 30, runHour: 2, timeZone: 'America/Chicago', coverageMinAttempts: 20 })
+  })
+
+  it('reads the M5 attempt threshold and rejects a nonsensical one', () => {
+    expect(resolveDashboardConfig({ DASHBOARD_DATA_SOURCE: 'fixtures', COVERAGE_MIN_ATTEMPTS: '50' }).coverageMinAttempts).toBe(50)
+    expect(() => resolveDashboardConfig({ DASHBOARD_DATA_SOURCE: 'fixtures', COVERAGE_MIN_ATTEMPTS: '0' })).toThrow(
+      'COVERAGE_MIN_ATTEMPTS',
+    )
   })
 
   it('defaults the envelope to $25 and rejects a non-numeric one', () => {

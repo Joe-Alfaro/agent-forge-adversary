@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { listTaxonomyCells } from '@agentforge/contracts'
 import pg from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
@@ -148,7 +149,9 @@ describe.skipIf(!url)('Postgres repository', () => {
     it('builds coverage for the newest target version only', async () => {
       const coverage = await repo.getCoverage()
       expect(coverage.targetVersion).toBe('copilot@9.1.0')
-      expect(coverage.cells).toEqual([
+      // Every AttackTaxonomy v1 cell is present; only the tested ones have attempts.
+      expect(coverage.cells).toHaveLength(listTaxonomyCells().length)
+      expect(coverage.cells.filter((cell) => cell.attempts > 0)).toEqual([
         {
           category: 'prompt_injection',
           subcategory: 'direct',
@@ -179,10 +182,10 @@ describe.skipIf(!url)('Postgres repository', () => {
         ],
       })
       const coverage = await withTaxonomy.getCoverage()
+      // Exactly the taxonomy's cells: prompt_injection/indirect has data but is not in this taxonomy.
       expect(coverage.cells.map((cell) => [cell.category, cell.subcategory, cell.attempts])).toEqual([
         ['prompt_injection', 'direct', 1],
         ['state_corruption', 'context_poisoning', 0],
-        ['prompt_injection', 'indirect', 1],
       ])
     })
 
@@ -200,6 +203,16 @@ describe.skipIf(!url)('Postgres repository', () => {
       expect((await repo.getTicket('AF-A-1'))?.lastVerifiedVersion).toBe('copilot@9.0.0')
     })
 
+    it('drops coverage rows whose category or subcategory is not in the taxonomy', async () => {
+      await pool.query(
+        `INSERT INTO attempts (campaign_id, fingerprint, category, subcategory, transcript, target_version_id)
+         SELECT 'aaaaaaaa-0000-4000-8000-000000000002', 'fp-legacy', 'legacy_probe', 'old', '{}', id
+         FROM target_versions WHERE version = 'copilot@9.1.0'`,
+      )
+      const coverage = await repo.getCoverage()
+      expect(coverage.cells.map((cell) => cell.category)).not.toContain('legacy_probe')
+    })
+
     it('reads coverage from coverage_snapshots once the Orchestrator has materialized them', async () => {
       const latest = await pool.query<{ id: number }>(`SELECT id FROM target_versions WHERE version = 'copilot@9.1.0'`)
       await pool.query(
@@ -208,7 +221,9 @@ describe.skipIf(!url)('Postgres repository', () => {
         [latest.rows[0]?.id],
       )
       const coverage = await repo.getCoverage()
-      expect(coverage.cells).toEqual([
+      // 40 attempts on 2026-09-29 clears the M5 bar for prompt_injection/direct.
+      expect(coverage.m5).toMatchObject({ covered: 1, coveredKeys: ['prompt_injection/direct'] })
+      expect(coverage.cells.filter((cell) => cell.attempts > 0)).toEqual([
         {
           category: 'prompt_injection',
           subcategory: 'direct',

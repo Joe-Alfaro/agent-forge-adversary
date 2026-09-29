@@ -2,8 +2,6 @@ import '@tanstack/react-start/server-only'
 
 import pg from 'pg'
 
-import { taxonomyCells } from '../lib/coverage.js'
-import { ATTACK_TAXONOMY } from '../lib/taxonomy.js'
 import { type DataSourceMode, resolveDashboardConfig } from './config.js'
 import { createFixtureRepository } from './fixture-repository.js'
 import { createPgRepository } from './pg-repository.js'
@@ -18,12 +16,11 @@ const cache: { runtime?: Runtime } = {}
 
 function createRuntime(): Runtime {
   const config = resolveDashboardConfig(process.env)
-  const taxonomy = taxonomyCells(ATTACK_TAXONOMY)
   if (config.mode === 'fixtures') {
-    return { mode: config.mode, repository: createFixtureRepository({ config, taxonomy }) }
+    return { mode: config.mode, repository: createFixtureRepository({ config }) }
   }
   const pool = new pg.Pool({ connectionString: config.connectionString, max: 5 })
-  return { mode: config.mode, repository: createPgRepository({ pool, config, taxonomy }) }
+  return { mode: config.mode, repository: createPgRepository({ pool, config }) }
 }
 
 /** One repository (and one Postgres pool) per server process, chosen by DASHBOARD_DATA_SOURCE. */

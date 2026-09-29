@@ -1,4 +1,4 @@
-import type { VerdictOutcome } from '@agentforge/contracts'
+import type { AttackCategory, VerdictOutcome } from '@agentforge/contracts'
 
 export type ExploitStatus =
   | 'open'
@@ -21,7 +21,7 @@ export interface TicketUpdate {
 export interface TicketRow {
   id: string
   severity: Severity
-  category: string
+  category: AttackCategory
   owaspIds: string[]
   status: ExploitStatus
   assignee?: string

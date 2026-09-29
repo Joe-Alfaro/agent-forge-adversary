@@ -1,6 +1,22 @@
-import { type NightlyRunSummary, validateNightlyRunSummary, type VerdictOutcome } from '@agentforge/contracts'
+import {
+  ATTACK_TAXONOMY,
+  type AttackCategory,
+  type AttackSubcategory,
+  isAttackCategory,
+  type NightlyRunSummary,
+  validateNightlyRunSummary,
+  type VerdictOutcome,
+} from '@agentforge/contracts'
 
-import type { MorningReport, QueueItem, QueueItemKind, RunStatus, RunSummary, RunTrigger } from '../lib/models.js'
+import type {
+  CoverageCell,
+  MorningReport,
+  QueueItem,
+  QueueItemKind,
+  RunStatus,
+  RunSummary,
+  RunTrigger,
+} from '../lib/models.js'
 import { estimateRerunCostUsd } from '../lib/queue.js'
 import { isExploitStatus, isSeverity, type TicketRow } from '../lib/tickets.js'
 
@@ -94,6 +110,35 @@ function withOptional<T extends object, K extends string, V>(target: T, key: K, 
   return { ...target, [key]: value }
 }
 
+function attackCategory(value: unknown): AttackCategory | undefined {
+  return typeof value === 'string' && isAttackCategory(value) ? value : undefined
+}
+
+function attackSubcategory(category: AttackCategory, value: unknown): AttackSubcategory | undefined {
+  const allowed: readonly AttackSubcategory[] = ATTACK_TAXONOMY[category]
+  return allowed.find((subcategory) => subcategory === value)
+}
+
+/** One coverage row, or null when its cell is outside AttackTaxonomy v1. */
+export function mapCoverageRow(row: unknown): CoverageCell | null {
+  const category = attackCategory(field(row, 'category'))
+  if (!category) {
+    return null
+  }
+  const subcategory = attackSubcategory(category, field(row, 'subcategory'))
+  if (!subcategory) {
+    return null
+  }
+  const cell: CoverageCell = {
+    category,
+    subcategory,
+    owaspIds: stringArray(field(row, 'owasp_ids')).sort(),
+    attempts: num(row, 'attempts'),
+    confirmed: num(row, 'confirmed'),
+  }
+  return withOptional(cell, 'lastRunAt', optionalIso(row, 'last_run_at'))
+}
+
 export function mapTicket(row: unknown): TicketRow {
   const id = text(row, 'id')
   const severity = field(row, 'severity')
@@ -104,11 +149,15 @@ export function mapTicket(row: unknown): TicketRow {
   if (!isExploitStatus(status)) {
     throw new Error(`Ticket ${id} has an unknown status "${String(status)}"`)
   }
+  const category = attackCategory(field(row, 'category'))
+  if (!category) {
+    throw new Error(`Ticket ${id} has category "${String(field(row, 'category'))}", which is not in AttackTaxonomy v1`)
+  }
   const lastVerdict = field(row, 'last_verdict')
   const base: TicketRow = {
     id,
     severity,
-    category: text(row, 'category'),
+    category,
     owaspIds: stringArray(field(row, 'owasp_ids')),
     status,
     confidence: num(row, 'max_confidence'),
@@ -226,6 +275,11 @@ export function mapQueueItem(row: unknown): QueueItem {
     estimatedCostUsd: estimateFor(kind, stored, familySize, row),
   }
   const withExploit = withOptional(base, 'exploitId', optionalText(row, 'exploit_id'))
-  const withCategory = withOptional(withExploit, 'category', optionalText(row, 'category'))
+  const rawCategory = optionalText(row, 'category')
+  const category = attackCategory(rawCategory)
+  if (rawCategory !== undefined && !category) {
+    throw new Error(`Queue item ${id} has category "${rawCategory}", which is not in AttackTaxonomy v1`)
+  }
+  const withCategory = withOptional(withExploit, 'category', category)
   return withOptional(withCategory, 'reason', optionalText(row, 'reason'))
 }
