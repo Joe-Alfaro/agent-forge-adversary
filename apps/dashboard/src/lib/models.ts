@@ -1,6 +1,4 @@
-import type { RerunSource, VerdictOutcome } from '@agentforge/contracts'
-
-import type { M5Summary } from './m5.js'
+import type { AttackCategory, AttackSubcategory, RerunSource, VerdictOutcome } from '@agentforge/contracts'
 
 /**
  * Read models for the v1 dashboard panels. Each mirrors a table or view in
@@ -31,8 +29,8 @@ export interface RunSummary {
 
 /** One cell of `coverage_snapshots` for the current target version. */
 export interface CoverageCell {
-  category: string
-  subcategory: string
+  category: AttackCategory
+  subcategory: AttackSubcategory
   owaspIds: string[]
   attempts: number
   confirmed: number
@@ -45,6 +43,19 @@ export interface CoverageMatrix {
   cells: CoverageCell[]
   /** KEY_METRICS.md M5 over these cells. */
   m5: M5Summary
+  /** The PRD's six categories; any other taxonomy category is an extra. */
+  prdCategories: AttackCategory[]
+}
+
+export interface M5Summary {
+  total: number
+  covered: number
+  minAttempts: number
+  windowDays: number
+  /** `category/subcategory` keys of the high-risk cells. */
+  highRiskKeys: string[]
+  /** High-risk keys that currently count as covered. */
+  coveredKeys: string[]
 }
 
 export interface RoleSpend {
@@ -75,7 +86,7 @@ export interface QueueItem {
   id: string
   kind: QueueItemKind
   exploitId?: string
-  category?: string
+  category?: AttackCategory
   requestedBy: string
   requestedAt: string
   source: RerunSource

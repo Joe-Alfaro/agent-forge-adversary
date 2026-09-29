@@ -1,15 +1,10 @@
-import type { CoverageCell } from './models.js'
-import { ATTACK_TAXONOMY } from './taxonomy.js'
+import type { ATTACK_TAXONOMY, AttackCategory, TaxonomyCell } from '@agentforge/contracts'
 
-type Category = keyof typeof ATTACK_TAXONOMY
+import { cellKey } from '../lib/coverage.js'
+import type { CoverageCell, M5Summary } from '../lib/models.js'
 
-interface HighRiskCell {
-  category: Category
-  subcategory: string
-}
-
-/** Typed so a taxonomy key change breaks the build instead of silently shrinking M5. */
-function highRisk<C extends Category>(category: C, subcategory: (typeof ATTACK_TAXONOMY)[C][number]): HighRiskCell {
+/** Typed per category so a taxonomy key change breaks the build instead of silently shrinking M5. */
+function highRisk<C extends AttackCategory>(category: C, subcategory: (typeof ATTACK_TAXONOMY)[C][number]): TaxonomyCell {
   return { category, subcategory }
 }
 
@@ -18,7 +13,7 @@ function highRisk<C extends Category>(category: C, subcategory: (typeof ATTACK_T
  * ("High-risk cells (M5 denominator)"). The misinformation high cells are
  * tracked but deliberately outside M5.
  */
-export const M5_HIGH_RISK_CELLS: readonly HighRiskCell[] = [
+export const M5_HIGH_RISK_CELLS: readonly TaxonomyCell[] = [
   highRisk('prompt_injection', 'direct'),
   highRisk('prompt_injection', 'indirect'),
   highRisk('data_exfiltration', 'authorization_bypass'),
@@ -27,25 +22,10 @@ export const M5_HIGH_RISK_CELLS: readonly HighRiskCell[] = [
   highRisk('identity_role_exploitation', 'persona_hijacking'),
 ]
 
-export interface M5Summary {
-  total: number
-  covered: number
-  minAttempts: number
-  windowDays: number
-  /** `category/subcategory` keys of the high-risk cells. */
-  highRiskKeys: string[]
-  /** High-risk keys that currently count as covered. */
-  coveredKeys: string[]
-}
-
 export interface M5Options {
   now: Date
   minAttempts: number
   windowDays: number
-}
-
-export function cellKey(cell: { category: string; subcategory: string }): string {
-  return `${cell.category}/${cell.subcategory}`
 }
 
 const DAY_MS = 86_400_000

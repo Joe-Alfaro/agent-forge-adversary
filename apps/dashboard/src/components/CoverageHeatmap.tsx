@@ -1,7 +1,6 @@
-import { coverageGrid, type GridCell, HEAT_LEVELS } from '../lib/coverage.js'
+import { cellKey, coverageGrid, type GridCell, HEAT_LEVELS } from '../lib/coverage.js'
 import { formatDateTime, humanize } from '../lib/format.js'
-import { cellKey, type M5Summary } from '../lib/m5.js'
-import type { CoverageCell } from '../lib/models.js'
+import type { CoverageCell, M5Summary } from '../lib/models.js'
 
 type RiskStatus = 'none' | 'covered' | 'uncovered'
 
@@ -38,6 +37,8 @@ function HeatTile({ cell, risk }: { cell: GridCell; risk: RiskStatus }) {
 export interface CoverageHeatmapProps {
   cells: CoverageCell[]
   m5: M5Summary
+  /** Categories outside this list are labelled as extras. */
+  prdCategories: CoverageCell['category'][]
 }
 
 function riskOf(cell: CoverageCell, m5: M5Summary): RiskStatus {
@@ -49,7 +50,7 @@ function riskOf(cell: CoverageCell, m5: M5Summary): RiskStatus {
 }
 
 /** Category × subcategory grid: shade is attempt volume, dashed tiles are untested gaps. */
-export function CoverageHeatmap({ cells, m5 }: CoverageHeatmapProps) {
+export function CoverageHeatmap({ cells, m5, prdCategories }: CoverageHeatmapProps) {
   const rows = coverageGrid(cells)
   const untested = cells.filter((cell) => cell.attempts === 0).length
   const percent = m5.total === 0 ? 0 : Math.round((m5.covered / m5.total) * 100)
@@ -74,16 +75,21 @@ export function CoverageHeatmap({ cells, m5 }: CoverageHeatmapProps) {
           <span className="heat-swatch heat-high-risk" /> high risk (M5)
         </span>
       </figcaption>
-      {rows.map((row) => (
-        <div key={row.category} className="heat-row" role="group" aria-label={humanize(row.category)}>
-          <p className="heat-category">{humanize(row.category)}</p>
-          <ul className="heat-cells">
-            {row.cells.map((cell) => (
-              <HeatTile key={cell.subcategory} cell={cell} risk={riskOf(cell, m5)} />
-            ))}
-          </ul>
-        </div>
-      ))}
+      {rows.map((row) => {
+        const label = prdCategories.includes(row.category)
+          ? humanize(row.category)
+          : `${humanize(row.category)} (outside PRD set)`
+        return (
+          <div key={row.category} className="heat-row" role="group" aria-label={label}>
+            <p className="heat-category">{label}</p>
+            <ul className="heat-cells">
+              {row.cells.map((cell) => (
+                <HeatTile key={cell.subcategory} cell={cell} risk={riskOf(cell, m5)} />
+              ))}
+            </ul>
+          </div>
+        )
+      })}
     </figure>
   )
 }

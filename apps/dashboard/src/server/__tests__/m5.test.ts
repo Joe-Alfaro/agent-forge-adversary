@@ -1,23 +1,24 @@
 import { describe, expect, it } from 'vitest'
 
-import type { CoverageCell } from '../models.js'
+import { isTaxonomyCell, PRD_CATEGORIES } from '@agentforge/contracts'
+
+import type { CoverageCell } from '../../lib/models.js'
 import { computeM5, M5_HIGH_RISK_CELLS } from '../m5.js'
-import { ATTACK_TAXONOMY } from '../taxonomy.js'
 
 const now = new Date('2026-09-29T20:00:00Z')
 const options = { now, minAttempts: 20, windowDays: 7 }
 
-function cell(subcategory: string, attempts: number, lastRunAt?: string): CoverageCell {
-  const base = { category: 'prompt_injection', subcategory, owaspIds: [], attempts, confirmed: 0 }
+function cell(subcategory: CoverageCell['subcategory'], attempts: number, lastRunAt?: string): CoverageCell {
+  const base: CoverageCell = { category: 'prompt_injection', subcategory, owaspIds: [], attempts, confirmed: 0 }
   return lastRunAt ? { ...base, lastRunAt } : base
 }
 
 describe('M5_HIGH_RISK_CELLS', () => {
-  it('lists the six PRD high-risk cells from THREAT_MODEL.md, all inside the taxonomy', () => {
+  it('lists the six high-risk cells from THREAT_MODEL.md, all PRD taxonomy cells', () => {
     expect(M5_HIGH_RISK_CELLS).toHaveLength(6)
     M5_HIGH_RISK_CELLS.forEach(({ category, subcategory }) => {
-      const subcategories: readonly string[] = ATTACK_TAXONOMY[category]
-      expect(subcategories).toContain(subcategory)
+      expect(isTaxonomyCell(category, subcategory)).toBe(true)
+      expect(PRD_CATEGORIES).toContain(category)
     })
   })
 })

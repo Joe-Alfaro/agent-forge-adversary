@@ -67,13 +67,15 @@ How the read models are derived:
   exploits created during the run.
 - **Coverage** reads `coverage_snapshots` for the newest target version, and is
   computed live from `attempts` and `exploits` until the Orchestrator has
-  written a snapshot for that version. Every cell of the attack
-  taxonomy (`src/lib/taxonomy.ts`, a temporary mirror of AttackTaxonomy v1
-  until it lands in `@agentforge/contracts`) is shown, untested ones with zero
-  attempts, followed by any data-only cells. Both data sources merge the same
-  way (`src/lib/coverage.ts`), and the heatmap marks untested gaps in text.
+  written a snapshot for that version. The cell list is exactly `listTaxonomyCells()` from
+  `@agentforge/contracts` (AttackTaxonomy v1): untested cells show zero
+  attempts, rows outside the taxonomy are dropped with a logged count, and
+  categories not in `PRD_CATEGORIES` are labelled as outside the PRD set. The
+  taxonomy is imported on the server only, because the contracts entry also
+  loads the Node-only validators; browser code uses type-only imports.
+  The heatmap marks untested gaps in text.
 - **M5** (KEY_METRICS.md) is shown on the heatmap: the six PRD cells
-  THREAT_MODEL.md rates high risk are outlined (`src/lib/m5.ts`), and a cell
+  THREAT_MODEL.md rates high risk are outlined (`src/server/m5.ts`), and a cell
   counts as covered with at least `COVERAGE_MIN_ATTEMPTS` attempts and a run in
   the last 7 days. The "variant family exercised" condition is not measured yet.
 - **Tonight's queue** drains `ORDER BY position NULLS LAST, created_at`. Re-checks
