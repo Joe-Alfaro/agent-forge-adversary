@@ -35,6 +35,8 @@ export class AnthropicJudgeModel implements JudgeModel {
   readonly id: string
   private readonly client: Anthropic
   private readonly maxTokens: number
+  /** Token usage of the most recent judge call, for tracing/cost accounting. */
+  lastUsage: { input_tokens: number; output_tokens: number } | undefined
 
   constructor(options: AnthropicJudgeModelOptions = {}) {
     this.client = options.client ?? new Anthropic()
@@ -50,6 +52,10 @@ export class AnthropicJudgeModel implements JudgeModel {
       messages: [{ role: 'user', content: renderTranscript(input.transcript) }],
       output_config: { format: zodOutputFormat(VerdictSchema) },
     })
+    this.lastUsage = {
+      input_tokens: response.usage?.input_tokens ?? 0,
+      output_tokens: response.usage?.output_tokens ?? 0,
+    }
 
     // A refusal or unparseable output degrades to a confident-nothing verdict
     // rather than throwing: the judge failing must never manufacture a finding.

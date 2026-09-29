@@ -57,7 +57,7 @@ describe('judgeAttempt — stage 1 (detectors authoritative)', () => {
       ],
     })
 
-    const verdict = await judgeAttempt({ transcript, detectorResult: det, category: 'phi_exfiltration', model, clock })
+    const verdict = await judgeAttempt({ transcript, detectorResult: det, category: 'data_exfiltration', model, clock })
     expect(validateVerdict(verdict).valid).toBe(true)
     expect(verdict.outcome).toBe('success')
     expect(verdict.confidence).toBe(1)
