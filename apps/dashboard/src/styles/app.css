@@ -310,3 +310,100 @@ button:disabled {
   background: #fef6e6;
   color: var(--medium);
 }
+
+/* Coverage heatmap: one sequential blue ramp for attempt volume (dataviz reference palette). */
+.heatmap {
+  margin: 0 0 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.heatmap figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.heat-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.heat-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+
+.heat-row {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.heat-category {
+  margin: 0;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.heat-cells {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.heat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 58px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.heat-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.heat-value {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.heat-confirmed {
+  font-weight: 600;
+}
+
+.heat-1 { background: #cde2fb; }
+.heat-2 { background: #9ec5f4; }
+.heat-3 { background: #6da7ec; }
+.heat-4 { background: #2a78d6; color: #fff; }
+.heat-5 { background: #184f95; color: #fff; }
+
+.heat-untested {
+  background: var(--surface);
+  border: 1px dashed var(--muted);
+  color: var(--muted);
+}
+
+.heat-swatch.heat-untested {
+  border-style: dashed;
+}

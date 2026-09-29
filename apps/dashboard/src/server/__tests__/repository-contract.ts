@@ -20,7 +20,7 @@ export const contractTickets: TicketRow[] = [
   {
     id: 'AF-T-0002',
     severity: 'medium',
-    category: 'phi_leakage',
+    category: 'data_exfiltration',
     owaspIds: ['LLM02'],
     status: 'verified',
     assignee: 'dana',
@@ -31,7 +31,7 @@ export const contractTickets: TicketRow[] = [
   {
     id: 'AF-T-0003',
     severity: 'critical',
-    category: 'cross_patient_access',
+    category: 'data_exfiltration',
     owaspIds: ['A01'],
     status: 'regressed',
     confidence: 0,

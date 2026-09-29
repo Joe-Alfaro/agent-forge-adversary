@@ -62,10 +62,11 @@ How the read models are derived:
   **morning report** come from `nightly_runs.summary` (shape below); without a
   summary, new tickets are exploits created during the run.
 - **Coverage** is computed live for the newest target version from `attempts`
-  and `exploits` until `coverage_snapshots` exists. The category × subcategory
-  list is never hard-coded: live cells come from the data, and every cell in the
-  eval suite (`evals/seeds/*.json`, or `EVALS_SEEDS_DIR`) that has no attempts
-  yet is added as untested, so taxonomy changes flow through without edits.
+  and `exploits` until `coverage_snapshots` exists. Every cell of the attack
+  taxonomy (`src/lib/taxonomy.ts`, a temporary mirror of AttackTaxonomy v1
+  until it lands in `@agentforge/contracts`) is shown, untested ones with zero
+  attempts, followed by any data-only cells. Both data sources merge the same
+  way (`src/lib/coverage.ts`), and the heatmap marks untested gaps in text.
 - **Cost** is `nightly_runs.spend_usd` per run and `agent_events.cost_usd` per
   agent over 30 days; `agent = 'target'` is the Co-Pilot's own spend.
 

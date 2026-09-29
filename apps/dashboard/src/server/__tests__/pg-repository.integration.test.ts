@@ -164,23 +164,22 @@ describe.skipIf(!url)('Postgres repository', () => {
       ])
     })
 
-    it('adds untested cells from the eval taxonomy without hard-coding categories', async () => {
+    it('shows every taxonomy cell, untested ones with zero attempts', async () => {
       const withTaxonomy = createPgRepository({
         pool,
         config,
         now: () => contractNow,
-        loadTaxonomy: async () => [
-          { category: 'prompt_injection', subcategory: 'direct', owaspIds: ['LLM07'] },
-          { category: 'state_corruption', subcategory: 'memory_poisoning', owaspIds: ['LLM04'] },
+        taxonomy: [
+          { category: 'prompt_injection', subcategory: 'direct' },
+          { category: 'state_corruption', subcategory: 'context_poisoning' },
         ],
       })
       const coverage = await withTaxonomy.getCoverage()
       expect(coverage.cells.map((cell) => [cell.category, cell.subcategory, cell.attempts])).toEqual([
         ['prompt_injection', 'direct', 1],
+        ['state_corruption', 'context_poisoning', 0],
         ['prompt_injection', 'indirect', 1],
-        ['state_corruption', 'memory_poisoning', 0],
       ])
-      expect(coverage.cells[0]?.owaspIds).toEqual(['LLM01', 'LLM05', 'LLM07'])
     })
 
     it('reports spend per run and per agent role for the last 30 days', async () => {

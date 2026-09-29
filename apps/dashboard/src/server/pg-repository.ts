@@ -1,11 +1,11 @@
 import type pg from 'pg'
 
+import { mergeCoverage, type TaxonomyCell } from '../lib/coverage.js'
 import type { CostSummary, CoverageCell, RunSpend } from '../lib/models.js'
 import { moveItem } from '../lib/queue.js'
 import { nextRunDate } from '../lib/schedule.js'
 import { isExploitStatus } from '../lib/tickets.js'
 import type { QueueConfig } from './config.js'
-import { mergeCoverage, type TaxonomyCell } from './eval-taxonomy.js'
 import { mapMorningReport, mapQueueItem, mapRunSummary, mapTicket } from './pg-mappers.js'
 import type { DashboardRepository } from './repository.js'
 import { assertCanRecheck, assertRerunRequest, assertTransition, normalizeAssignee } from './rules.js'
@@ -14,8 +14,8 @@ export interface PgRepositoryOptions {
   pool: pg.Pool
   config: QueueConfig
   now?: () => Date
-  /** Attack taxonomy (from evals/), so untested cells show up; defaults to none. */
-  loadTaxonomy?: () => Promise<TaxonomyCell[]>
+  /** Every cell the Coverage panel must show, tested or not. */
+  taxonomy?: readonly TaxonomyCell[]
 }
 
 type Queryable = pg.Pool | pg.PoolClient
@@ -123,7 +123,7 @@ export function createPgRepository({
   pool,
   config,
   now = () => new Date(),
-  loadTaxonomy = async () => [],
+  taxonomy = [],
 }: PgRepositoryOptions): DashboardRepository {
   async function transaction<T>(work: (client: pg.PoolClient) => Promise<T>): Promise<T> {
     const client = await pool.connect()
@@ -214,7 +214,6 @@ export function createPgRepository({
     async getCoverage() {
       const latest = await pool.query('SELECT id, version FROM target_versions ORDER BY first_seen DESC, id DESC LIMIT 1')
       const version = latest.rows[0]
-      const taxonomy = await loadTaxonomy()
       if (!version) {
         return { targetVersion: 'no target version yet', cells: mergeCoverage([], taxonomy) }
       }
