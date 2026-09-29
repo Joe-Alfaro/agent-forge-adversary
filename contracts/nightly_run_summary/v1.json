@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentforge/contracts/nightly_run_summary/v1",
+  "title": "NightlyRunSummary",
+  "description": "The morning report stored in nightly_runs.summary: what ran overnight, what was found, and what was left undone. additionalProperties is true so readers tolerate keys added by later producers.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "target_version", "headline", "new_tickets", "regressions",
+    "verified_fixes", "queue", "notes", "generated_at"
+  ],
+  "properties": {
+    "target_version": { "type": "string" },
+    "headline": { "type": "string" },
+    "new_tickets": { "type": "array", "items": { "type": "string" } },
+    "regressions": { "type": "array", "items": { "type": "string" } },
+    "verified_fixes": { "type": "array", "items": { "type": "string" } },
+    "queue": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["ran", "cut"],
+      "properties": {
+        "ran": { "type": "integer", "minimum": 0 },
+        "cut": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "notes": { "type": "array", "items": { "type": "string" } },
+    "trace_url": { "type": "string" },
+    "generated_at": { "type": "string", "format": "date-time" }
+  }
+}

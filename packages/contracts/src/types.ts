@@ -150,6 +150,25 @@ export interface CampaignPlan {
   mutation_strategy?: string
 }
 
+export interface NightlyRunSummaryQueue {
+  ran: number
+  cut: number
+  [key: string]: unknown
+}
+
+export interface NightlyRunSummary {
+  target_version: string
+  headline: string
+  new_tickets: string[]
+  regressions: string[]
+  verified_fixes: string[]
+  queue: NightlyRunSummaryQueue
+  notes: string[]
+  trace_url?: string
+  generated_at: string
+  [key: string]: unknown
+}
+
 export type RerunSource = 'ui' | 'chat'
 
 export interface RerunTarget {
