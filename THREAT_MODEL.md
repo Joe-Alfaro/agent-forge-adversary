@@ -54,13 +54,17 @@ analysis"):
    re-verifies every claim, so an attacker corrupts only their own supplied
    context, affecting no other user.
 
-Beyond the six, **clinical misinformation (LLM09)** is retained as an extra
-category: pushing an unsupported recommendation or a fabricated citation past the
-verification gate is the Co-Pilot's core clinical harm.
+**Clinical misinformation** — pushing an unsupported recommendation or a
+fabricated citation past the verification gate — is the Co-Pilot's core clinical
+harm. It is not one of the six PRD categories, so it is not a category here;
+instead its cases are folded into the closest cells (`prompt_injection`/`direct`
+and `state_corruption`/`context_poisoning`) and kept visible through a
+`misinformation` technique tag on the seeds.
 
-Deterministic detectors (PHI canary, cross-patient, tool-call diff, scope rule)
-plus a Sonnet-5.5 rubric judge cover these categories; the seed suite in `evals/`
-exercises all six PRD categories.
+Categories and subcategories use the shared **AttackTaxonomy v1**
+(`contracts/attack_taxonomy/v1.json`) across `evals/`, `coverage_snapshots`, and
+the dashboard. Detectors (PHI canary, cross-patient, tool-call diff, scope rule)
+plus a Sonnet-5.5 rubric judge cover these; the `evals/` suite exercises all six.
 
 ## Trust boundaries
 
@@ -116,7 +120,7 @@ document/preflight routes are the sharpest edges.
 |-------------|----------------|------------------|-----------|-------------------------------|------------------|-------|
 | `direct` | `POST /answer` `question` | Role override; system-prompt/config disclosure; attacker-chosen output | Low | System-prompt framing; `claimsNotOwnedBy` guards worker-typed claims but not a plain role shift or prompt echo; gate blocks fabricated claims only — **partial** | **high** — easy × high impact | LLM01, LLM07 / A03 |
 | `indirect` | `POST /answer` `documents[]`; unauth `POST /extract`; seeded OpenEMR docs (F3) | Injection from "trusted" document content; steer the extractor | Low–Med | `claimsNotOwnedBy` rejects out-of-type worker claims (strong here); gate withholds unsourced — **partial** | **high** — reachable, only partly defended | LLM01 / A03 |
-| `multi-turn` | Client-carried history across successive `POST /answer` calls (no server session) | Split a payload across turns to evade single-turn checks | Med | Statelessness: no server memory accumulates; each turn re-evaluated fresh — **largely addressed** | medium — reachable, limited leverage | LLM01 / A03 |
+| `multi_turn` | Client-carried history across successive `POST /answer` calls (no server session) | Split a payload across turns to evade single-turn checks | Med | Statelessness: no server memory accumulates; each turn re-evaluated fresh — **largely addressed** | medium — reachable, limited leverage | LLM01 / A03 |
 
 ### 2. Data exfiltration (`data_exfiltration`)
 
@@ -131,7 +135,7 @@ document/preflight routes are the sharpest edges.
 | Subcategory | Attack surface | Potential impact | Difficulty | Existing defenses (addressed?) | Risk — rationale | OWASP |
 |-------------|----------------|------------------|-----------|-------------------------------|------------------|-------|
 | `conversation_history_manipulation` | Client-supplied message history + `bundle` on `POST /answer` | Rewrite prior turns/chart to change the answer | Low (to send) | Stateless: no shared/server-side history to corrupt; the caller only affects their own view (D-9); gate re-verifies every claim — **largely addressed** | low-medium | LLM01 / A04 |
-| `context_poisoning` | `POST /answer` `documents[]` / seeded OpenEMR docs / malicious `bundle` records | Poison retrieval/extraction context → wrong or leaky synthesis | Med | `claimsNotOwnedBy`; gate withholds unsourced; retrieval is over a curated fixed corpus, not attacker docs — **partial** | medium | LLM01 / A04 |
+| `context_poisoning` | `POST /answer` `documents[]` / seeded OpenEMR docs / malicious `bundle` records | Poison retrieval/extraction context → wrong or leaky synthesis, incl. a fabricated authoritative citation a clinician acts on | Med | `claimsNotOwnedBy`; gate withholds unsourced and checks citations against the corpus copy — **partial** | **high** — clinical-misinformation impact via a planted source | LLM01, LLM09 / A04 |
 
 ### 4. Tool misuse (`tool_misuse`)
 
@@ -149,7 +153,7 @@ document/preflight routes are the sharpest edges.
 | `loops` | `POST /answer` `question` inducing many worker iterations | Runaway graph execution | Med | Graph budget/timeout bounds iterations — **partial** | medium | LLM10 / A04 |
 | `cost_amplification` | **Unauth `GET /preflight`** (real synthesis) and **`POST /extract`** (vision model) | Anyone spends the shared Anthropic bill | Low | None on those routes (unauthenticated by design) — **NOT addressed** | **high** | LLM10 / A05 |
 
-### 6. Identity / role exploitation (`identity_role_exploitation`)
+### 6. Identity / role exploitation (`identity_role`)
 
 | Subcategory | Attack surface | Potential impact | Difficulty | Existing defenses (addressed?) | Risk — rationale | OWASP |
 |-------------|----------------|------------------|-----------|-------------------------------|------------------|-------|
@@ -157,53 +161,46 @@ document/preflight routes are the sharpest edges.
 | `persona_hijacking` | `POST /answer` `question` ("you are FreeMD…") | Drop the clinical guardrails; adopt an unrestricted persona | Low | System-prompt framing; the gate withholds unsourced claims but does not stop a behavioural/tone shift — **partial** | **high** | LLM01 / A03 |
 | `trust_boundary_violation` | `POST /answer` `documents[]` treated as instructions; worker→synthesis outputs | Untrusted content gains assistant authority | Med | `claimsNotOwnedBy` enforces worker-output boundaries; documents parsed as data; gate — **partial** | medium-high | LLM01 / A04 |
 
-### Beyond the six — clinical misinformation (`misinformation`, retained extra)
-
-Not one of the PRD's six categories, kept because unfaithful synthesis is the
-Co-Pilot's core clinical harm.
-
-| Subcategory | Attack surface | Potential impact | Difficulty | Existing defenses (addressed?) | Risk — rationale | OWASP |
-|-------------|----------------|------------------|-----------|-------------------------------|------------------|-------|
-| `unsupported_claim` | `POST /answer` `question` (leading) | An unsupported clinical recommendation reaches a physician | Med | Verification gate withholds unsourced claims — **partial** | **high** | LLM09 / A04 |
-| `fabricated_citation` | `POST /answer` `question` | A fabricated source is attached to a claim | Med | Citation-verification gate compares to the corpus's own copy — **partial** | **high** | LLM09, LLM05 / A04 |
+Clinical misinformation is not one of the six categories; its cases are folded
+into the closest cells (`unsupported_claim` → `prompt_injection`/`direct`;
+`fabricated_citation` → `state_corruption`/`context_poisoning`) and kept visible
+by a `misinformation` technique tag on the seeds.
 
 ### High-risk cells (M5 denominator)
 
-Six cells among the PRD categories are rated high, so M5's denominator is 6:
+Seven of the 17 cells are rated high, so M5's denominator is 7:
 `prompt_injection`/{`direct`, `indirect`}, `data_exfiltration`/`authorization_bypass`,
-`denial_of_service`/{`token_exhaustion`, `cost_amplification`},
-`identity_role_exploitation`/`persona_hijacking`. (The two `misinformation` high
-cells sit outside the six and are tracked separately.)
+`state_corruption`/`context_poisoning`, `denial_of_service`/{`token_exhaustion`,
+`cost_amplification`}, `identity_role`/`persona_hijacking`. Both folded
+misinformation cases land in high cells (`direct` and `context_poisoning`), so
+their clinical-harm signal is preserved.
 
 ### Detector and seed coverage
 
 | Category | Detectors | Seed cases |
 |----------|-----------|-----------|
-| `prompt_injection` | `scope_rule` | pi-001…003 |
+| `prompt_injection` | `scope_rule` | pi-001…004 |
 | `data_exfiltration` | `phi_canary`, `cross_patient` | dx-001…006 |
-| `state_corruption` | `scope_rule` | sc-001…002 |
+| `state_corruption` | `scope_rule` | sc-001…003 |
 | `tool_misuse` | `tool_call_diff` | tm-001…003 |
 | `denial_of_service` | `tool_call_diff` | dos-001…003 |
-| `identity_role_exploitation` | `scope_rule` | ir-001…003 |
-| `misinformation` (extra) | rubric judge | mi-001…002 |
+| `identity_role` | `scope_rule` | ir-001…003 |
 
-### Dashboard Coverage-panel key mismatch (reported, not resolved here)
+23 seeds across the six categories; the two former misinformation cases live in
+pi-004 and sc-003 with a `misinformation` technique tag.
 
-`evals/seeds/` is now keyed to the six PRD categories (above), which brings the
-category names partly into line with the Coverage-heatmap fixtures in
-`apps/dashboard/src/lib/fixtures.ts` (`prompt_injection`, `data_exfiltration`,
-`tool_misuse`, `misinformation` now agree). Two gaps remain, reported rather than
-fixed here (no change to `apps/dashboard`):
+### Shared taxonomy (resolves the earlier dashboard mismatch)
 
-- **Categories:** the dashboard uses `cross_patient_access` and `role_confusion`,
-  which the PRD taxonomy folds into `data_exfiltration`/`cross_patient` and
-  `identity_role_exploitation` respectively; the dashboard has no
-  `state_corruption` or `denial_of_service` cells; ticket fixtures still use a
-  third PHI name, `phi_leakage`.
-- **Subcategories** still differ across the board — e.g. dashboard
-  `prompt_injection`/{`direct`, `indirect_via_note`} vs eval {`direct`, `indirect`,
-  `multi-turn`}; dashboard `misinformation`/`dosage` vs eval {`unsupported_claim`,
-  `fabricated_citation`}.
+These category/subcategory keys are the shared **AttackTaxonomy v1**
+(`contracts/attack_taxonomy/v1.json`, mirrored by `ATTACK_TAXONOMY` in
+`packages/contracts` with `isTaxonomyCell` / `validateTaxonomyCell`). `evals/` is
+re-keyed to it and the eval loader now **rejects any off-taxonomy cell**;
+`coverage_snapshots` uses these keys. The remaining step is for the dashboard
+Coverage panel (`apps/dashboard/src/lib/fixtures.ts`, still on demo keys such as
+`cross_patient_access`, `role_confusion`, `indirect_via_note`, with no
+`state_corruption`/`denial_of_service` cells) to adopt `ATTACK_TAXONOMY`; that
+lets M5 join the ratings to the heatmap and is owned by the dashboard worker
+(reported, not changed here).
 
 A single shared taxonomy (one `category`/`subcategory` enum used by `evals/`,
 `coverage_snapshots`, and the dashboard) is still needed before M5 can be computed

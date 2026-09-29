@@ -10,6 +10,7 @@ import type {
   CampaignPlan,
   NightlyRunSummary,
 } from './types.js'
+import { isTaxonomyCell, type TaxonomyCell } from './taxonomy.js'
 
 const require = createRequire(import.meta.url)
 
@@ -74,4 +75,25 @@ export function validateCampaignPlan(value: unknown): ValidationResult<CampaignP
 
 export function validateNightlyRunSummary(value: unknown): ValidationResult<NightlyRunSummary> {
   return runValidator<NightlyRunSummary>(validateNightlyRunSummaryFn, value)
+}
+
+/**
+ * Validates that a `{ category, subcategory }` pair is a real cell in the shared
+ * AttackTaxonomy v1. Not Ajv-compiled because the subcategory's validity depends
+ * on the category, which a flat schema cannot express cleanly.
+ */
+export function validateTaxonomyCell(value: unknown): ValidationResult<TaxonomyCell> {
+  if (typeof value !== 'object' || value === null) {
+    return { valid: false, errors: ['/ must be an object with category and subcategory'] }
+  }
+  const record = value as Record<string, unknown>
+  const category = record['category']
+  const subcategory = record['subcategory']
+  if (typeof category !== 'string' || typeof subcategory !== 'string') {
+    return { valid: false, errors: ['category and subcategory must be strings'] }
+  }
+  if (!isTaxonomyCell(category, subcategory)) {
+    return { valid: false, errors: [`${category}/${subcategory} is not a cell in AttackTaxonomy v1`] }
+  }
+  return { valid: true, value: { category, subcategory } as TaxonomyCell, errors: [] }
 }
