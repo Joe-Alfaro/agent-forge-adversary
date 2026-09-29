@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentforge/contracts/detector_result/v1",
+  "title": "DetectorResult",
+  "description": "The deterministic detectors' verdict on one transcript, produced before the LLM judge and authoritative when a detector fires. Consumed by the Judge.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "message_id", "campaign_id", "trace_id", "attempt_id",
+    "produced_by", "produced_at", "target_version", "results", "any_fired"
+  ],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "message_id": { "type": "string", "format": "uuid" },
+    "campaign_id": { "type": "string", "format": "uuid" },
+    "trace_id": { "type": "string", "minLength": 1 },
+    "attempt_id": { "type": "string", "format": "uuid" },
+    "produced_by": { "const": "detectors" },
+    "produced_at": { "type": "string", "format": "date-time" },
+    "target_version": { "type": "string", "minLength": 1 },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["detector", "status", "category", "evidence"],
+        "properties": {
+          "detector": {
+            "enum": ["phi_canary", "cross_patient", "tool_call_diff", "scope_rule"]
+          },
+          "status": { "enum": ["fired", "not_fired", "not_applicable"] },
+          "category": { "type": "string", "minLength": 1 },
+          "authoritative": {
+            "description": "When true and status is 'fired', the Judge must return success with confidence 1.0 (Architecture 8.1).",
+            "type": "boolean"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["ref"],
+              "properties": {
+                "ref": { "type": "string", "minLength": 1 },
+                "span": { "type": "string" },
+                "note": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "any_fired": { "type": "boolean" }
+  }
+}
