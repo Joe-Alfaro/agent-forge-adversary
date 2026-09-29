@@ -3,7 +3,7 @@ import pg from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { createPgRepository } from '../pg-repository.js'
-import { resetDatabase, seedQueue, seedTickets, setQueuePositionColumn } from './pg-seed.js'
+import { resetDatabase, seedQueue, seedTickets } from './pg-seed.js'
 import {
   contractNow,
   contractQueue,
@@ -24,34 +24,38 @@ describe.skipIf(!url)('Postgres repository', () => {
   const pool = new pg.Pool({ connectionString: url, max: 4 })
 
   afterAll(async () => {
-    await setQueuePositionColumn(pool, false)
     await pool.end()
   })
 
-  async function seededRepo(withPositions: boolean) {
-    await setQueuePositionColumn(pool, withPositions)
+  async function seededRepo() {
     const versions = await resetDatabase(pool, ['copilot@9.0.0'])
     await seedTickets(pool, contractTickets, versions)
-    await seedQueue(pool, contractQueue, contractRunDate, withPositions)
+    await seedQueue(pool, contractQueue, contractRunDate)
     return createPgRepository({ pool, config, now: () => contractNow })
   }
 
-  describeRepositoryContract('Postgres without operator_requests.position', {
-    setup: () => seededRepo(false),
-    supportsReorder: () => false,
-  })
+  describeRepositoryContract('Postgres', { setup: seededRepo })
 
-  describeRepositoryContract('Postgres with operator_requests.position', {
-    setup: () => seededRepo(true),
-    supportsReorder: () => true,
+  describe('queue columns', () => {
+    it('stores the rerun estimate and prefers stored estimates when reading', async () => {
+      const repo = await seededRepo()
+      await repo.enqueueRerun({
+        schema_version: '1',
+        message_id: '22222222-2222-4222-8222-222222222222',
+        requested_by: 'operator',
+        requested_for: contractRunDate,
+        source: 'ui',
+        target: { kind: 'exploit', exploit_id: 'AF-T-0001' },
+      })
+      const stored = await pool.query(`SELECT estimated_cost_usd FROM operator_requests WHERE id = '22222222-2222-4222-8222-222222222222'`)
+      expect(Number(stored.rows[0]?.estimated_cost_usd)).toBe(0.6)
+      await pool.query(`UPDATE operator_requests SET estimated_cost_usd = 7.5 WHERE kind = 'focus'`)
+      expect((await repo.getQueue()).items[0]).toMatchObject({ kind: 'focus', estimatedCostUsd: 7.5 })
+    })
   })
 
   describe('aggregates', () => {
     const repo = createPgRepository({ pool, config, now: () => contractNow })
-
-    beforeAll(async () => {
-      await setQueuePositionColumn(pool, false)
-    })
 
     beforeEach(async () => {
       const versions = await resetDatabase(pool, ['copilot@9.0.0', 'copilot@9.1.0'])
@@ -60,7 +64,7 @@ describe.skipIf(!url)('Postgres repository', () => {
       await pool.query(
         `INSERT INTO nightly_runs (id, scheduled_for, started_at, finished_at, trigger, spend_usd, status, summary) VALUES
          (1, '2026-09-28T06:00:00Z', '2026-09-28T06:00:00Z', '2026-09-28T08:00:00Z', 'cron', 30, 'completed',
-          '{"headline":"One regression","regressions":["AF-A-1"],"new_tickets":["AF-A-2"],"notes":["n1"],"queue":{"ran":2,"cut":1},"trace_url":"https://t/1"}'),
+          '{"target_version":"copilot@9.0.0","headline":"One regression","regressions":["AF-A-1"],"new_tickets":["AF-A-2"],"verified_fixes":[],"notes":["n1"],"queue":{"ran":2,"cut":1},"trace_url":"https://t/1","generated_at":"2026-09-28T08:05:00Z"}'),
          (2, '2026-09-29T06:00:00Z', '2026-09-29T06:00:00Z', NULL, 'run_now', 5.5, 'running', NULL)`,
       )
       await pool.query(`SELECT setval('nightly_runs_id_seq', 2)`)
@@ -164,23 +168,56 @@ describe.skipIf(!url)('Postgres repository', () => {
       ])
     })
 
-    it('adds untested cells from the eval taxonomy without hard-coding categories', async () => {
+    it('shows every taxonomy cell, untested ones with zero attempts', async () => {
       const withTaxonomy = createPgRepository({
         pool,
         config,
         now: () => contractNow,
-        loadTaxonomy: async () => [
-          { category: 'prompt_injection', subcategory: 'direct', owaspIds: ['LLM07'] },
-          { category: 'state_corruption', subcategory: 'memory_poisoning', owaspIds: ['LLM04'] },
+        taxonomy: [
+          { category: 'prompt_injection', subcategory: 'direct' },
+          { category: 'state_corruption', subcategory: 'context_poisoning' },
         ],
       })
       const coverage = await withTaxonomy.getCoverage()
       expect(coverage.cells.map((cell) => [cell.category, cell.subcategory, cell.attempts])).toEqual([
         ['prompt_injection', 'direct', 1],
+        ['state_corruption', 'context_poisoning', 0],
         ['prompt_injection', 'indirect', 1],
-        ['state_corruption', 'memory_poisoning', 0],
       ])
-      expect(coverage.cells[0]?.owaspIds).toEqual(['LLM01', 'LLM05', 'LLM07'])
+    })
+
+    it('takes the last verified version from regression results when the harness has run', async () => {
+      const versions = await pool.query<{ id: number }>(`SELECT id FROM target_versions WHERE version = 'copilot@9.0.0'`)
+      const run = await pool.query<{ id: string }>(
+        `INSERT INTO regression_runs (target_version_id, status, started_at) VALUES ($1, 'completed', '2026-09-30T02:00:00Z') RETURNING id`,
+        [versions.rows[0]?.id],
+      )
+      await pool.query(
+        `INSERT INTO regression_results (run_id, exploit_id, outcome, replay_count, majority, created_at)
+         VALUES ($1, 'AF-A-1', 'fail', 3, 'fail', '2026-09-30T02:10:00Z')`,
+        [run.rows[0]?.id],
+      )
+      expect((await repo.getTicket('AF-A-1'))?.lastVerifiedVersion).toBe('copilot@9.0.0')
+    })
+
+    it('reads coverage from coverage_snapshots once the Orchestrator has materialized them', async () => {
+      const latest = await pool.query<{ id: number }>(`SELECT id FROM target_versions WHERE version = 'copilot@9.1.0'`)
+      await pool.query(
+        `INSERT INTO coverage_snapshots (target_version_id, category, subcategory, attempts, confirmed, last_run_at)
+         VALUES ($1, 'prompt_injection', 'direct', 40, 2, '2026-09-29T07:00:00Z')`,
+        [latest.rows[0]?.id],
+      )
+      const coverage = await repo.getCoverage()
+      expect(coverage.cells).toEqual([
+        {
+          category: 'prompt_injection',
+          subcategory: 'direct',
+          owaspIds: ['LLM01', 'LLM05'],
+          attempts: 40,
+          confirmed: 2,
+          lastRunAt: '2026-09-29T07:00:00.000Z',
+        },
+      ])
     })
 
     it('reports spend per run and per agent role for the last 30 days', async () => {

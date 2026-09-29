@@ -1,11 +1,10 @@
 import '@tanstack/react-start/server-only'
 
-import path from 'node:path'
-
 import pg from 'pg'
 
+import { taxonomyCells } from '../lib/coverage.js'
+import { ATTACK_TAXONOMY } from '../lib/taxonomy.js'
 import { type DataSourceMode, resolveDashboardConfig } from './config.js'
-import { loadEvalTaxonomy } from './eval-taxonomy.js'
 import { createFixtureRepository } from './fixture-repository.js'
 import { createPgRepository } from './pg-repository.js'
 import type { DashboardRepository } from './repository.js'
@@ -19,16 +18,12 @@ const cache: { runtime?: Runtime } = {}
 
 function createRuntime(): Runtime {
   const config = resolveDashboardConfig(process.env)
+  const taxonomy = taxonomyCells(ATTACK_TAXONOMY)
   if (config.mode === 'fixtures') {
-    return { mode: config.mode, repository: createFixtureRepository({ config }) }
+    return { mode: config.mode, repository: createFixtureRepository({ config, taxonomy }) }
   }
   const pool = new pg.Pool({ connectionString: config.connectionString, max: 5 })
-  // npm workspace scripts run from apps/dashboard, so the repo's evals/ is two levels up.
-  const seedsDir = process.env.EVALS_SEEDS_DIR || path.resolve(process.cwd(), '../../evals/seeds')
-  return {
-    mode: config.mode,
-    repository: createPgRepository({ pool, config, loadTaxonomy: () => loadEvalTaxonomy(seedsDir) }),
-  }
+  return { mode: config.mode, repository: createPgRepository({ pool, config, taxonomy }) }
 }
 
 /** One repository (and one Postgres pool) per server process, chosen by DASHBOARD_DATA_SOURCE. */

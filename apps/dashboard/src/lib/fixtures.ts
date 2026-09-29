@@ -50,7 +50,7 @@ export const tickets: TicketRow[] = [
   {
     id: 'AF-2026-0004',
     severity: 'critical',
-    category: 'cross_patient_access',
+    category: 'data_exfiltration',
     owaspIds: ['A01', 'LLM02'],
     status: 'regressed',
     assignee: 'dana',
@@ -63,7 +63,7 @@ export const tickets: TicketRow[] = [
   {
     id: 'AF-2026-0005',
     severity: 'low',
-    category: 'role_confusion',
+    category: 'identity_role_exploitation',
     owaspIds: ['LLM01'],
     status: 'accepted_risk',
     assignee: 'sam',
@@ -75,7 +75,7 @@ export const tickets: TicketRow[] = [
   {
     id: 'AF-2026-0006',
     severity: 'high',
-    category: 'phi_leakage',
+    category: 'data_exfiltration',
     owaspIds: ['LLM02'],
     status: 'verified',
     assignee: 'dana',
@@ -174,13 +174,16 @@ export const coverage: CoverageMatrix = {
   targetVersion: TARGET_VERSION,
   cells: [
     { category: 'prompt_injection', subcategory: 'direct', owaspIds: ['LLM01'], attempts: 420, confirmed: 3, lastRunAt: '2026-09-28T09:10:00Z' },
-    { category: 'prompt_injection', subcategory: 'indirect_via_note', owaspIds: ['LLM01'], attempts: 188, confirmed: 2, lastRunAt: '2026-09-28T08:55:00Z' },
-    { category: 'data_exfiltration', subcategory: 'markdown_image', owaspIds: ['LLM02'], attempts: 96, confirmed: 1, lastRunAt: '2026-09-28T08:12:00Z' },
-    { category: 'data_exfiltration', subcategory: 'summary_smuggling', owaspIds: ['LLM02'], attempts: 41, confirmed: 0, lastRunAt: '2026-09-27T08:40:00Z' },
-    { category: 'cross_patient_access', subcategory: 'id_swap', owaspIds: ['A01'], attempts: 132, confirmed: 1, lastRunAt: '2026-09-28T07:44:00Z' },
-    { category: 'tool_misuse', subcategory: 'unauthorized_write', owaspIds: ['LLM06'], attempts: 77, confirmed: 1, lastRunAt: '2026-09-27T08:02:00Z' },
-    { category: 'role_confusion', subcategory: 'clinician_impersonation', owaspIds: ['LLM01'], attempts: 58, confirmed: 0, lastRunAt: '2026-09-26T07:15:00Z' },
-    { category: 'misinformation', subcategory: 'dosage', owaspIds: ['LLM09'], attempts: 0, confirmed: 0 },
+    { category: 'prompt_injection', subcategory: 'indirect', owaspIds: ['LLM01'], attempts: 188, confirmed: 2, lastRunAt: '2026-09-28T08:55:00Z' },
+    { category: 'prompt_injection', subcategory: 'multi-turn', owaspIds: ['LLM01'], attempts: 64, confirmed: 0, lastRunAt: '2026-09-27T08:30:00Z' },
+    { category: 'data_exfiltration', subcategory: 'phi_leakage', owaspIds: ['LLM02'], attempts: 96, confirmed: 1, lastRunAt: '2026-09-28T08:12:00Z' },
+    { category: 'data_exfiltration', subcategory: 'cross_patient', owaspIds: ['LLM02', 'A01'], attempts: 132, confirmed: 2, lastRunAt: '2026-09-28T07:44:00Z' },
+    { category: 'data_exfiltration', subcategory: 'authorization_bypass', owaspIds: ['A01'], attempts: 41, confirmed: 0, lastRunAt: '2026-09-27T08:40:00Z' },
+    { category: 'state_corruption', subcategory: 'context_poisoning', owaspIds: ['LLM04'], attempts: 22, confirmed: 0, lastRunAt: '2026-09-26T07:10:00Z' },
+    { category: 'tool_misuse', subcategory: 'unintended_invocation', owaspIds: ['LLM06'], attempts: 77, confirmed: 1, lastRunAt: '2026-09-27T08:02:00Z' },
+    { category: 'tool_misuse', subcategory: 'parameter_tampering', owaspIds: ['LLM06'], attempts: 35, confirmed: 0, lastRunAt: '2026-09-27T08:20:00Z' },
+    { category: 'identity_role_exploitation', subcategory: 'persona_hijacking', owaspIds: ['LLM01'], attempts: 58, confirmed: 1, lastRunAt: '2026-09-26T07:15:00Z' },
+    { category: 'misinformation', subcategory: 'unsupported_claim', owaspIds: ['LLM09'], attempts: 46, confirmed: 1, lastRunAt: '2026-09-27T08:50:00Z' },
   ],
 }
 
@@ -231,7 +234,7 @@ export const queueItems: QueueItem[] = [
   {
     id: 'req-104',
     kind: 'skip',
-    category: 'misinformation',
+    category: 'denial_of_service',
     requestedBy: 'sam',
     requestedAt: '2026-09-29T09:15:00Z',
     source: 'chat',
@@ -254,7 +257,7 @@ export const morningReports: MorningReport[] = [
     runId: 'run-2026-09-28',
     targetVersion: TARGET_VERSION,
     generatedAt: '2026-09-28T09:50:00Z',
-    headline: 'Two new findings on 1.4.0 and one regression in cross-patient access.',
+    headline: 'Two new findings on 1.4.0 and one regression in cross-patient data exfiltration.',
     attempts: 1184,
     verdicts: { success: 19, partial: 41, fail: 1124 },
     spendUsd: 46.2,
@@ -264,7 +267,7 @@ export const morningReports: MorningReport[] = [
     queue: { ran: 4, cut: 1 },
     notes: [
       'Indirect injection through clinician notes produced most partial successes.',
-      'Misinformation seeds are not ready; the category was skipped.',
+      'Denial-of-service seeds are not ready; the category was skipped.',
     ],
   },
   {

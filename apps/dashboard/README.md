@@ -55,27 +55,27 @@ DASHBOARD_TEST_DATABASE_URL=postgres://af:af@127.0.0.1:54339/af_dashboard_test n
 How the read models are derived:
 
 - **Ticket confidence** is the strongest successful verdict in the exploit's
-  family (`family_ids` plus matching fingerprint). **Last verdict** and **last
-  verified version** come from the family's most recent verdict.
+  family (`family_ids` plus matching fingerprint). **Last verdict** comes from
+  the family's most recent verdict; **last verified version** from the newest
+  `regression_results` row, falling back to the latest verdict's version.
 - **Run history** counts attempts and the latest verdict per attempt through
   `campaigns.nightly_run_id`. New tickets, regressions, the trace link, and the
-  **morning report** come from `nightly_runs.summary` (shape below); without a
-  summary, new tickets are exploits created during the run.
-- **Coverage** is computed live for the newest target version from `attempts`
-  and `exploits` until `coverage_snapshots` exists. The category × subcategory
-  list is never hard-coded: live cells come from the data, and every cell in the
-  eval suite (`evals/seeds/*.json`, or `EVALS_SEEDS_DIR`) that has no attempts
-  yet is added as untested, so taxonomy changes flow through without edits.
+  **morning report** come from `nightly_runs.summary`, validated as
+  `NightlyRunSummary v1` from `@agentforge/contracts`. A missing or invalid
+  summary (logged) means derived counts and no report; new tickets are then
+  exploits created during the run.
+- **Coverage** reads `coverage_snapshots` for the newest target version, and is
+  computed live from `attempts` and `exploits` until the Orchestrator has
+  written a snapshot for that version. Every cell of the attack
+  taxonomy (`src/lib/taxonomy.ts`, a temporary mirror of AttackTaxonomy v1
+  until it lands in `@agentforge/contracts`) is shown, untested ones with zero
+  attempts, followed by any data-only cells. Both data sources merge the same
+  way (`src/lib/coverage.ts`), and the heatmap marks untested gaps in text.
+- **Tonight's queue** drains `ORDER BY position NULLS LAST, created_at`. Re-checks
+  are appended at the end with a stored `estimated_cost_usd`; requests without
+  a stored estimate show a family-size estimate (reruns) or $0 (campaigns).
 - **Cost** is `nightly_runs.spend_usd` per run and `agent_events.cost_usd` per
   agent over 30 days; `agent = 'target'` is the Co-Pilot's own spend.
-
-Proposed `nightly_runs.summary` shape (unknown or missing keys are tolerated):
-`{ headline, target_version, new_tickets[], regressions[], verified_fixes[], queue: { ran, cut }, notes[], trace_url, generated_at }`.
-
-Pending schema (requested from the packages/db owner): queue reordering needs
-`operator_requests.position integer`. Until it exists the queue is ordered by
-request time and "move" returns an explanatory error; once the column is added
-the dashboard uses it without a code change.
 
 ## Conventions
 

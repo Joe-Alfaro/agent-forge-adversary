@@ -1,3 +1,4 @@
+import { mergeCoverage, type TaxonomyCell } from '../lib/coverage.js'
 import * as fixtures from '../lib/fixtures.js'
 import type { QueueItem, TonightQueue } from '../lib/models.js'
 import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
@@ -16,6 +17,8 @@ export interface FixtureRepositoryOptions {
   config: QueueConfig
   now?: () => Date
   seed?: FixtureSeed
+  /** Every cell the Coverage panel must show, tested or not. */
+  taxonomy?: readonly TaxonomyCell[]
 }
 
 /**
@@ -27,6 +30,7 @@ export function createFixtureRepository({
   config,
   now = () => new Date(),
   seed = { tickets: fixtures.tickets, queueItems: fixtures.queueItems },
+  taxonomy = [],
 }: FixtureRepositoryOptions): DashboardRepository {
   const store = structuredClone(seed)
 
@@ -76,7 +80,8 @@ export function createFixtureRepository({
     },
 
     async getCoverage() {
-      return structuredClone(fixtures.coverage)
+      const coverage = structuredClone(fixtures.coverage)
+      return { ...coverage, cells: mergeCoverage(coverage.cells, taxonomy) }
     },
 
     async getCost() {
