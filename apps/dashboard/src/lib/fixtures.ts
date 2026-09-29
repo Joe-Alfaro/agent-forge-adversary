@@ -1,4 +1,4 @@
-import type { CostSummary, CoverageMatrix, RunSummary } from './models.js'
+import type { CostSummary, CoverageMatrix, MorningReport, RunSummary, TonightQueue } from './models.js'
 import type { TicketRow } from './tickets.js'
 
 /*
@@ -121,6 +121,7 @@ export const runs: RunSummary[] = [
     newTickets: 1,
     regressions: 0,
     spendUsd: 8.41,
+    hasMorningReport: false,
   },
   {
     id: 'run-2026-09-28',
@@ -134,7 +135,7 @@ export const runs: RunSummary[] = [
     newTickets: 2,
     regressions: 1,
     spendUsd: 46.2,
-    reportUrl: '/reports/run-2026-09-28',
+    hasMorningReport: true,
     traceUrl: 'https://langfuse.example/trace/run-2026-09-28',
   },
   {
@@ -149,7 +150,7 @@ export const runs: RunSummary[] = [
     newTickets: 3,
     regressions: 0,
     spendUsd: 38.75,
-    reportUrl: '/reports/run-2026-09-27',
+    hasMorningReport: true,
     traceUrl: 'https://langfuse.example/trace/run-2026-09-27',
   },
   {
@@ -164,6 +165,7 @@ export const runs: RunSummary[] = [
     newTickets: 0,
     regressions: 0,
     spendUsd: 3.1,
+    hasMorningReport: false,
     traceUrl: 'https://langfuse.example/trace/run-2026-09-26',
   },
 ]
@@ -195,3 +197,92 @@ export const cost: CostSummary = {
   byRun: runs.map((run) => ({ runId: run.id, startedAt: run.startedAt, spendUsd: run.spendUsd })),
   projectedMonthlyUsd: 1240,
 }
+
+export const queue: TonightQueue = {
+  runDate: '2026-09-29',
+  envelopeUsd: 40,
+  items: [
+    {
+      id: 'req-101',
+      kind: 'rerun',
+      exploitId: 'AF-2026-0004',
+      requestedBy: 'dana',
+      requestedAt: '2026-09-29T08:12:00Z',
+      source: 'ui',
+      reason: 'Regressed on 1.4.0; confirm before the hotfix review.',
+      estimatedCostUsd: 0.6,
+    },
+    {
+      id: 'req-102',
+      kind: 'focus',
+      category: 'data_exfiltration',
+      requestedBy: 'dana',
+      requestedAt: '2026-09-29T08:20:00Z',
+      source: 'chat',
+      reason: 'Spend most of tonight on exfiltration.',
+      estimatedCostUsd: 22,
+    },
+    {
+      id: 'req-103',
+      kind: 'rerun',
+      exploitId: 'AF-2026-0001',
+      requestedBy: 'sam',
+      requestedAt: '2026-09-29T09:02:00Z',
+      source: 'ui',
+      estimatedCostUsd: 0.9,
+    },
+    {
+      id: 'req-104',
+      kind: 'skip',
+      category: 'misinformation',
+      requestedBy: 'sam',
+      requestedAt: '2026-09-29T09:15:00Z',
+      source: 'chat',
+      reason: 'Seeds not ready yet.',
+      estimatedCostUsd: 0,
+    },
+    {
+      id: 'req-105',
+      kind: 'focus',
+      category: 'prompt_injection',
+      requestedBy: 'dana',
+      requestedAt: '2026-09-29T09:40:00Z',
+      source: 'ui',
+      estimatedCostUsd: 18,
+    },
+  ],
+}
+
+export const morningReports: MorningReport[] = [
+  {
+    runId: 'run-2026-09-28',
+    targetVersion: TARGET_VERSION,
+    generatedAt: '2026-09-28T09:50:00Z',
+    headline: 'Two new findings on 1.4.0 and one regression in cross-patient access.',
+    attempts: 1184,
+    verdicts: { success: 19, partial: 41, fail: 1124 },
+    spendUsd: 46.2,
+    newTickets: ['AF-2026-0002', 'AF-2026-0007'],
+    regressions: ['AF-2026-0004'],
+    verifiedFixes: ['AF-2026-0006'],
+    queue: { ran: 4, cut: 1 },
+    notes: [
+      'Indirect injection through clinician notes produced most partial successes.',
+      'Misinformation seeds are not ready; the category was skipped.',
+    ],
+  },
+  {
+    runId: 'run-2026-09-27',
+    targetVersion: 'copilot@1.3.2',
+    generatedAt: '2026-09-27T09:25:00Z',
+    headline: 'Three new findings; no regressions.',
+    attempts: 968,
+    verdicts: { success: 12, partial: 30, fail: 926 },
+    spendUsd: 38.75,
+    newTickets: ['AF-2026-0001', 'AF-2026-0003', 'AF-2026-0008'],
+    regressions: [],
+    verifiedFixes: [],
+    queue: { ran: 3, cut: 0 },
+    notes: ['Tool misuse coverage is still thin; consider a focus night.'],
+  },
+]

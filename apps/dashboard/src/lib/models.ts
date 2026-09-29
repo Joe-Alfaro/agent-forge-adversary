@@ -1,4 +1,4 @@
-import type { VerdictOutcome } from '@agentforge/contracts'
+import type { RerunSource, VerdictOutcome } from '@agentforge/contracts'
 
 /**
  * Read models for the v1 dashboard panels. Each mirrors a table or view in
@@ -23,7 +23,7 @@ export interface RunSummary {
   newTickets: number
   regressions: number
   spendUsd: number
-  reportUrl?: string
+  hasMorningReport: boolean
   traceUrl?: string
 }
 
@@ -63,4 +63,49 @@ export interface CostSummary {
   byRole: RoleSpend[]
   byRun: RunSpend[]
   projectedMonthlyUsd: number
+}
+
+export type QueueItemKind = 'rerun' | 'focus' | 'skip' | 'note'
+
+/** One `operator_requests` row queued for the next run. */
+export interface QueueItem {
+  id: string
+  kind: QueueItemKind
+  exploitId?: string
+  category?: string
+  requestedBy: string
+  requestedAt: string
+  source: RerunSource
+  reason?: string
+  estimatedCostUsd: number
+}
+
+/** Tonight's queue in the order the Orchestrator will take it. */
+export interface TonightQueue {
+  runDate: string
+  envelopeUsd: number
+  items: QueueItem[]
+}
+
+export interface PlannedQueueItem extends QueueItem {
+  position: number
+  cumulativeUsd: number
+  /** True when the item falls outside tonight's budget envelope and will be cut. */
+  cut: boolean
+}
+
+/** The Documentation Agent's summary of one finished run. */
+export interface MorningReport {
+  runId: string
+  targetVersion: string
+  generatedAt: string
+  headline: string
+  attempts: number
+  verdicts: Record<VerdictOutcome, number>
+  spendUsd: number
+  newTickets: string[]
+  regressions: string[]
+  verifiedFixes: string[]
+  queue: { ran: number; cut: number }
+  notes: string[]
 }
