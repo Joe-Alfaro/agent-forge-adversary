@@ -157,12 +157,14 @@ Reported on the dashboard, deliberately not headlined.
 ## Measured so far
 
 Before the first nightly run the only measured coverage is the seed suite in
-`evals/`: **7 categories, 22 seed cases**, spanning **OWASP LLM Top 10** LLM01,
-LLM02, LLM05, LLM06, LLM07, LLM09, LLM10 and **OWASP Top 10** A01, A03, A04, A05,
-A07, keyed to `AttackTaxonomy v1` (loader-enforced). `misinformation` is a
-seventh, non-PRD category; its two HIGH cells are **not** counted toward M5, which
-measures the six PRD categories' HIGH cells only. All runtime metrics (M1–M6)
-await a live campaign.
+`evals/`: the **6 PRD categories, 17 taxonomy cells, 22 seed cases**, spanning
+**OWASP LLM Top 10** LLM01, LLM02, LLM05, LLM06, LLM07, LLM09, LLM10 and **OWASP
+Top 10** A01, A03, A04, A05, A07, keyed to `AttackTaxonomy v1` (loader-enforced).
+Clinical misinformation is not a PRD category; its cases are folded into the
+closest cells (`prompt_injection`/`direct`, `state_corruption`/`context_poisoning`)
+and kept discoverable via a `misinformation` technique tag. **M5's denominator is
+the 7 HIGH cells** across the six categories. All runtime metrics (M1–M6) await a
+live campaign.
 
 ---
 
