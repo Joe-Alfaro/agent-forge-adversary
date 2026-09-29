@@ -175,7 +175,7 @@ export const coverage: CoverageMatrix = {
   cells: [
     { category: 'prompt_injection', subcategory: 'direct', owaspIds: ['LLM01'], attempts: 420, confirmed: 3, lastRunAt: '2026-09-28T09:10:00Z' },
     { category: 'prompt_injection', subcategory: 'indirect', owaspIds: ['LLM01'], attempts: 188, confirmed: 2, lastRunAt: '2026-09-28T08:55:00Z' },
-    { category: 'prompt_injection', subcategory: 'multi-turn', owaspIds: ['LLM01'], attempts: 64, confirmed: 0, lastRunAt: '2026-09-27T08:30:00Z' },
+    { category: 'prompt_injection', subcategory: 'multi_turn', owaspIds: ['LLM01'], attempts: 64, confirmed: 0, lastRunAt: '2026-09-27T08:30:00Z' },
     { category: 'data_exfiltration', subcategory: 'phi_leakage', owaspIds: ['LLM02'], attempts: 96, confirmed: 1, lastRunAt: '2026-09-28T08:12:00Z' },
     { category: 'data_exfiltration', subcategory: 'cross_patient', owaspIds: ['LLM02', 'A01'], attempts: 132, confirmed: 2, lastRunAt: '2026-09-28T07:44:00Z' },
     { category: 'data_exfiltration', subcategory: 'authorization_bypass', owaspIds: ['A01'], attempts: 41, confirmed: 0, lastRunAt: '2026-09-27T08:40:00Z' },
