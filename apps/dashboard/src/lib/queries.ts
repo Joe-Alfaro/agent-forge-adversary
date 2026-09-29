@@ -3,12 +3,19 @@ import { queryOptions, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import {
   fetchCost,
   fetchCoverage,
+  fetchDataSourceMode,
   fetchMorningReport,
   fetchQueue,
   fetchRuns,
   fetchTicket,
   fetchTickets,
 } from './data-source.js'
+
+export const dataSourceModeQuery = queryOptions({
+  queryKey: ['data-source-mode'],
+  queryFn: fetchDataSourceMode,
+  staleTime: Number.POSITIVE_INFINITY,
+})
 
 // Detail keys nest under their list key so invalidating ['tickets'] refreshes both.
 export const ticketsQuery = queryOptions({

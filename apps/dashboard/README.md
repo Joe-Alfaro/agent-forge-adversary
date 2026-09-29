@@ -16,32 +16,66 @@ resilience trend, cost, Judge health, approvals, and the Orchestrator chat.
 ## Running
 
 ```bash
-npm ci                              # from the repo root
-npm run dev -w apps/dashboard       # http://127.0.0.1:3100
-npm test -w apps/dashboard          # component tests (jsdom + Testing Library)
+npm ci                                                  # from the repo root
+DATABASE_URL=postgres://... npm run dev -w apps/dashboard   # live data, http://127.0.0.1:3100
+npm run dev:fixtures -w apps/dashboard                  # demo data, no database needed
+npm test -w apps/dashboard                              # unit + component tests
 npm run typecheck -w apps/dashboard
 ```
 
+| Variable | Meaning |
+|----------|---------|
+| `DASHBOARD_DATA_SOURCE` | `postgres` (default) or `fixtures`. There is no silent fallback: Postgres mode without `DATABASE_URL` fails at the first request. Fixture mode shows a "Demo data" badge in the sidebar. |
+| `DATABASE_URL` | Platform Postgres, migrated with `npm run migrate up` from the repo root. |
+| `NIGHTLY_BUDGET_USD` | Tonight's budget envelope for the queue view (default 25). |
+| `NIGHTLY_CRON`, `NIGHTLY_TIMEZONE` | Used to work out tonight's run date for `requested_for` (defaults `0 1 * * *`, `America/Chicago`). |
+
 ## Data access
 
-**v1 and v2 run on synthetic fixtures.** `src/lib/fixtures.ts` holds typed
-in-memory data and `src/lib/data-source.ts` is the only module that reads or
-writes it. Components use the TanStack Query hooks in `src/lib/queries.ts` and
-`src/lib/mutations.ts`; route loaders prime the same queries. Moving to live
-data means replacing the bodies in `data-source.ts` with server function calls;
-nothing else changes.
+Components use TanStack Query hooks (`src/lib/queries.ts`, `src/lib/mutations.ts`)
+over `src/lib/data-source.ts`, which calls TanStack Start server functions
+(`src/lib/server-fns.ts`). On the server, `src/server/runtime.ts` picks a
+`DashboardRepository`:
 
-Fixture writes (status changes, re-checks, queue edits) live only in the current
-browser tab's memory and reset on a full page reload. "Re-check tonight" builds
-a real `RerunRequest v1`; a unit test validates it against the contract schema.
-The contract validators use `node:module`, so they cannot run in the browser;
-the future server function should validate on receipt.
+- `src/server/pg-repository.ts` reads and writes the platform tables
+  (ARCHITECTURE.md Section 14.3). Status and assignee changes update `exploits`;
+  "Re-check tonight" validates the `RerunRequest v1` and inserts it into
+  `operator_requests`; removing a queued request sets its status to `cancelled`.
+- `src/server/fixture-repository.ts` serves the synthetic data in
+  `src/lib/fixtures.ts`, in memory until the server restarts.
 
-Target design:
+Both run the same contract suite (`src/server/__tests__/repository-contract.ts`).
+The Postgres run needs a disposable, migrated database and truncates every
+platform table, so never point it at a shared one:
 
-Server functions (TanStack Start) query the platform Postgres through the shared
-`@agentforge/db` package. There is no separate REST API; TanStack Query handles
-client fetching and cache invalidation after operator actions.
+```bash
+DASHBOARD_TEST_DATABASE_URL=postgres://af:af@127.0.0.1:54339/af_dashboard_test npm test -w apps/dashboard
+```
+
+How the read models are derived:
+
+- **Ticket confidence** is the strongest successful verdict in the exploit's
+  family (`family_ids` plus matching fingerprint). **Last verdict** and **last
+  verified version** come from the family's most recent verdict.
+- **Run history** counts attempts and the latest verdict per attempt through
+  `campaigns.nightly_run_id`. New tickets, regressions, the trace link, and the
+  **morning report** come from `nightly_runs.summary` (shape below); without a
+  summary, new tickets are exploits created during the run.
+- **Coverage** is computed live for the newest target version from `attempts`
+  and `exploits` until `coverage_snapshots` exists. The category × subcategory
+  list is never hard-coded: live cells come from the data, and every cell in the
+  eval suite (`evals/seeds/*.json`, or `EVALS_SEEDS_DIR`) that has no attempts
+  yet is added as untested, so taxonomy changes flow through without edits.
+- **Cost** is `nightly_runs.spend_usd` per run and `agent_events.cost_usd` per
+  agent over 30 days; `agent = 'target'` is the Co-Pilot's own spend.
+
+Proposed `nightly_runs.summary` shape (unknown or missing keys are tolerated):
+`{ headline, target_version, new_tickets[], regressions[], verified_fixes[], queue: { ran, cut }, notes[], trace_url, generated_at }`.
+
+Pending schema (requested from the packages/db owner): queue reordering needs
+`operator_requests.position integer`. Until it exists the queue is ordered by
+request time and "move" returns an explanatory error; once the column is added
+the dashboard uses it without a code change.
 
 ## Conventions
 

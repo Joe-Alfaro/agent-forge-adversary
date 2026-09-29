@@ -8,6 +8,16 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 3100,
   },
+  // Pre-bundle what the client entry discovers late, so the first page load after a
+  // dev-server start does not fail and force a reload.
+  optimizeDeps: {
+    include: [
+      '@tanstack/router-core',
+      '@tanstack/router-core/isServer',
+      '@tanstack/router-core/ssr/client',
+      'seroval',
+    ],
+  },
   // Start's plugin must run before the React plugin so route files are transformed first.
   plugins: [tanstackStart(), viteReact()],
 })

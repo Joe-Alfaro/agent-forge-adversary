@@ -1,4 +1,4 @@
-import type { CostSummary, CoverageMatrix, MorningReport, RunSummary, TonightQueue } from './models.js'
+import type { CostSummary, CoverageMatrix, MorningReport, QueueItem, RunSummary } from './models.js'
 import type { TicketRow } from './tickets.js'
 
 /*
@@ -198,60 +198,56 @@ export const cost: CostSummary = {
   projectedMonthlyUsd: 1240,
 }
 
-export const queue: TonightQueue = {
-  runDate: '2026-09-29',
-  envelopeUsd: 40,
-  items: [
-    {
-      id: 'req-101',
-      kind: 'rerun',
-      exploitId: 'AF-2026-0004',
-      requestedBy: 'dana',
-      requestedAt: '2026-09-29T08:12:00Z',
-      source: 'ui',
-      reason: 'Regressed on 1.4.0; confirm before the hotfix review.',
-      estimatedCostUsd: 0.6,
-    },
-    {
-      id: 'req-102',
-      kind: 'focus',
-      category: 'data_exfiltration',
-      requestedBy: 'dana',
-      requestedAt: '2026-09-29T08:20:00Z',
-      source: 'chat',
-      reason: 'Spend most of tonight on exfiltration.',
-      estimatedCostUsd: 22,
-    },
-    {
-      id: 'req-103',
-      kind: 'rerun',
-      exploitId: 'AF-2026-0001',
-      requestedBy: 'sam',
-      requestedAt: '2026-09-29T09:02:00Z',
-      source: 'ui',
-      estimatedCostUsd: 0.9,
-    },
-    {
-      id: 'req-104',
-      kind: 'skip',
-      category: 'misinformation',
-      requestedBy: 'sam',
-      requestedAt: '2026-09-29T09:15:00Z',
-      source: 'chat',
-      reason: 'Seeds not ready yet.',
-      estimatedCostUsd: 0,
-    },
-    {
-      id: 'req-105',
-      kind: 'focus',
-      category: 'prompt_injection',
-      requestedBy: 'dana',
-      requestedAt: '2026-09-29T09:40:00Z',
-      source: 'ui',
-      estimatedCostUsd: 18,
-    },
-  ],
-}
+export const queueItems: QueueItem[] = [
+  {
+    id: 'req-101',
+    kind: 'rerun',
+    exploitId: 'AF-2026-0004',
+    requestedBy: 'dana',
+    requestedAt: '2026-09-29T08:12:00Z',
+    source: 'ui',
+    reason: 'Regressed on 1.4.0; confirm before the hotfix review.',
+    estimatedCostUsd: 0.6,
+  },
+  {
+    id: 'req-102',
+    kind: 'focus',
+    category: 'data_exfiltration',
+    requestedBy: 'dana',
+    requestedAt: '2026-09-29T08:20:00Z',
+    source: 'chat',
+    reason: 'Spend most of tonight on exfiltration.',
+    estimatedCostUsd: 22,
+  },
+  {
+    id: 'req-103',
+    kind: 'rerun',
+    exploitId: 'AF-2026-0001',
+    requestedBy: 'sam',
+    requestedAt: '2026-09-29T09:02:00Z',
+    source: 'ui',
+    estimatedCostUsd: 0.9,
+  },
+  {
+    id: 'req-104',
+    kind: 'skip',
+    category: 'misinformation',
+    requestedBy: 'sam',
+    requestedAt: '2026-09-29T09:15:00Z',
+    source: 'chat',
+    reason: 'Seeds not ready yet.',
+    estimatedCostUsd: 0,
+  },
+  {
+    id: 'req-105',
+    kind: 'focus',
+    category: 'prompt_injection',
+    requestedBy: 'dana',
+    requestedAt: '2026-09-29T09:40:00Z',
+    source: 'ui',
+    estimatedCostUsd: 18,
+  },
+]
 
 export const morningReports: MorningReport[] = [
   {

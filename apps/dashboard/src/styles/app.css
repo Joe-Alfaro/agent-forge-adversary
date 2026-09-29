@@ -304,3 +304,9 @@ button:disabled {
   list-style: none;
   padding: 0;
 }
+
+.data-source-demo {
+  margin: 0 8px 16px;
+  background: #fef6e6;
+  color: var(--medium);
+}

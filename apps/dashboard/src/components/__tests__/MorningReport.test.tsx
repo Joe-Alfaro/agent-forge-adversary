@@ -1,9 +1,11 @@
 import { cleanup, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { fetchMorningReport } from '../../lib/data-source.js'
+import { fetchMorningReport } from '../../test-data-source.js'
 import { renderWithProviders } from '../../test-utils.js'
 import { MorningReportView } from '../MorningReportView.js'
+
+vi.mock('../../lib/data-source.js', () => import('../../test-data-source.js'))
 
 afterEach(cleanup)
 

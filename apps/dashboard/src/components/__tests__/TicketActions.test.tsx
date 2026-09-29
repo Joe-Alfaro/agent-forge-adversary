@@ -1,21 +1,22 @@
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { fetchTicket, resetStore } from '../../lib/data-source.js'
-import type { TicketRow } from '../../lib/tickets.js'
+import { fetchTicket, resetTestData } from '../../test-data-source.js'
 import { renderWithProviders } from '../../test-utils.js'
 import { TicketActions } from '../TicketActions.js'
+
+vi.mock('../../lib/data-source.js', () => import('../../test-data-source.js'))
 
 async function renderFor(id: string) {
   const ticket = await fetchTicket(id)
   if (!ticket) {
     throw new Error(`missing fixture ${id}`)
   }
-  renderWithProviders(<TicketActions ticket={ticket as TicketRow} />)
+  renderWithProviders(<TicketActions ticket={ticket} />)
   await screen.findByRole('form', { name: 'Update ticket' })
 }
 
-beforeEach(resetStore)
+beforeEach(resetTestData)
 afterEach(cleanup)
 
 describe('TicketActions', () => {

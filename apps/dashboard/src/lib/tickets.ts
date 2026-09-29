@@ -11,6 +11,13 @@ export type ExploitStatus =
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low'
 
+/** An operator's edit to a ticket's workflow fields. */
+export interface TicketUpdate {
+  status: ExploitStatus
+  /** A blank name clears the assignee. */
+  assignee: string
+}
+
 export interface TicketRow {
   id: string
   severity: Severity
@@ -68,4 +75,15 @@ const TRANSITIONS: Record<ExploitStatus, ExploitStatus[]> = {
 /** Statuses an operator may move a ticket to from `status`. */
 export function nextStatuses(status: ExploitStatus): ExploitStatus[] {
   return [...TRANSITIONS[status]]
+}
+
+const STATUSES = Object.keys(TRANSITIONS)
+const SEVERITIES = Object.keys(SEVERITY_ORDER)
+
+export function isExploitStatus(value: unknown): value is ExploitStatus {
+  return typeof value === 'string' && STATUSES.includes(value)
+}
+
+export function isSeverity(value: unknown): value is Severity {
+  return typeof value === 'string' && SEVERITIES.includes(value)
 }
