@@ -12,8 +12,11 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CostRouteImport } from './routes/cost'
 import { Route as CoverageRouteImport } from './routes/coverage'
-import { Route as FindingsRouteImport } from './routes/findings'
+import { Route as QueueRouteImport } from './routes/queue'
 import { Route as RunsRouteImport } from './routes/runs'
+import { Route as FindingsIndexRouteImport } from './routes/findings.index'
+import { Route as FindingsTicketIdRouteImport } from './routes/findings.$ticketId'
+import { Route as ReportsRunIdRouteImport } from './routes/reports.$runId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -30,9 +33,9 @@ const CoverageRoute = CoverageRouteImport.update({
   path: '/coverage',
   getParentRoute: () => rootRouteImport,
 } as any)
-const FindingsRoute = FindingsRouteImport.update({
-  id: '/findings',
-  path: '/findings',
+const QueueRoute = QueueRouteImport.update({
+  id: '/queue',
+  path: '/queue',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RunsRoute = RunsRouteImport.update({
@@ -40,43 +43,95 @@ const RunsRoute = RunsRouteImport.update({
   path: '/runs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FindingsIndexRoute = FindingsIndexRouteImport.update({
+  id: '/findings/',
+  path: '/findings/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FindingsTicketIdRoute = FindingsTicketIdRouteImport.update({
+  id: '/findings/$ticketId',
+  path: '/findings/$ticketId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsRunIdRoute = ReportsRunIdRouteImport.update({
+  id: '/reports/$runId',
+  path: '/reports/$runId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/cost': typeof CostRoute
   '/coverage': typeof CoverageRoute
-  '/findings': typeof FindingsRoute
+  '/queue': typeof QueueRoute
   '/runs': typeof RunsRoute
+  '/findings/$ticketId': typeof FindingsTicketIdRoute
+  '/reports/$runId': typeof ReportsRunIdRoute
+  '/findings/': typeof FindingsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/cost': typeof CostRoute
   '/coverage': typeof CoverageRoute
-  '/findings': typeof FindingsRoute
+  '/queue': typeof QueueRoute
   '/runs': typeof RunsRoute
+  '/findings/$ticketId': typeof FindingsTicketIdRoute
+  '/reports/$runId': typeof ReportsRunIdRoute
+  '/findings': typeof FindingsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/cost': typeof CostRoute
   '/coverage': typeof CoverageRoute
-  '/findings': typeof FindingsRoute
+  '/queue': typeof QueueRoute
   '/runs': typeof RunsRoute
+  '/findings/$ticketId': typeof FindingsTicketIdRoute
+  '/reports/$runId': typeof ReportsRunIdRoute
+  '/findings/': typeof FindingsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/cost' | '/coverage' | '/findings' | '/runs'
+  fullPaths:
+    | '/'
+    | '/cost'
+    | '/coverage'
+    | '/queue'
+    | '/runs'
+    | '/findings/$ticketId'
+    | '/reports/$runId'
+    | '/findings/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/cost' | '/coverage' | '/findings' | '/runs'
-  id: '__root__' | '/' | '/cost' | '/coverage' | '/findings' | '/runs'
+  to:
+    | '/'
+    | '/cost'
+    | '/coverage'
+    | '/queue'
+    | '/runs'
+    | '/findings/$ticketId'
+    | '/reports/$runId'
+    | '/findings'
+  id:
+    | '__root__'
+    | '/'
+    | '/cost'
+    | '/coverage'
+    | '/queue'
+    | '/runs'
+    | '/findings/$ticketId'
+    | '/reports/$runId'
+    | '/findings/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CostRoute: typeof CostRoute
   CoverageRoute: typeof CoverageRoute
-  FindingsRoute: typeof FindingsRoute
+  QueueRoute: typeof QueueRoute
   RunsRoute: typeof RunsRoute
+  FindingsTicketIdRoute: typeof FindingsTicketIdRoute
+  ReportsRunIdRoute: typeof ReportsRunIdRoute
+  FindingsIndexRoute: typeof FindingsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -102,11 +157,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CoverageRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/findings': {
-      id: '/findings'
-      path: '/findings'
-      fullPath: '/findings'
-      preLoaderRoute: typeof FindingsRouteImport
+    '/queue': {
+      id: '/queue'
+      path: '/queue'
+      fullPath: '/queue'
+      preLoaderRoute: typeof QueueRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/runs': {
@@ -116,6 +171,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RunsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/findings/': {
+      id: '/findings/'
+      path: '/findings'
+      fullPath: '/findings/'
+      preLoaderRoute: typeof FindingsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/findings/$ticketId': {
+      id: '/findings/$ticketId'
+      path: '/findings/$ticketId'
+      fullPath: '/findings/$ticketId'
+      preLoaderRoute: typeof FindingsTicketIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports/$runId': {
+      id: '/reports/$runId'
+      path: '/reports/$runId'
+      fullPath: '/reports/$runId'
+      preLoaderRoute: typeof ReportsRunIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -123,8 +199,11 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CostRoute: CostRoute,
   CoverageRoute: CoverageRoute,
-  FindingsRoute: FindingsRoute,
+  QueueRoute: QueueRoute,
   RunsRoute: RunsRoute,
+  FindingsTicketIdRoute: FindingsTicketIdRoute,
+  ReportsRunIdRoute: ReportsRunIdRoute,
+  FindingsIndexRoute: FindingsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

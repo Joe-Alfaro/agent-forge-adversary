@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { TicketTable } from '../components/TicketTable.js'
 import { ticketsQuery, useTickets } from '../lib/queries.js'
 
-export const Route = createFileRoute('/findings')({
+export const Route = createFileRoute('/findings/')({
   loader: ({ context }) => context.queryClient.ensureQueryData(ticketsQuery),
   component: FindingsPage,
 })
