@@ -7,12 +7,14 @@
     "build": "tsc -b",
     "start": "node dist/index.js",
     "judge:live": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/liveJudge.js",
-    "eval:live": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/liveEvalRun.js"
+    "eval:live": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/liveEvalRun.js",
+    "trace:dryrun": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/tracingDryRun.js"
   },
   "dependencies": {
     "@agentforge/contracts": "*",
     "@agentforge/db": "*",
     "@anthropic-ai/sdk": "^0.129.0",
+    "langfuse": "^3.39.2",
     "pg-boss": "^12.35.0",
     "zod": "^4.6.5"
   }

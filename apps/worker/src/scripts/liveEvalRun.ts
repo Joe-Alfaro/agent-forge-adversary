@@ -30,6 +30,7 @@ import {
 import { runDetectors, type DetectorContext } from '../detectors/index.js'
 import { AnthropicJudgeModel, judgeAttempt, rubricFor } from '../judge/index.js'
 import { loadEvalSuite, type EvalCase } from '../evals/index.js'
+import { createTracer } from '../observability/index.js'
 import { loadAgentforgeEnv } from './loadEnv.js'
 
 const ROLE_USER_IDS: Readonly<Record<string, number>> = { clinician: 1, nurse: 2 }
@@ -143,6 +144,9 @@ async function main(): Promise<void> {
   const cases = selectCases(suite, perCategory, maxCases)
   console.log(`Running ${cases.length} cases across ${new Set(cases.map((c) => c.category)).size} categories (cap $${capUsd}).`)
 
+  const tracer = createTracer(process.env, { secrets: [tokenSecret, judgeKey] })
+  const trace = tracer.startTrace({ name: `live-eval ${version}`, buildCommit, metadata: { cases: cases.length } })
+
   const sessionTokens: string[] = [probeSession.token]
   const results: unknown[] = []
   const byCategory: Record<string, { attempts: number; success: number; partial: number; fail: number; needs_review: number }> = {}
@@ -175,9 +179,31 @@ async function main(): Promise<void> {
       allowedTools: ['intake-extractor', 'evidence-retriever'],
       maxToolCalls: 3,
     }
+    trace.span({
+      name: `target:${seed.id}`,
+      input: { category: seed.category, subcategory: seed.subcategory, turns: seed.turns.map((t) => t.message) },
+      output: { http_status: transcript.turns.map((t) => t.http_status), tool_sequence: transcript.turns.flatMap((t) => t.tool_sequence ?? []), degraded: transcript.turns.map((t) => t.degraded) },
+      metadata: { attempt_id: transcript.attempt_id, transcript_message_id: transcript.message_id, target_tokens: transcript.totals },
+    })
+
     const detectorResult = runDetectors(transcript, context, clock)
+    trace.span({
+      name: `detectors:${seed.id}`,
+      input: { consumes: transcript.message_id, attempt_id: transcript.attempt_id },
+      output: { results: detectorResult.results.map((r) => ({ detector: r.detector, status: r.status })), any_fired: detectorResult.any_fired },
+      metadata: { produces: detectorResult.message_id },
+    })
+
     const verdict = await judgeAttempt({ transcript, detectorResult, category: seed.category, model: judgeModel, clock })
     judgeCalls += 1
+    trace.generation({
+      name: `judge:${seed.category}`,
+      model: judgeModel.id,
+      input: { category: seed.category, rubric_version: verdict.rubric_version, consumes: [transcript.message_id, detectorResult.message_id] },
+      output: { outcome: verdict.outcome, confidence: verdict.confidence, stage: verdict.stage, needs_review: verdict.needs_review },
+      ...(judgeModel.lastUsage === undefined ? {} : { usage: { input: judgeModel.lastUsage.input_tokens, output: judgeModel.lastUsage.output_tokens } }),
+      metadata: { produces: verdict.message_id, rubric_version: verdict.rubric_version, stage: verdict.stage },
+    })
 
     const bucket = byCategory[seed.category] ?? { attempts: 0, success: 0, partial: 0, fail: 0, needs_review: 0 }
     bucket.attempts += 1
@@ -203,11 +229,16 @@ async function main(): Promise<void> {
     console.log(`  ${seed.id} [${seed.category}/${seed.subcategory}] -> ${verdict.outcome} (conf ${verdict.confidence}${verdict.needs_review ? ', needs_review' : ''})`)
   }
 
+  const traceUrl = trace.url()
+  await tracer.flush()
+  await tracer.shutdown()
+
   const targetUsd = targetInput * TARGET_RATE.input + targetOutput * TARGET_RATE.output
   const judgeUsd = judgeCalls * JUDGE_EST_PER_CASE_USD
   const summary = {
     generated_at: new Date().toISOString(),
     target: { name: 'copilot', base_url: copilotBase, version, build_commit: buildCommit },
+    ...(traceUrl === null ? {} : { trace_url: traceUrl }),
     spend_estimate_usd: {
       target: Number(targetUsd.toFixed(4)),
       judge: Number(judgeUsd.toFixed(4)),
@@ -233,6 +264,9 @@ async function main(): Promise<void> {
     console.log(`  ${cat}: ${b.attempts} attempts, ${b.success}S/${b.partial}P/${b.fail}F, needs_review ${b.needs_review}`),
   )
   console.log(`results written to ${outPath}`)
+  if (traceUrl !== null) {
+    console.log(`trace: ${traceUrl}`)
+  }
 }
 
 function here(): string {
