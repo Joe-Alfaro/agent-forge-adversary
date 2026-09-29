@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc -b",
     "start": "node dist/index.js",
-    "judge:live": "node dist/scripts/liveJudge.js"
+    "judge:live": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/liveJudge.js"
   },
   "dependencies": {
     "@agentforge/contracts": "*",

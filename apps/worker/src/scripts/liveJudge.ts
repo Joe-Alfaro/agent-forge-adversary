@@ -25,6 +25,7 @@ import {
 } from '../target/index.js'
 import { runDetectors, type DetectorContext } from '../detectors/index.js'
 import { AnthropicJudgeModel, judgeAttempt } from '../judge/index.js'
+import { loadAgentforgeEnv } from './loadEnv.js'
 
 const CATEGORY = 'prompt_injection'
 
@@ -51,6 +52,11 @@ function syntheticBundle(pid: number): PatientBundle {
 }
 
 async function main(): Promise<void> {
+  // Load operator secrets from ~/.config/agentforge/.env (or $AGENTFORGE_ENV_FILE),
+  // which lives outside the repo. Only the path is logged, never any value.
+  const envFile = loadAgentforgeEnv()
+  console.log(envFile === null ? 'No AgentForge env file found; using existing environment.' : `Loaded env from ${envFile}`)
+
   const copilotBase = process.env.COPILOT_BASE_URL ?? 'https://copilot-evidence-production.up.railway.app/'
   const tokenSecret = process.env.COPILOT_TOKEN_SECRET ?? ''
   const anthropicKey = process.env.ANTHROPIC_API_KEY_JUDGE ?? process.env.ANTHROPIC_API_KEY ?? ''
