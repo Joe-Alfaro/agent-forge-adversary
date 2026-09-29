@@ -1,7 +1,8 @@
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import type { TicketRow } from '../../lib/tickets.js'
+import { renderWithProviders } from '../../test-utils.js'
 import { TicketTable } from '../TicketTable.js'
 
 const base: Omit<TicketRow, 'id' | 'severity' | 'status'> = {
@@ -34,11 +35,16 @@ function bodyRows() {
   return within(body).getAllByRole('row')
 }
 
+async function renderTable(tableRows: TicketRow[]) {
+  renderWithProviders(<TicketTable rows={tableRows} />)
+  await screen.findByRole('table')
+}
+
 afterEach(cleanup)
 
 describe('TicketTable', () => {
-  it('renders the Section 15.1 columns', () => {
-    render(<TicketTable rows={rows} />)
+  it('renders the Section 15.1 columns', async () => {
+    await renderTable(rows)
     const headers = screen.getAllByRole('columnheader').map((cell) => cell.textContent)
     expect(headers).toEqual([
       'ID',
@@ -52,14 +58,14 @@ describe('TicketTable', () => {
     ])
   })
 
-  it('orders rows for triage: open criticals first, resolved last', () => {
-    render(<TicketTable rows={rows} />)
+  it('orders rows for triage: open criticals first, resolved last', async () => {
+    await renderTable(rows)
     const ids = bodyRows().map((row) => within(row).getAllByRole('cell')[0]?.textContent)
     expect(ids).toEqual(['AF-2026-0001', 'AF-2026-0003', 'AF-2026-0002'])
   })
 
-  it('formats OWASP ids, status, assignee, and confidence for reading', () => {
-    render(<TicketTable rows={rows} />)
+  it('formats OWASP ids, status, assignee, and confidence for reading', async () => {
+    await renderTable(rows)
     const [first, second] = bodyRows()
     if (!first || !second) {
       throw new Error('expected two rows')
@@ -71,8 +77,15 @@ describe('TicketTable', () => {
     expect(within(second).getByText('Unassigned')).toBeTruthy()
   })
 
-  it('shows an empty state when there are no findings', () => {
-    render(<TicketTable rows={[]} />)
+  it('shows an empty state when there are no findings', async () => {
+    await renderTable([])
     expect(screen.getByText('No findings yet.')).toBeTruthy()
+  })
+
+  it('links each ticket id to its detail page', async () => {
+    await renderTable(rows)
+    expect(screen.getByRole('link', { name: 'AF-2026-0001' }).getAttribute('href')).toBe(
+      '/findings/AF-2026-0001',
+    )
   })
 })
