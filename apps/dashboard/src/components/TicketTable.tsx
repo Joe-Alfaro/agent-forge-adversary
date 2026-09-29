@@ -4,11 +4,12 @@ import { useMemo } from 'react'
 import { formatPercent, humanize } from '../lib/format.js'
 import { sortForTriage, type TicketRow } from '../lib/tickets.js'
 import { DataTable } from './DataTable.js'
+import { TicketLink } from './TicketLink.js'
 
 const column = createColumnHelper<TicketRow>()
 
 const columns = [
-  column.accessor('id', { header: 'ID' }),
+  column.accessor('id', { header: 'ID', cell: (info) => <TicketLink id={info.getValue()} /> }),
   column.accessor('severity', {
     header: 'Severity',
     cell: (info) => <span className={`badge severity-${info.getValue()}`}>{info.getValue()}</span>,

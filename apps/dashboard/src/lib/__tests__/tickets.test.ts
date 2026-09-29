@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { sortForTriage, canRecheckTonight, type TicketRow } from '../tickets.js'
+import {
+  canRecheckTonight,
+  type ExploitStatus,
+  nextStatuses,
+  sortForTriage,
+  type TicketRow,
+} from '../tickets.js'
 
 const base: Omit<TicketRow, 'id' | 'severity' | 'status'> = {
   category: 'prompt_injection',
@@ -30,5 +36,36 @@ describe('canRecheckTonight', () => {
   it('blocks re-checking closed tickets', () => {
     expect(canRecheckTonight('verified')).toBe(false)
     expect(canRecheckTonight('accepted_risk')).toBe(false)
+  })
+})
+
+describe('nextStatuses', () => {
+  it('follows the open → in_progress → fixed → verified workflow', () => {
+    expect(nextStatuses('open')).toContain('in_progress')
+    expect(nextStatuses('in_progress')).toContain('fixed')
+    expect(nextStatuses('fixed')).toContain('verified')
+  })
+
+  it('lets a verified ticket regress and a regressed ticket be picked up again', () => {
+    expect(nextStatuses('verified')).toEqual(['regressed'])
+    expect(nextStatuses('regressed')).toContain('in_progress')
+  })
+
+  it('reopens tickets that were dismissed', () => {
+    expect(nextStatuses('false_positive')).toEqual(['open'])
+    expect(nextStatuses('accepted_risk')).toEqual(['open'])
+  })
+
+  it('never offers the current status as a transition', () => {
+    const all: ExploitStatus[] = [
+      'open',
+      'in_progress',
+      'fixed',
+      'verified',
+      'false_positive',
+      'accepted_risk',
+      'regressed',
+    ]
+    all.forEach((status) => expect(nextStatuses(status)).not.toContain(status))
   })
 })
