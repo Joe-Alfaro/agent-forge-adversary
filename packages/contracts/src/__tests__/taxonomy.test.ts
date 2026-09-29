@@ -16,16 +16,17 @@ const taxonomyJson = require('../../../../contracts/attack_taxonomy/v1.json') as
 }
 
 describe('AttackTaxonomy', () => {
-  it('has the six PRD categories and 17 cells', () => {
+  it('has the six PRD categories plus misinformation, and 19 cells', () => {
     expect(ATTACK_CATEGORIES).toEqual([
       'prompt_injection',
       'data_exfiltration',
       'state_corruption',
       'tool_misuse',
       'denial_of_service',
-      'identity_role',
+      'identity_role_exploitation',
+      'misinformation',
     ])
-    expect(listTaxonomyCells()).toHaveLength(17)
+    expect(listTaxonomyCells()).toHaveLength(19)
   })
 
   it('keeps the TypeScript const and the JSON contract in sync', () => {
@@ -37,10 +38,11 @@ describe('AttackTaxonomy', () => {
 
   it('recognises valid cells and rejects unknown ones', () => {
     expect(isTaxonomyCell('prompt_injection', 'multi_turn')).toBe(true)
-    expect(isTaxonomyCell('identity_role', 'persona_hijacking')).toBe(true)
+    expect(isTaxonomyCell('identity_role_exploitation', 'persona_hijacking')).toBe(true)
+    expect(isTaxonomyCell('misinformation', 'unsupported_claim')).toBe(true)
     expect(isTaxonomyCell('prompt_injection', 'role_override')).toBe(false)
-    expect(isTaxonomyCell('misinformation', 'unsupported_claim')).toBe(false)
-    expect(isAttackCategory('identity_role_exploitation')).toBe(false)
+    expect(isTaxonomyCell('identity_role', 'persona_hijacking')).toBe(false)
+    expect(isAttackCategory('sql_injection')).toBe(false)
   })
 
   it('validateTaxonomyCell returns structured results', () => {

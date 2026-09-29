@@ -70,10 +70,10 @@ describe('seed eval suite', () => {
 describe('loader rejects off-taxonomy cells', () => {
   it('rejects a category that is not in the taxonomy', () => {
     const base = suite[0]!
-    expect(() => validateEvalCase({ ...base, category: 'misinformation' }, 'test')).toThrow(/AttackTaxonomy/)
+    expect(() => validateEvalCase({ ...base, category: 'sql_injection' }, 'test')).toThrow(/AttackTaxonomy/)
   })
 
-  it('rejects a subcategory that is not in the taxonomy', () => {
+  it('rejects a subcategory that is not in its category', () => {
     const base = suite[0]!
     expect(() => validateEvalCase({ ...base, subcategory: 'role_override' }, 'test')).toThrow(/AttackTaxonomy/)
   })
