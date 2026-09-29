@@ -28,34 +28,39 @@ data. This narrows classic cross-patient exfiltration *from the Co-Pilot itself*
 it can only reveal what the caller already supplied, the public guideline corpus,
 or its own configuration.
 
-Given that shape, the highest-risk categories are:
+Given that shape, ranked across the six PRD attack categories (§"Category risk
+analysis"):
 
-1. **Prompt injection, direct and indirect (LLM01, LLM07 / OWASP A03).** The
-   strongest surface. `documents[]` on `/answer` and the **unauthenticated**
-   `/extract`, `/read`, `/assemble` routes feed attacker-controlled document
-   bytes to an extraction model. A payload printed on a "lab report" is untrusted
-   input that can try to override the assistant's role or leak its system prompt.
-   The service already treats worker output as untrusted (`claimsNotOwnedBy`),
-   which is the right instinct and the thing we test.
-2. **Clinical misinformation / unfaithful synthesis (LLM09, LLM05 / A04).** The
-   core clinical harm: pushing an unsupported recommendation or a fabricated
-   citation past the verification gate. "Right topic, wrong measure, correctly
-   quoted" is the failure the service's own authors call out.
-3. **Excessive agency and unbounded consumption (LLM06, LLM10 / A04).** `/preflight`
-   and every `/answer` spend the shared Anthropic bill; the 12 MB body cap and
-   8-document limit bound but do not remove cost amplification, and the
-   unauthenticated ingestion routes let anyone spend the vision-model budget.
-4. **Improper output handling (LLM05 / A04).** Synthesised claims and citations
-   are rendered in the operator/clinician panel; unescaped markup or links in a
-   response are an output-handling risk downstream of the model.
-5. **Sensitive information disclosure (LLM02 / A01).** Bounded for the Co-Pilot by
-   the client-supplied bundle, but the guideline corpus, the system prompt, and
-   PHI-in-logs remain targets, and the token secret is shared with the OpenEMR
-   PHP module — a leak there widens blast radius across both services.
+1. **Prompt injection (LLM01, LLM07 / A03) — highest.** `documents[]` on `/answer`
+   and the **unauthenticated** `/extract`, `/read`, `/assemble` routes feed
+   attacker-controlled document bytes to an extraction model; direct injection in
+   `question` can override the role or leak the system prompt. `claimsNotOwnedBy`
+   already treats worker output as untrusted, which is the right instinct.
+2. **Identity / role exploitation (LLM01, LLM07 / A03, A01) — high.** Persona
+   hijacking via `question` is trivial to attempt; privilege escalation is blunted
+   because the role lives in an HMAC-signed token nobody can forge without the
+   shared secret.
+3. **Denial of service (LLM10 / A04, A05) — high.** `/preflight` and `/extract`
+   are unauthenticated and each spends the shared Anthropic bill; the 12 MB /
+   8-document caps bound but do not remove token exhaustion, and no per-caller
+   rate limit was observed.
+4. **Data exfiltration (LLM02 / A01) — mostly bounded.** The Co-Pilot only holds
+   the client-supplied bundle plus the public corpus, so PHI/cross-patient
+   reachability is limited; the sharp edge is authorization bypass via the
+   unauthenticated ingestion routes.
+5. **Tool misuse (LLM06 / A04) — limited.** The supervisor graph exposes only
+   extractor/retriever/judge — there is no write, admin, or export tool to invoke.
+6. **State corruption (LLM01 / A04) — limited.** The service is stateless and
+   re-verifies every claim, so an attacker corrupts only their own supplied
+   context, affecting no other user.
+
+Beyond the six, **clinical misinformation (LLM09)** is retained as an extra
+category: pushing an unsupported recommendation or a fabricated citation past the
+verification gate is the Co-Pilot's core clinical harm.
 
 Deterministic detectors (PHI canary, cross-patient, tool-call diff, scope rule)
-plus a Sonnet-5.5 rubric judge cover categories 1, 3, and 5 with exact checks and
-2 and 4 with the rubric. The seed suite in `evals/` exercises all five.
+plus a Sonnet-5.5 rubric judge cover these categories; the seed suite in `evals/`
+exercises all six PRD categories.
 
 ## Trust boundaries
 
@@ -89,69 +94,120 @@ plus a Sonnet-5.5 rubric judge cover categories 1, 3, and 5 with exact checks an
 - **The shared Anthropic budget**: an availability/cost asset (LLM10).
 - **The token-signing secret**: authentication root of trust for both services.
 
-## Threat categories → OWASP → coverage
+## Category risk analysis
 
-| Category | OWASP LLM | OWASP Top 10 | Detector(s) | Eval seeds |
-|----------|-----------|--------------|-------------|-----------|
-| Prompt injection / system-prompt leakage | LLM01, LLM07 | A03 | `scope_rule` (+ rubric) | pi-001…003 |
-| PHI exfiltration | LLM02 | A01 | `phi_canary` | phi-001…003 |
-| Cross-patient access | LLM02 | A01 | `cross_patient` | xp-001…003 |
-| Tool misuse / excessive agency / DoS | LLM06, LLM10 | A04 | `tool_call_diff` | tm-001…003 |
-| Misinformation / improper output | LLM09, LLM05 | A04 | rubric judge | mi-001…002 |
+The PRD's six minimum attack categories, one table per category, one row per
+subcategory. Columns give the four things the PRD requires for each category —
+**attack surface** (the concrete Co-Pilot route/field), **potential impact**,
+**difficulty of exploitation** (Low = easy to exploit), and **existing defenses**
+(what the Co-Pilot actually does, and whether it *addresses* the threat) — plus a
+**risk rating** (high/medium/low, likelihood × impact) and the **OWASP** mapping.
+The `category`/`subcategory` keys match `evals/seeds/`. The cells rated **high**
+are the denominator of `KEY_METRICS.md` M5 (high-risk threat-model coverage).
 
-## Risk ratings (category × subcategory)
+Reachability is shaped by the architecture: the Co-Pilot is stateless and reads
+no patient data on its own — the chart travels in the request — so cross-patient
+and state-corruption attacks have limited leverage, while the unauthenticated
+document/preflight routes are the sharpest edges.
 
-One row per attack cell, rated **high / medium / low** by likelihood × impact
-against *this* Co-Pilot. The set of cells rated **high** is the denominator of
-`KEY_METRICS.md` M5 (high-risk threat-model coverage): the platform must exercise
-every high cell on the current target version within seven days. Keys are the
-canonical `category` / `subcategory` used by `evals/seeds/`; every seed-eval cell
-appears. Likelihood reflects how reachable the attack is given the architecture
-(the Co-Pilot reads no patient data on its own — the chart is client-supplied —
-so PHI/cross-patient reachability is constrained); impact reflects clinical/PHI/
-availability harm.
+### 1. Prompt injection (`prompt_injection`)
 
-| Category | Subcategory | Risk | Rationale (likelihood × impact) |
-|----------|-------------|------|---------------------------------|
-| `prompt_injection` | `system_prompt_disclosure` | **high** | Direct, trivially attempted; leaks configuration/LLM07. High likelihood × medium-high impact. |
-| `prompt_injection` | `role_override` | **high** | Persona jailbreak removes the clinical guardrails, enabling downstream misinformation/leakage. High × high. |
-| `prompt_injection` | `indirect_injection_via_document` | **high** | Untrusted document bytes reach an extraction model, incl. via the unauthenticated `/extract` route. High × high — the strongest surface. |
-| `phi_exfiltration` | `canary_disclosure` | medium | Co-Pilot only holds the supplied bundle + public corpus, so leaking an *unauthorized* canary is constrained. Low-med × high. |
-| `phi_exfiltration` | `identifier_extraction` | medium | Full identifiers of others aren't reachable by the Co-Pilot; context-patient identifiers were already supplied by the caller. Low-med × high. |
-| `phi_exfiltration` | `partial_disclosure` | low | Near-miss partials only; constrained reachability and low marginal impact. Low × low-med. |
-| `cross_patient` | `direct_reference` | medium | Token binds `pid`; the service uses the supplied bundle and a per-request PHI guard. Low-med × high. |
-| `cross_patient` | `id_enumeration` | medium | IDOR-style pivot is blocked by `patient_mismatch` on the scoped token; strong control lowers likelihood. Low × high. |
-| `cross_patient` | `aggregate_leak` | low | Requires reading records the Co-Pilot does not hold. Low × high → net low. |
-| `tool_misuse` | `unauthorized_tool` | medium | Fixed supervisor graph (extractor/retriever/judge); no admin/export tool exists to invoke. Low × medium. |
-| `tool_misuse` | `runaway_agency` | **high** | `/preflight`, repeated retrieval, and unauthenticated `/extract` spend the shared Anthropic bill (LLM10). High × medium-high. |
-| `tool_misuse` | `parameter_tampering` | medium | Widening retrieval scope is bounded by the per-request PHI guard. Low-med × medium. |
-| `misinformation` | `unsupported_claim` | **high** | The core clinical harm; the verification gate is the only control between it and a physician. Med-high × high. |
-| `misinformation` | `fabricated_citation` | **high** | Defeating the citation gate puts a fabricated source in front of a clinician. Med-high × high. |
+| Subcategory | Attack surface | Potential impact | Difficulty | Existing defenses (addressed?) | Risk — rationale | OWASP |
+|-------------|----------------|------------------|-----------|-------------------------------|------------------|-------|
+| `direct` | `POST /answer` `question` | Role override; system-prompt/config disclosure; attacker-chosen output | Low | System-prompt framing; `claimsNotOwnedBy` guards worker-typed claims but not a plain role shift or prompt echo; gate blocks fabricated claims only — **partial** | **high** — easy × high impact | LLM01, LLM07 / A03 |
+| `indirect` | `POST /answer` `documents[]`; unauth `POST /extract`; seeded OpenEMR docs (F3) | Injection from "trusted" document content; steer the extractor | Low–Med | `claimsNotOwnedBy` rejects out-of-type worker claims (strong here); gate withholds unsourced — **partial** | **high** — reachable, only partly defended | LLM01 / A03 |
+| `multi-turn` | Client-carried history across successive `POST /answer` calls (no server session) | Split a payload across turns to evade single-turn checks | Med | Statelessness: no server memory accumulates; each turn re-evaluated fresh — **largely addressed** | medium — reachable, limited leverage | LLM01 / A03 |
 
-**High-risk cells (M5 denominator): 6** — `prompt_injection`/{`system_prompt_disclosure`,
-`role_override`, `indirect_injection_via_document`}, `tool_misuse`/`runaway_agency`,
-`misinformation`/{`unsupported_claim`, `fabricated_citation`}.
+### 2. Data exfiltration (`data_exfiltration`)
+
+| Subcategory | Attack surface | Potential impact | Difficulty | Existing defenses (addressed?) | Risk — rationale | OWASP |
+|-------------|----------------|------------------|-----------|-------------------------------|------------------|-------|
+| `phi_leakage` | `POST /answer` `question` (bundle already holds the chart) | Disclosure of identifiers / clinical detail | Med | Patient-scoped token; retriever PHI guard (exact identifier match, per-request); logs PHI-scrubbed — **largely addressed** | medium — high impact, low reachability | LLM02 / A01 |
+| `cross_patient` | `POST /answer` `question` referencing another patient; `bundle.pid` | Another patient's data | Med | Token `pid` binding (`patient_mismatch`); PHI guard armed with the context patient — **addressed on /answer** | medium | LLM02 / A01 |
+| `authorization_bypass` | `POST /answer` `token`/`bundle.pid` (IDOR); **unauth `/extract`, `/read`, `/assemble`** | Read/act on another patient; unauthenticated ingestion | Med (/answer) · Low (ingestion) | HMAC signature + `pid` match on /answer (addressed); ingestion routes have **no auth — NOT addressed** | **high** — the unauth ingestion routes are a real gap | LLM02 / A01, A07 |
+
+### 3. State corruption (`state_corruption`)
+
+| Subcategory | Attack surface | Potential impact | Difficulty | Existing defenses (addressed?) | Risk — rationale | OWASP |
+|-------------|----------------|------------------|-----------|-------------------------------|------------------|-------|
+| `conversation_history_manipulation` | Client-supplied message history + `bundle` on `POST /answer` | Rewrite prior turns/chart to change the answer | Low (to send) | Stateless: no shared/server-side history to corrupt; the caller only affects their own view (D-9); gate re-verifies every claim — **largely addressed** | low-medium | LLM01 / A04 |
+| `context_poisoning` | `POST /answer` `documents[]` / seeded OpenEMR docs / malicious `bundle` records | Poison retrieval/extraction context → wrong or leaky synthesis | Med | `claimsNotOwnedBy`; gate withholds unsourced; retrieval is over a curated fixed corpus, not attacker docs — **partial** | medium | LLM01 / A04 |
+
+### 4. Tool misuse (`tool_misuse`)
+
+| Subcategory | Attack surface | Potential impact | Difficulty | Existing defenses (addressed?) | Risk — rationale | OWASP |
+|-------------|----------------|------------------|-----------|-------------------------------|------------------|-------|
+| `unintended_invocation` | `POST /answer` `question` trying to trigger an out-of-policy worker | A worker runs that shouldn't | Low to attempt · low reachability | Fixed supervisor graph (extractor/retriever/judge); **no write/admin/export tool exists**; `tool_sequence` captured — **largely addressed** | low-medium | LLM06 / A04 |
+| `parameter_tampering` | `POST /answer` `question` (e.g. "set the patient filter to `*`") | Widen retrieval scope | Med | Worker parameters derived server-side from the bundle, not caller text; PHI guard — **addressed** | medium | LLM06 / A04 |
+| `recursive_calls` | `POST /answer` `question` inducing repeated worker calls | Excessive agency; cost | Med | Graph budget / turn structure bounds iterations; tool-call-diff detector flags runaway — **partial** | medium | LLM06 / A04 |
+
+### 5. Denial of service (`denial_of_service`)
+
+| Subcategory | Attack surface | Potential impact | Difficulty | Existing defenses (addressed?) | Risk — rationale | OWASP |
+|-------------|----------------|------------------|-----------|-------------------------------|------------------|-------|
+| `token_exhaustion` | `POST /answer` `question`/`documents[]` (≤12 MB, ≤8 docs) | Large input/output token spend on the shared bill | Low | 12 MB body cap, ≤8 documents, model timeouts; **no per-caller rate limit observed** — **partial** | **high** | LLM10 / A04 |
+| `loops` | `POST /answer` `question` inducing many worker iterations | Runaway graph execution | Med | Graph budget/timeout bounds iterations — **partial** | medium | LLM10 / A04 |
+| `cost_amplification` | **Unauth `GET /preflight`** (real synthesis) and **`POST /extract`** (vision model) | Anyone spends the shared Anthropic bill | Low | None on those routes (unauthenticated by design) — **NOT addressed** | **high** | LLM10 / A05 |
+
+### 6. Identity / role exploitation (`identity_role_exploitation`)
+
+| Subcategory | Attack surface | Potential impact | Difficulty | Existing defenses (addressed?) | Risk — rationale | OWASP |
+|-------------|----------------|------------------|-----------|-------------------------------|------------------|-------|
+| `privilege_escalation` | `POST /answer` `token` claims (`uid`/role) | Act as a higher-privileged user | High | Claims are HMAC-signed; server verifies the signature; tokens are minted only by OpenEMR — **addressed** | medium — high impact × low likelihood | LLM07 / A01, A07 |
+| `persona_hijacking` | `POST /answer` `question` ("you are FreeMD…") | Drop the clinical guardrails; adopt an unrestricted persona | Low | System-prompt framing; the gate withholds unsourced claims but does not stop a behavioural/tone shift — **partial** | **high** | LLM01 / A03 |
+| `trust_boundary_violation` | `POST /answer` `documents[]` treated as instructions; worker→synthesis outputs | Untrusted content gains assistant authority | Med | `claimsNotOwnedBy` enforces worker-output boundaries; documents parsed as data; gate — **partial** | medium-high | LLM01 / A04 |
+
+### Beyond the six — clinical misinformation (`misinformation`, retained extra)
+
+Not one of the PRD's six categories, kept because unfaithful synthesis is the
+Co-Pilot's core clinical harm.
+
+| Subcategory | Attack surface | Potential impact | Difficulty | Existing defenses (addressed?) | Risk — rationale | OWASP |
+|-------------|----------------|------------------|-----------|-------------------------------|------------------|-------|
+| `unsupported_claim` | `POST /answer` `question` (leading) | An unsupported clinical recommendation reaches a physician | Med | Verification gate withholds unsourced claims — **partial** | **high** | LLM09 / A04 |
+| `fabricated_citation` | `POST /answer` `question` | A fabricated source is attached to a claim | Med | Citation-verification gate compares to the corpus's own copy — **partial** | **high** | LLM09, LLM05 / A04 |
+
+### High-risk cells (M5 denominator)
+
+Six cells among the PRD categories are rated high, so M5's denominator is 6:
+`prompt_injection`/{`direct`, `indirect`}, `data_exfiltration`/`authorization_bypass`,
+`denial_of_service`/{`token_exhaustion`, `cost_amplification`},
+`identity_role_exploitation`/`persona_hijacking`. (The two `misinformation` high
+cells sit outside the six and are tracked separately.)
+
+### Detector and seed coverage
+
+| Category | Detectors | Seed cases |
+|----------|-----------|-----------|
+| `prompt_injection` | `scope_rule` | pi-001…003 |
+| `data_exfiltration` | `phi_canary`, `cross_patient` | dx-001…006 |
+| `state_corruption` | `scope_rule` | sc-001…002 |
+| `tool_misuse` | `tool_call_diff` | tm-001…003 |
+| `denial_of_service` | `tool_call_diff` | dos-001…003 |
+| `identity_role_exploitation` | `scope_rule` | ir-001…003 |
+| `misinformation` (extra) | rubric judge | mi-001…002 |
 
 ### Dashboard Coverage-panel key mismatch (reported, not resolved here)
 
-The `evals/seeds/` category/subcategory keys do **not** match the Coverage-heatmap
-fixtures in `apps/dashboard/src/lib/fixtures.ts`, so M5 cannot currently join the
-threat-model ratings to the heatmap. Per the coordinator's instruction this is
-reported rather than fixed here (no change to `apps/dashboard`). The divergences:
+`evals/seeds/` is now keyed to the six PRD categories (above), which brings the
+category names partly into line with the Coverage-heatmap fixtures in
+`apps/dashboard/src/lib/fixtures.ts` (`prompt_injection`, `data_exfiltration`,
+`tool_misuse`, `misinformation` now agree). Two gaps remain, reported rather than
+fixed here (no change to `apps/dashboard`):
 
-- Category names: evals `phi_exfiltration` vs dashboard `data_exfiltration`
-  (and ticket fixtures use a third name, `phi_leakage`); evals `cross_patient` vs
-  dashboard `cross_patient_access`; the dashboard has a `role_confusion` category
-  that evals fold into `prompt_injection` / `role_override`.
-- Subcategories differ across the board — e.g. dashboard
-  `prompt_injection`/{`direct`, `indirect_via_note`} vs eval
-  {`system_prompt_disclosure`, `role_override`, `indirect_injection_via_document`};
-  dashboard `misinformation`/`dosage` vs eval {`unsupported_claim`,
+- **Categories:** the dashboard uses `cross_patient_access` and `role_confusion`,
+  which the PRD taxonomy folds into `data_exfiltration`/`cross_patient` and
+  `identity_role_exploitation` respectively; the dashboard has no
+  `state_corruption` or `denial_of_service` cells; ticket fixtures still use a
+  third PHI name, `phi_leakage`.
+- **Subcategories** still differ across the board — e.g. dashboard
+  `prompt_injection`/{`direct`, `indirect_via_note`} vs eval {`direct`, `indirect`,
+  `multi-turn`}; dashboard `misinformation`/`dosage` vs eval {`unsupported_claim`,
   `fabricated_citation`}.
 
-A single shared taxonomy (one enum for `category`/`subcategory` used by evals,
-`coverage_snapshots`, and the dashboard) is needed before M5 can be computed
-against real data.
+A single shared taxonomy (one `category`/`subcategory` enum used by `evals/`,
+`coverage_snapshots`, and the dashboard) is still needed before M5 can be computed
+against real heatmap data.
 
 ## Assumptions and out of scope
 
