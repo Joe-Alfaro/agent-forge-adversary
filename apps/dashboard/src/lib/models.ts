@@ -43,10 +43,9 @@ export interface CoverageMatrix {
   cells: CoverageCell[]
 }
 
-export type AgentRole = 'orchestrator' | 'redteam' | 'judge' | 'documentation' | 'target'
-
 export interface RoleSpend {
-  role: AgentRole
+  /** `agent_events.agent`: orchestrator, redteam, judge, documentation, or target (the Co-Pilot's own calls). */
+  role: string
   spendUsd: number
 }
 
