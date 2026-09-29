@@ -24,11 +24,18 @@ npm run typecheck -w apps/dashboard
 
 ## Data access
 
-**v1 reads synthetic fixtures.** `src/lib/fixtures.ts` holds typed in-memory
-data and `src/lib/data-source.ts` is the only module that reads it. Components
-use the TanStack Query hooks in `src/lib/queries.ts`, and route loaders prime the
-same queries. Moving to live data means replacing the bodies in
-`data-source.ts` with server function calls; nothing else changes.
+**v1 and v2 run on synthetic fixtures.** `src/lib/fixtures.ts` holds typed
+in-memory data and `src/lib/data-source.ts` is the only module that reads or
+writes it. Components use the TanStack Query hooks in `src/lib/queries.ts` and
+`src/lib/mutations.ts`; route loaders prime the same queries. Moving to live
+data means replacing the bodies in `data-source.ts` with server function calls;
+nothing else changes.
+
+Fixture writes (status changes, re-checks, queue edits) live only in the current
+browser tab's memory and reset on a full page reload. "Re-check tonight" builds
+a real `RerunRequest v1`; a unit test validates it against the contract schema.
+The contract validators use `node:module`, so they cannot run in the browser;
+the future server function should validate on receipt.
 
 Target design:
 

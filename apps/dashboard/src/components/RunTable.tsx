@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { createColumnHelper } from '@tanstack/react-table'
 
 import { formatDateTime, formatDuration, formatUsd, humanize } from '../lib/format.js'
@@ -15,12 +16,16 @@ function VerdictSplit({ verdicts }: Pick<RunSummary, 'verdicts'>) {
 }
 
 function RunLinks({ run }: { run: RunSummary }) {
-  if (!run.reportUrl && !run.traceUrl) {
+  if (!run.hasMorningReport && !run.traceUrl) {
     return <span className="muted">None</span>
   }
   return (
     <span className="links">
-      {run.reportUrl && <a href={run.reportUrl}>Report</a>}
+      {run.hasMorningReport && (
+        <Link to="/reports/$runId" params={{ runId: run.id }}>
+          Morning report
+        </Link>
+      )}
       {run.traceUrl && (
         <a href={run.traceUrl} target="_blank" rel="noreferrer">
           Trace

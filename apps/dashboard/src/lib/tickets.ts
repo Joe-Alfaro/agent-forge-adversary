@@ -49,3 +49,23 @@ export function sortForTriage(rows: readonly TicketRow[]): TicketRow[] {
 export function canRecheckTonight(status: ExploitStatus): boolean {
   return status !== 'verified' && status !== 'false_positive' && status !== 'accepted_risk'
 }
+
+/**
+ * Operator status workflow from ARCHITECTURE.md Section 15.1: open → in_progress →
+ * fixed → verified, with false_positive and accepted_risk as dismissals and
+ * regressed when a verified fix stops holding.
+ */
+const TRANSITIONS: Record<ExploitStatus, ExploitStatus[]> = {
+  open: ['in_progress', 'false_positive', 'accepted_risk'],
+  in_progress: ['fixed', 'open', 'false_positive', 'accepted_risk'],
+  fixed: ['verified', 'regressed', 'in_progress'],
+  verified: ['regressed'],
+  regressed: ['in_progress', 'fixed', 'accepted_risk'],
+  false_positive: ['open'],
+  accepted_risk: ['open'],
+}
+
+/** Statuses an operator may move a ticket to from `status`. */
+export function nextStatuses(status: ExploitStatus): ExploitStatus[] {
+  return [...TRANSITIONS[status]]
+}
