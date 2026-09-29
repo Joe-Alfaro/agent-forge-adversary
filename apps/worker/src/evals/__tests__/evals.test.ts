@@ -2,6 +2,8 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
+import { isTaxonomyCell } from '@agentforge/contracts'
+
 import { loadEvalSuite, validateEvalCase, type EvalCase } from '../load.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -56,6 +58,24 @@ describe('seed eval suite', () => {
       expect(c.turns.length).toBeGreaterThan(0)
       c.turns.forEach((t) => expect(t.message.length).toBeGreaterThan(0))
     })
+  })
+
+  it('uses only cells from the shared AttackTaxonomy v1', () => {
+    suite.forEach((c) => {
+      expect(isTaxonomyCell(c.category, c.subcategory)).toBe(true)
+    })
+  })
+})
+
+describe('loader rejects off-taxonomy cells', () => {
+  it('rejects a category that is not in the taxonomy', () => {
+    const base = suite[0]!
+    expect(() => validateEvalCase({ ...base, category: 'misinformation' }, 'test')).toThrow(/AttackTaxonomy/)
+  })
+
+  it('rejects a subcategory that is not in the taxonomy', () => {
+    const base = suite[0]!
+    expect(() => validateEvalCase({ ...base, subcategory: 'role_override' }, 'test')).toThrow(/AttackTaxonomy/)
   })
 })
 
