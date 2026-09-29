@@ -8,6 +8,7 @@ import type {
   AttackTranscript,
   DetectorResult,
   CampaignPlan,
+  NightlyRunSummary,
 } from './types.js'
 
 const require = createRequire(import.meta.url)
@@ -17,6 +18,7 @@ const rerunRequestSchema = require('../../../contracts/rerun_request/v1.json')
 const attackTranscriptSchema = require('../../../contracts/attack_transcript/v1.json')
 const detectorResultSchema = require('../../../contracts/detector_result/v1.json')
 const campaignPlanSchema = require('../../../contracts/campaign_plan/v1.json')
+const nightlyRunSummarySchema = require('../../../contracts/nightly_run_summary/v1.json')
 
 // ajv-formats ships its callable as a CommonJS default; resolve it for NodeNext.
 type AddFormats = (ajv: Ajv) => Ajv
@@ -48,6 +50,7 @@ const validateRerunRequestFn = ajv.compile(rerunRequestSchema)
 const validateAttackTranscriptFn = ajv.compile(attackTranscriptSchema)
 const validateDetectorResultFn = ajv.compile(detectorResultSchema)
 const validateCampaignPlanFn = ajv.compile(campaignPlanSchema)
+const validateNightlyRunSummaryFn = ajv.compile(nightlyRunSummarySchema)
 
 export function validateVerdict(value: unknown): ValidationResult<Verdict> {
   return runValidator<Verdict>(validateVerdictFn, value)
@@ -67,4 +70,8 @@ export function validateDetectorResult(value: unknown): ValidationResult<Detecto
 
 export function validateCampaignPlan(value: unknown): ValidationResult<CampaignPlan> {
   return runValidator<CampaignPlan>(validateCampaignPlanFn, value)
+}
+
+export function validateNightlyRunSummary(value: unknown): ValidationResult<NightlyRunSummary> {
+  return runValidator<NightlyRunSummary>(validateNightlyRunSummaryFn, value)
 }
