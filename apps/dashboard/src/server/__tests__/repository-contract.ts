@@ -68,8 +68,6 @@ export const contractRunDate = '2026-09-30'
 export interface ContractOptions {
   /** Creates a repository over a freshly seeded store. */
   setup: () => Promise<DashboardRepository>
-  /** Whether the store can persist queue order (Postgres needs operator_requests.position). */
-  supportsReorder: () => boolean
 }
 
 function rerun(exploitId: string, messageId = '11111111-1111-4111-8111-111111111111') {
@@ -167,14 +165,10 @@ export function describeRepositoryContract(name: string, options: ContractOption
         expect((await repo.getQueue()).items).toHaveLength(1)
       })
 
-      it('persists a reorder when the store supports it', async () => {
+      it('persists a reorder, and new requests join the end', async () => {
         const [first, second] = contractQueue
         if (!first || !second) {
           throw new Error('seed needs two queue items')
-        }
-        if (!options.supportsReorder()) {
-          await expect(repo.moveQueueItem(second.id, 'up')).rejects.toThrow('operator_requests.position')
-          return
         }
         await repo.moveQueueItem(second.id, 'up')
         expect((await repo.getQueue()).items.map((item) => item.id)).toEqual([second.id, first.id])

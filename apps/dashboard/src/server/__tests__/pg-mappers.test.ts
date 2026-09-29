@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { mapMorningReport, mapQueueItem, mapRunSummary, mapTicket, parseRunSummaryJson } from '../pg-mappers.js'
+import { mapMorningReport, mapQueueItem, mapRunSummary, mapTicket } from '../pg-mappers.js'
 
 describe('mapTicket', () => {
   const row = {
@@ -46,34 +46,6 @@ describe('mapTicket', () => {
   })
 })
 
-describe('parseRunSummaryJson', () => {
-  it('keeps well-typed keys and ignores the rest', () => {
-    expect(
-      parseRunSummaryJson({
-        headline: 'Two new findings',
-        new_tickets: ['AF-1', 7],
-        regressions: 'AF-2',
-        queue: { ran: 3, cut: 'x' },
-        trace_url: 'https://langfuse.example/t/1',
-        extra: true,
-      }),
-    ).toEqual({
-      headline: 'Two new findings',
-      newTickets: ['AF-1'],
-      regressions: [],
-      verifiedFixes: [],
-      notes: [],
-      queue: { ran: 3, cut: 0 },
-      traceUrl: 'https://langfuse.example/t/1',
-    })
-  })
-
-  it('returns null for anything that is not an object', () => {
-    expect(parseRunSummaryJson(null)).toBeNull()
-    expect(parseRunSummaryJson('done')).toBeNull()
-  })
-})
-
 const runRow = {
   id: 12,
   trigger: 'cron',
@@ -81,7 +53,19 @@ const runRow = {
   started_at: new Date('2026-09-30T06:00:00Z'),
   finished_at: new Date('2026-09-30T08:30:00Z'),
   spend_usd: '41.2500',
-  summary: { headline: 'Quiet night', new_tickets: ['AF-2026-0009'], regressions: ['AF-2026-0004'], trace_url: 'https://t/12' },
+  // NightlyRunSummary v1; extra keys are allowed by the contract.
+  summary: {
+    target_version: 'copilot@1.4.1',
+    headline: 'Quiet night',
+    new_tickets: ['AF-2026-0009'],
+    regressions: ['AF-2026-0004'],
+    verified_fixes: [],
+    queue: { ran: 3, cut: 1, skipped: 0 },
+    notes: ['n1'],
+    trace_url: 'https://t/12',
+    generated_at: '2026-09-30T08:35:00Z',
+    spend_breakdown: { judge: 4 },
+  },
   attempts: '900',
   success: '4',
   partial: '10',
@@ -116,6 +100,12 @@ describe('mapRunSummary', () => {
     expect(mapped).not.toHaveProperty('traceUrl')
   })
 
+  it('ignores a summary that fails NightlyRunSummary v1 instead of trusting it', () => {
+    const mapped = mapRunSummary({ ...runRow, summary: { headline: 'partial write', new_tickets: 'AF-1' } })
+    expect(mapped).toMatchObject({ newTickets: 3, regressions: 0, hasMorningReport: false })
+    expect(mapped).not.toHaveProperty('traceUrl')
+  })
+
   it('maps unknown run statuses to failed rather than crashing the table', () => {
     expect(mapRunSummary({ ...runRow, status: 'exploded' }).status).toBe('failed')
   })
@@ -126,8 +116,10 @@ describe('mapMorningReport', () => {
     expect(mapMorningReport(runRow)).toMatchObject({
       runId: '12',
       targetVersion: 'copilot@1.4.1',
-      generatedAt: '2026-09-30T08:30:00.000Z',
+      generatedAt: '2026-09-30T08:35:00Z',
       headline: 'Quiet night',
+      queue: { ran: 3, cut: 1 },
+      notes: ['n1'],
       newTickets: ['AF-2026-0009'],
       regressions: ['AF-2026-0004'],
       spendUsd: 41.25,
@@ -150,6 +142,7 @@ describe('mapQueueItem', () => {
     reason: null,
     created_at: new Date('2026-09-29T10:00:00Z'),
     family_size: 4,
+    estimated_cost_usd: null,
   }
 
   it('estimates rerun cost from the family size', () => {
@@ -162,6 +155,11 @@ describe('mapQueueItem', () => {
       source: 'ui',
       estimatedCostUsd: 0.6,
     })
+  })
+
+  it('prefers the stored estimate when the request has one', () => {
+    expect(mapQueueItem({ ...queueRow, estimated_cost_usd: '2.5000' }).estimatedCostUsd).toBe(2.5)
+    expect(mapQueueItem({ ...queueRow, kind: 'focus', family_size: null, estimated_cost_usd: '12' }).estimatedCostUsd).toBe(12)
   })
 
   it('does not estimate campaigns the Orchestrator sizes itself', () => {

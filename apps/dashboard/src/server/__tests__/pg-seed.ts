@@ -4,6 +4,9 @@ import type { QueueItem } from '../../lib/models.js'
 import type { TicketRow } from '../../lib/tickets.js'
 
 const TABLES = [
+  'regression_results',
+  'regression_runs',
+  'coverage_snapshots',
   'agent_events',
   'chat_messages',
   'operator_requests',
@@ -36,14 +39,6 @@ export async function resetDatabase(pool: pg.Pool, versions: string[]): Promise<
   return ids
 }
 
-export async function setQueuePositionColumn(pool: pg.Pool, present: boolean): Promise<void> {
-  if (present) {
-    await pool.query('ALTER TABLE operator_requests ADD COLUMN IF NOT EXISTS position integer')
-    return
-  }
-  await pool.query('ALTER TABLE operator_requests DROP COLUMN IF EXISTS position')
-}
-
 export async function seedTickets(pool: pg.Pool, tickets: TicketRow[], versionIds: Map<string, number>): Promise<void> {
   await Promise.all(
     tickets.map((ticket) =>
@@ -66,31 +61,24 @@ export async function seedTickets(pool: pg.Pool, tickets: TicketRow[], versionId
   )
 }
 
-export async function seedQueue(
-  pool: pg.Pool,
-  items: QueueItem[],
-  requestedFor: string,
-  withPositions: boolean,
-): Promise<void> {
+/** Inserts queue items with positions in array order. */
+export async function seedQueue(pool: pg.Pool, items: QueueItem[], requestedFor: string): Promise<void> {
   await items.reduce(async (previous, item, index) => {
     await previous
-    const columns = withPositions ? ', position' : ''
-    const values = withPositions ? ', $9' : ''
-    const params = [
-      item.id,
-      item.kind,
-      item.exploitId ?? null,
-      item.category ?? null,
-      item.requestedBy,
-      requestedFor,
-      item.source,
-      item.requestedAt,
-      ...(withPositions ? [index + 1] : []),
-    ]
     await pool.query(
-      `INSERT INTO operator_requests (id, kind, exploit_id, category, requested_by, requested_for, source, created_at${columns})
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8${values})`,
-      params,
+      `INSERT INTO operator_requests (id, kind, exploit_id, category, requested_by, requested_for, source, created_at, position)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        item.id,
+        item.kind,
+        item.exploitId ?? null,
+        item.category ?? null,
+        item.requestedBy,
+        requestedFor,
+        item.source,
+        item.requestedAt,
+        index + 1,
+      ],
     )
   }, Promise.resolve())
 }

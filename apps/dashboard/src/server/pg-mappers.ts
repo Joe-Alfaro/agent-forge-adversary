@@ -1,4 +1,4 @@
-import type { VerdictOutcome } from '@agentforge/contracts'
+import { type NightlyRunSummary, validateNightlyRunSummary, type VerdictOutcome } from '@agentforge/contracts'
 
 import type { MorningReport, QueueItem, QueueItemKind, RunStatus, RunSummary, RunTrigger } from '../lib/models.js'
 import { estimateRerunCostUsd } from '../lib/queue.js'
@@ -120,43 +120,22 @@ export function mapTicket(row: unknown): TicketRow {
   return withOptional(withVerdict, 'lastVerifiedVersion', optionalText(row, 'last_verified_version'))
 }
 
-/** The parts of `nightly_runs.summary` the dashboard reads (proposed shape, see README). */
-export interface RunSummaryJson {
-  headline?: string
-  targetVersion?: string
-  newTickets: string[]
-  regressions: string[]
-  verifiedFixes: string[]
-  notes: string[]
-  queue: { ran: number; cut: number }
-  traceUrl?: string
-  generatedAt?: string
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === 'string' && value !== '' ? value : undefined
-}
-
-function count(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0
-}
-
-export function parseRunSummaryJson(value: unknown): RunSummaryJson | null {
-  if (!isRecord(value)) {
+/**
+ * `nightly_runs.summary` is NightlyRunSummary v1. A summary that fails the
+ * contract is treated as missing (derived counts, no morning report) rather than
+ * trusted, and logged so the writer can be fixed.
+ */
+function readSummary(row: unknown): NightlyRunSummary | null {
+  const value = field(row, 'summary')
+  if (value === null || value === undefined) {
     return null
   }
-  const queue = isRecord(value.queue) ? value.queue : {}
-  const base: RunSummaryJson = {
-    newTickets: stringArray(value.new_tickets),
-    regressions: stringArray(value.regressions),
-    verifiedFixes: stringArray(value.verified_fixes),
-    notes: stringArray(value.notes),
-    queue: { ran: count(queue.ran), cut: count(queue.cut) },
+  const result = validateNightlyRunSummary(value)
+  if (!result.valid || !result.value) {
+    console.warn(`nightly_runs ${String(field(row, 'id'))}: summary fails NightlyRunSummary v1: ${result.errors.join('; ')}`)
+    return null
   }
-  const withHeadline = withOptional(base, 'headline', optionalString(value.headline))
-  const withVersion = withOptional(withHeadline, 'targetVersion', optionalString(value.target_version))
-  const withTrace = withOptional(withVersion, 'traceUrl', optionalString(value.trace_url))
-  return withOptional(withTrace, 'generatedAt', optionalString(value.generated_at))
+  return result.value
 }
 
 const RUN_STATUSES: readonly RunStatus[] = ['scheduled', 'running', 'completed', 'failed', 'aborted']
@@ -169,52 +148,66 @@ function runTrigger(value: unknown): RunTrigger {
   return value === 'run_now' ? 'run_now' : 'cron'
 }
 
-function hasReport(row: unknown, summary: RunSummaryJson | null): summary is RunSummaryJson {
-  return summary !== null && summary.headline !== undefined && field(row, 'status') === 'completed'
+function hasReport(row: unknown, summary: NightlyRunSummary | null): summary is NightlyRunSummary {
+  return summary !== null && field(row, 'status') === 'completed'
 }
 
 export function mapRunSummary(row: unknown): RunSummary {
-  const summary = parseRunSummaryJson(field(row, 'summary'))
+  const summary = readSummary(row)
   const base: RunSummary = {
     id: text(row, 'id'),
     trigger: runTrigger(field(row, 'trigger')),
     status: runStatus(field(row, 'status')),
     startedAt: iso(row, 'started_at'),
-    targetVersion: summary?.targetVersion ?? optionalText(row, 'target_version') ?? 'unknown',
+    targetVersion: summary?.target_version ?? optionalText(row, 'target_version') ?? 'unknown',
     attempts: num(row, 'attempts'),
     verdicts: { success: num(row, 'success'), partial: num(row, 'partial'), fail: num(row, 'fail') },
-    newTickets: summary ? summary.newTickets.length : num(row, 'new_tickets_by_time'),
+    newTickets: summary ? summary.new_tickets.length : num(row, 'new_tickets_by_time'),
     regressions: summary?.regressions.length ?? 0,
     spendUsd: num(row, 'spend_usd'),
     hasMorningReport: hasReport(row, summary),
   }
   const withFinish = withOptional(base, 'finishedAt', optionalIso(row, 'finished_at'))
-  return withOptional(withFinish, 'traceUrl', summary?.traceUrl)
+  return withOptional(withFinish, 'traceUrl', summary?.trace_url)
 }
 
 export function mapMorningReport(row: unknown): MorningReport | null {
-  const summary = parseRunSummaryJson(field(row, 'summary'))
-  if (!hasReport(row, summary) || summary.headline === undefined) {
+  const summary = readSummary(row)
+  if (!hasReport(row, summary)) {
     return null
   }
   const run = mapRunSummary(row)
   return {
     runId: run.id,
-    targetVersion: run.targetVersion,
-    generatedAt: summary.generatedAt ?? run.finishedAt ?? run.startedAt,
+    targetVersion: summary.target_version,
+    generatedAt: summary.generated_at,
     headline: summary.headline,
     attempts: run.attempts,
     verdicts: run.verdicts,
     spendUsd: run.spendUsd,
-    newTickets: summary.newTickets,
+    newTickets: summary.new_tickets,
     regressions: summary.regressions,
-    verifiedFixes: summary.verifiedFixes,
-    queue: summary.queue,
+    verifiedFixes: summary.verified_fixes,
+    queue: { ran: summary.queue.ran, cut: summary.queue.cut },
     notes: summary.notes,
   }
 }
 
 const QUEUE_KINDS: readonly QueueItemKind[] = ['rerun', 'focus', 'skip', 'note']
+
+/**
+ * A stored estimate wins. Otherwise reruns are estimated from the family size;
+ * campaign-sized requests (focus, skip, note) are budgeted by the Orchestrator.
+ */
+function estimateFor(kind: QueueItemKind, stored: unknown, familySize: unknown, row: unknown): number {
+  if (stored !== null && stored !== undefined) {
+    return num(row, 'estimated_cost_usd')
+  }
+  if (kind === 'rerun' && familySize !== null && familySize !== undefined) {
+    return estimateRerunCostUsd(num(row, 'family_size'))
+  }
+  return 0
+}
 
 export function mapQueueItem(row: unknown): QueueItem {
   const id = text(row, 'id')
@@ -223,14 +216,14 @@ export function mapQueueItem(row: unknown): QueueItem {
     throw new Error(`Queue item ${id} has an unknown kind`)
   }
   const familySize = field(row, 'family_size')
+  const stored = field(row, 'estimated_cost_usd')
   const base: QueueItem = {
     id,
     kind,
     requestedBy: text(row, 'requested_by'),
     requestedAt: iso(row, 'created_at'),
     source: field(row, 'source') === 'chat' ? 'chat' : 'ui',
-    // Campaign-sized requests (focus, skip, note) are budgeted by the Orchestrator, not estimated here.
-    estimatedCostUsd: kind === 'rerun' && familySize !== null ? estimateRerunCostUsd(num(row, 'family_size')) : 0,
+    estimatedCostUsd: estimateFor(kind, stored, familySize, row),
   }
   const withExploit = withOptional(base, 'exploitId', optionalText(row, 'exploit_id'))
   const withCategory = withOptional(withExploit, 'category', optionalText(row, 'category'))

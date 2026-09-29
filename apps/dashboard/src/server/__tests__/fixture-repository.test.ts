@@ -11,7 +11,6 @@ const config = { envelopeUsd: 25, timeZone: 'America/Chicago', runHour: 1 }
 describeRepositoryContract('fixture', {
   setup: async () =>
     createFixtureRepository({ config, now: () => contractNow, seed: { tickets: contractTickets, queueItems: contractQueue } }),
-  supportsReorder: () => true,
 })
 
 describe('fixture repository defaults', () => {

@@ -2,7 +2,7 @@ import type pg from 'pg'
 
 import { mergeCoverage, type TaxonomyCell } from '../lib/coverage.js'
 import type { CostSummary, CoverageCell, RunSpend } from '../lib/models.js'
-import { moveItem } from '../lib/queue.js'
+import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
 import { nextRunDate } from '../lib/schedule.js'
 import { isExploitStatus } from '../lib/tickets.js'
 import type { QueueConfig } from './config.js'
@@ -22,8 +22,10 @@ type Queryable = pg.Pool | pg.PoolClient
 
 /*
  * Tickets are `exploits` rows. Confidence is the strongest successful verdict in
- * the exploit's family, and the last verdict and last verified version come from
- * the family's most recent verdict (family = family_ids plus the fingerprint).
+ * the exploit's family, and the last verdict comes from the family's most recent
+ * verdict (family = family_ids plus the fingerprint). The last verified version
+ * is the newest regression result's target version, or failing that the
+ * version of the latest verdict.
  */
 const TICKETS_SQL = `
   SELECT e.id, e.severity, e.category, e.owasp_ids, e.status, e.assignee,
@@ -31,7 +33,7 @@ const TICKETS_SQL = `
          dv.version AS discovered_version,
          conf.max_confidence,
          latest.outcome AS last_verdict,
-         latest.version AS last_verified_version
+         COALESCE(regression.version, latest.version) AS last_verified_version
   FROM exploits e
   LEFT JOIN target_versions dv ON dv.id = e.discovered_version_id
   LEFT JOIN LATERAL (
@@ -47,7 +49,16 @@ const TICKETS_SQL = `
     WHERE a.id = ANY(e.family_ids) OR a.fingerprint = e.fingerprint
     ORDER BY v.created_at DESC
     LIMIT 1
-  ) latest ON true`
+  ) latest ON true
+  LEFT JOIN LATERAL (
+    SELECT tv.version
+    FROM regression_results rr
+    JOIN regression_runs rrun ON rrun.id = rr.run_id
+    JOIN target_versions tv ON tv.id = rrun.target_version_id
+    WHERE rr.exploit_id = e.id
+    ORDER BY rr.created_at DESC
+    LIMIT 1
+  ) regression ON true`
 
 /** $1 is "now", used to window new tickets for runs without a summary. */
 const RUNS_SQL = `
@@ -74,6 +85,7 @@ const RUNS_SQL = `
     WHERE c.nightly_run_id = r.id
   ) stats ON true`
 
+/** Live coverage for version $1, used until the Orchestrator writes coverage_snapshots. */
 const COVERAGE_SQL = `
   WITH cells AS (
     SELECT a.category, COALESCE(a.subcategory, '') AS subcategory,
@@ -95,16 +107,30 @@ const COVERAGE_SQL = `
   LEFT JOIN confirmed USING (category, subcategory)
   ORDER BY cells.category, cells.subcategory`
 
-/** Queued requests up to tonight; $1 is tonight's run date. */
-function queueSql(hasPosition: boolean, lock: boolean): string {
-  const order = hasPosition ? 'r.position NULLS LAST, r.created_at, r.id' : 'r.created_at, r.id'
+/** Materialized cells for version $1, with OWASP ids from that version's attempts. */
+const SNAPSHOT_SQL = `
+  SELECT s.category, s.subcategory, s.attempts, s.confirmed, s.last_run_at,
+         COALESCE((
+           SELECT array_agg(DISTINCT o.owasp)
+           FROM attempts a, unnest(a.owasp_ids) AS o(owasp)
+           WHERE a.target_version_id = s.target_version_id
+             AND a.category = s.category
+             AND COALESCE(a.subcategory, '') = s.subcategory
+         ), '{}') AS owasp_ids
+  FROM coverage_snapshots s
+  WHERE s.target_version_id = $1
+  ORDER BY s.category, s.subcategory`
+
+/** Queued requests up to tonight in drain order; $1 is tonight's run date. */
+function queueSql(lock: boolean): string {
   return `
     SELECT r.id, r.kind, r.exploit_id, r.category, r.requested_by, r.source, r.reason, r.created_at,
+           r.estimated_cost_usd,
            CASE WHEN e.id IS NULL THEN NULL ELSE GREATEST(cardinality(e.family_ids), 1) END AS family_size
     FROM operator_requests r
     LEFT JOIN exploits e ON e.id = r.exploit_id
     WHERE r.status = 'queued' AND (r.requested_for IS NULL OR r.requested_for <= $1)
-    ORDER BY ${order}
+    ORDER BY r.position NULLS LAST, r.created_at, r.id
     ${lock ? 'FOR UPDATE OF r' : ''}`
 }
 
@@ -140,22 +166,9 @@ export function createPgRepository({
     }
   }
 
-  /**
-   * Queue order needs operator_requests.position, which is pending in packages/db.
-   * Checked per call so reordering starts working as soon as the migration runs.
-   */
-  async function hasQueuePosition(db: Queryable): Promise<boolean> {
-    const result = await db.query(
-      `SELECT 1 FROM information_schema.columns
-       WHERE table_schema = current_schema() AND table_name = 'operator_requests' AND column_name = 'position'`,
-    )
-    return result.rowCount !== null && result.rowCount > 0
-  }
-
   async function readQueue(db: Queryable) {
     const runDate = nextRunDate(now(), config)
-    const hasPosition = await hasQueuePosition(db)
-    const result = await db.query(queueSql(hasPosition, false), [runDate])
+    const result = await db.query(queueSql(false), [runDate])
     return { runDate, envelopeUsd: config.envelopeUsd, items: result.rows.map(mapQueueItem) }
   }
 
@@ -217,7 +230,8 @@ export function createPgRepository({
       if (!version) {
         return { targetVersion: 'no target version yet', cells: mergeCoverage([], taxonomy) }
       }
-      const result = await pool.query(COVERAGE_SQL, [version.id])
+      const snapshot = await pool.query(SNAPSHOT_SQL, [version.id])
+      const result = snapshot.rowCount ? snapshot : await pool.query(COVERAGE_SQL, [version.id])
       const cells = result.rows.map((row): CoverageCell => {
         const cell: CoverageCell = {
           category: String(row.category),
@@ -272,7 +286,10 @@ export function createPgRepository({
       const { request, exploitId } = assertRerunRequest(input)
       await transaction(async (client) => {
         // Locking the exploit serializes concurrent re-checks of the same ticket.
-        const ticket = await client.query('SELECT status FROM exploits WHERE id = $1 FOR UPDATE', [exploitId])
+        const ticket = await client.query(
+          'SELECT status, GREATEST(cardinality(family_ids), 1) AS family_size FROM exploits WHERE id = $1 FOR UPDATE',
+          [exploitId],
+        )
         const status: unknown = ticket.rows[0]?.status
         if (!isExploitStatus(status)) {
           throw new Error(`Unknown ticket ${exploitId}`)
@@ -282,29 +299,21 @@ export function createPgRepository({
           [exploitId],
         )
         assertCanRecheck(exploitId, status, (queued.rowCount ?? 0) > 0)
-        const hasPosition = await hasQueuePosition(client)
-        const params = [
-          request.message_id,
-          exploitId,
-          request.requested_by,
-          request.requested_for,
-          request.source,
-          request.reason ?? null,
-          now(),
-        ]
-        if (hasPosition) {
-          await client.query(
-            `INSERT INTO operator_requests (id, kind, exploit_id, requested_by, requested_for, source, reason, created_at, position)
-             VALUES ($1, 'rerun', $2, $3, $4, $5, $6, $7,
-                     (SELECT COALESCE(max(position), 0) + 1 FROM operator_requests WHERE status = 'queued'))`,
-            params,
-          )
-          return
-        }
         await client.query(
-          `INSERT INTO operator_requests (id, kind, exploit_id, requested_by, requested_for, source, reason, created_at)
-           VALUES ($1, 'rerun', $2, $3, $4, $5, $6, $7)`,
-          params,
+          `INSERT INTO operator_requests
+             (id, kind, exploit_id, requested_by, requested_for, source, reason, created_at, estimated_cost_usd, position)
+           VALUES ($1, 'rerun', $2, $3, $4, $5, $6, $7, $8,
+                   (SELECT COALESCE(max(position), 0) + 1 FROM operator_requests WHERE status = 'queued'))`,
+          [
+            request.message_id,
+            exploitId,
+            request.requested_by,
+            request.requested_for,
+            request.source,
+            request.reason ?? null,
+            now(),
+            estimateRerunCostUsd(Number(ticket.rows[0]?.family_size)),
+          ],
         )
       })
       return readQueue(pool)
@@ -319,11 +328,8 @@ export function createPgRepository({
 
     async moveQueueItem(id, direction) {
       await transaction(async (client) => {
-        if (!(await hasQueuePosition(client))) {
-          throw new Error('Reordering needs the operator_requests.position column, which is not in the database yet')
-        }
         const runDate = nextRunDate(now(), config)
-        const current = await client.query(queueSql(true, true), [runDate])
+        const current = await client.query(queueSql(true), [runDate])
         const ids = current.rows.map((row) => ({ id: String(row.id) }))
         const reordered = moveItem(ids, id, direction)
         // Renumbering the whole queue also gives chat-inserted rows (NULL position) a place.
