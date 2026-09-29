@@ -154,6 +154,18 @@ Reported on the dashboard, deliberately not headlined.
 
 ---
 
+## Measured so far
+
+Before the first nightly run the only measured coverage is the seed suite in
+`evals/`: **7 categories, 22 seed cases**, spanning **OWASP LLM Top 10** LLM01,
+LLM02, LLM05, LLM06, LLM07, LLM09, LLM10 and **OWASP Top 10** A01, A03, A04, A05,
+A07, keyed to `AttackTaxonomy v1` (loader-enforced). `misinformation` is a
+seventh, non-PRD category; its two HIGH cells are **not** counted toward M5, which
+measures the six PRD categories' HIGH cells only. All runtime metrics (M1–M6)
+await a live campaign.
+
+---
+
 ## The version of this a hospital CTO would hear
 
 "Every night the platform attacks the Co-Pilot, judges the results with a judge we check against human labels every night, and files anything real as a ticket. We can show you, per Co-Pilot version, how often a new attack gets through, whether anything we previously fixed has come back, and which parts of the threat model we have and have not exercised this week. The judge's error rate is on the same screen as the findings, so you can see how much to trust them. We do not publish a critical finding without a human signing it, and we track how often those signed findings turn out to be wrong. Right now that number is zero, and the day it is not, it is the first thing on the report."
