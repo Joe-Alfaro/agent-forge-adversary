@@ -9,7 +9,8 @@
     "apps/*"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22",
+    "npm": ">=10.9"
   },
   "scripts": {
     "build": "npm run build --workspaces --if-present",
@@ -21,7 +22,7 @@
   },
   "devDependencies": {
     "typescript": "~5.9.2",
-    "vitest": "^3.2.4",
+    "vitest": "^4.1.11",
     "@types/node": "^22.10.0"
   }
 }

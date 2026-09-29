@@ -24,10 +24,22 @@ This is an npm workspaces monorepo (Node 22+, TypeScript).
 
 ```bash
 cp .env.example .env      # fill in per-role Anthropic keys and DATABASE_URL
-npm install
+npm ci
 npm test                  # runs the Vitest suite across workspaces
 npm run typecheck         # composite tsc -b build
 ```
+
+Use `npm ci` (install from the lockfile). npm 10.9 has an arborist bug that
+crashes with `Cannot read properties of null (reading 'edgesOut')` when it
+regenerates this dependency tree from scratch. Installing from the committed
+lockfile works on npm 10.9. To add or upgrade a dependency, run the command
+through a current npm without changing your global install:
+
+```bash
+npx -y npm@latest install <package> -w <workspace>
+```
+
+npm 12 requires Node 22 or 24 LTS; Node 23 prints a support warning but works.
 
 To create the database schema against a running Postgres:
 
