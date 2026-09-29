@@ -1,9 +1,11 @@
 import { cleanup, fireEvent, screen } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { fetchQueue, fetchTicket, resetStore } from '../../lib/data-source.js'
+import { fetchQueue, fetchTicket, resetTestData } from '../../test-data-source.js'
 import { renderWithProviders } from '../../test-utils.js'
 import { RecheckTonight } from '../RecheckTonight.js'
+
+vi.mock('../../lib/data-source.js', () => import('../../test-data-source.js'))
 
 async function renderFor(id: string) {
   const ticket = await fetchTicket(id)
@@ -14,7 +16,7 @@ async function renderFor(id: string) {
   await screen.findByRole('heading', { name: 'Re-check tonight' })
 }
 
-beforeEach(resetStore)
+beforeEach(resetTestData)
 afterEach(cleanup)
 
 describe('RecheckTonight', () => {
