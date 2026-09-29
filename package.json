@@ -1,0 +1,27 @@
+{
+  "name": "agentforge",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Multi-agent adversarial evaluation platform for the OpenEMR Clinical Co-Pilot",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -b",
+    "migrate": "node-pg-migrate -m packages/db/migrations",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "typescript": "~5.9.2",
+    "vitest": "^3.2.4",
+    "@types/node": "^22.10.0"
+  }
+}

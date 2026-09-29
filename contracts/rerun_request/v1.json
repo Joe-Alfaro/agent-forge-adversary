@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentforge/contracts/rerun_request/v1",
+  "title": "RerunRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "message_id", "requested_by", "requested_for", "source", "target"],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "message_id": { "type": "string", "format": "uuid" },
+    "requested_by": { "type": "string" },
+    "requested_for": { "type": "string", "format": "date" },
+    "source": { "enum": ["ui", "chat"] },
+    "reason": { "type": "string" },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["exploit", "category"] },
+        "exploit_id": { "type": "string" },
+        "category": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentForge — Architecture Decisions</title>
+<style>
+  :root {
+    --bg: #0f1419; --fg: #e6edf3; --muted: #9aa7b4; --accent: #4cc2ff; --ok: #5ad18a; --warn: #f2b84b; --line: #263241;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #fafbfc; --fg: #14202b; --muted: #5b6b7a; --accent: #0b74c4; --ok: #1f8f52; --warn: #b2730c; --line: #d8e0e8; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font: 18px/1.45 -apple-system, "Segoe UI", Inter, Roboto, sans-serif; }
+  .deck { height: 100%; overflow: hidden; }
+  section { display: none; height: 100%; padding: 56px 80px; flex-direction: column; }
+  section.active { display: flex; }
+  h1 { font-size: 46px; margin: 0 0 12px; letter-spacing: -0.5px; }
+  h2 { font-size: 34px; margin: 0 0 6px; letter-spacing: -0.3px; }
+  .kicker { color: var(--accent); text-transform: uppercase; font-size: 13px; letter-spacing: 1.4px; margin-bottom: 10px; }
+  .sub { color: var(--muted); font-size: 20px; margin: 0 0 26px; }
+  ul { margin: 0; padding-left: 22px; } li { margin: 6px 0; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; flex: 1; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; }
+  .card h3 { margin: 0 0 8px; font-size: 17px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+  .chosen { border-color: var(--ok); } .chosen h3 { color: var(--ok); }
+  table { border-collapse: collapse; width: 100%; font-size: 16px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); color: var(--muted); margin-left: 6px; }
+  .pill.ok { border-color: var(--ok); color: var(--ok); } .pill.warn { border-color: var(--warn); color: var(--warn); }
+  .flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 8px; }
+  .box { border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .box b { display: block; margin-bottom: 4px; } .box small { color: var(--muted); }
+  .box.low { border-color: var(--warn); } .box.high { border-color: var(--accent); }
+  .foot { margin-top: auto; color: var(--muted); font-size: 14px; display: flex; justify-content: space-between; }
+  .tradeoff { margin-top: 18px; padding: 12px 16px; border-left: 3px solid var(--warn); color: var(--fg); background: rgba(242,184,75,0.08); border-radius: 0 8px 8px 0; }
+  .tradeoff b { color: var(--warn); }
+  kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="deck">
+
+<section class="active">
+  <div class="kicker">Architecture proposal</div>
+  <h1>AgentForge</h1>
+  <p class="sub">A continuously running multi-agent red team for the OpenEMR Clinical Co-Pilot.<br>Seven decisions, the alternatives we weighed, and what each one costs us.</p>
+  <div class="cols">
+    <div class="card"><h3>What it must do</h3>
+      <ul><li>Generate and mutate attacks, including multi-turn</li><li>Judge success consistently across target versions</li><li>Turn confirmed exploits into regression tests</li><li>Write reports an engineer can act on unaided</li><li>Decide what to test next, and stop when cost buys no signal</li></ul></div>
+    <div class="card"><h3>Hard facts shaping the design</h3>
+      <ul><li>Target: TypeScript on Railway, REST/JSON, uploads land in OpenEMR</li><li>One shared Anthropic bill, keep cost as low as possible</li><li>No open-weight provider budget, no local models, no GPU</li><li>Langfuse self-hosted, as in Phases 1–2</li><li>All patient data synthetic; canaries allowed</li></ul></div>
+  </div>
+  <div class="foot"><span>Full detail: ARCHITECTURE.md v0.3</span><span><kbd>→</kbd> next · <kbd>←</kbd> back</span></div>
+</section>
+
+<section>
+  <div class="kicker">The shape</div>
+  <h2>Four agents, four trust planes, one deterministic core</h2>
+  <p class="sub">LLMs only where judgement is needed. Everything that must be exact is ordinary tested code. Runs once a night plus an operator queue; managed from a dashboard.</p>
+  <div class="flow">
+    <div class="box high"><b>Orchestrator</b><small>Builds tonight's plan: reruns, owed regressions, then coverage gaps. Answers the dashboard chat. Never touches the target.</small></div>
+    <div class="box low"><b>Red Team</b><small>Deterministic mutation floor + Haiku variants + Sonnet strategy. Least trusted. Target via adapter only.</small></div>
+    <div class="box"><b>Judge</b><small>Detectors first (authoritative), then frozen-rubric Sonnet, Opus tiebreak. Calibrated nightly.</small></div>
+    <div class="box"><b>Documentation</b><small>Schema-validated, deduplicated reports. Drafts only; humans publish high/critical.</small></div>
+  </div>
+  <div class="flow" style="margin-top:14px">
+    <div class="box"><b>Target Adapter</b><small>Only network path to Co-Pilot and OpenEMR. Allowlist, rate limits, budgets, transcripts.</small></div>
+    <div class="box"><b>Detectors</b><small>PHI canaries, cross-patient, tool-log diff, scope rules. No vendor in the loop.</small></div>
+    <div class="box"><b>Regression Harness</b><small>Replays exploit families against every new target version.</small></div>
+    <div class="box"><b>Postgres + Dashboard</b><small>Exploits as tickets, nightly queue, checkpoints, event log. Dashboard renders all of it and takes operator actions.</small></div>
+  </div>
+  <div class="tradeoff"><b>Rejected:</b> single agent or linear pipeline. Attack generation and evaluation in one context is a conflict of interest by design, and prioritization is a different job from execution.</div>
+  <div class="foot"><span>2 / 10</span></div>
+</section>
+
+<section>
+  <div class="kicker">Decision 1</div>
+  <h2>TypeScript + LangGraph.js, Postgres checkpointer</h2>
+  <p class="sub">One language with the Co-Pilot. Contracts, fixtures, and SDK idioms are shared.</p>
+  <table>
+    <tr><th>Option</th><th>Why it appealed</th><th>Why not</th></tr>
+    <tr><td><b>LangGraph.js</b><span class="pill ok">chosen</span></td><td>Checkpointing and human-in-the-loop interrupts built in; typed state; Langfuse TS SDK</td><td>Smaller community than the Python version</td></tr>
+    <tr><td>Custom TS state machine + pg-boss</td><td>No lock-in; easy to explain</td><td>Rebuilding checkpoints, retries, interrupts in one week</td></tr>
+    <tr><td>LangGraph (Python)</td><td>Most mature; Garak and PyRIT importable</td><td>Second toolchain; the local-model reason for Python vanished</td></tr>
+    <tr><td>CrewAI / AutoGen</td><td>Fast to stand up</td><td>Opaque hand-offs; hard to enforce contracts and trust levels</td></tr>
+  </table>
+  <div class="tradeoff"><b>Trade-off:</b> Garak and PyRIT become data sources (ported JSON seeds and re-implemented mutation operators), not dependencies.</div>
+  <div class="foot"><span>3 / 10</span></div>
+</section>
+
+<section>
+  <div class="kicker">Decision 2</div>
+  <h2>Claude attacker on a deterministic floor, OpenRouter added Thursday</h2>
+  <p class="sub">Haiku 4.5 for variants, Sonnet 5.5 once per campaign for strategy, refusals detected and counted per technique. Thursday, when budget allows, an open-weight tier via OpenRouter goes only where Claude declines.</p>
+  <div class="cols">
+    <div class="card chosen"><h3>Chosen</h3><ul><li>No new account or budget line; same bill and SDK</li><li>Authorized testing of our own app; Claude generally assists</li><li>Refusal rate tracked per technique so gaps are visible</li><li>Deterministic operators carry most of the volume anyway</li></ul></div>
+    <div class="card"><h3>Alternatives</h3><ul><li><b>Hosted open-weight via OpenRouter:</b> no refusals, different vendor from the Judge, separate rate-limit pool. Added Thursday, time-boxed to two hours, feature-flagged, go/no-go on Wednesday's run being stable. Router seam built Monday so it is a config change.</li><li><b>Local model:</b> ruled out, nothing runs locally.</li><li><b>Deterministic only:</b> never novel.</li></ul></div>
+  </div>
+  <div class="tradeoff"><b>Cost of this choice:</b> through Wednesday, attacker and Judge share a vendor, so independence rests on vendor-free detectors being authoritative, separate models and contexts, and nightly ground-truth calibration. Thursday's tier restores vendor separation where it matters, and Friday reports refusal rates with and without it.</div>
+  <div class="foot"><span>4 / 10</span></div>
+</section>
+
+<section>
+  <div class="kicker">Decision 3</div>
+  <h2>Hybrid Judge: detectors rule, LLM fills the gaps</h2>
+  <p class="sub">Exact where exactness is possible. Semantic only where needed. Continuously validated.</p>
+  <div class="cols">
+    <div class="card chosen"><h3>How a verdict is made</h3><ul><li><b>Stage 1</b> detectors: PHI canary, cross-patient, tool-log diff, scope rules. Fire = success, confidence 1.0.</li><li><b>Stage 2</b> Sonnet with a frozen, hashed rubric and structured output; rubric hash stored on every verdict.</li><li><b>Stage 3</b> Opus tiebreak on low confidence or disagreement; still unsure = human queue.</li></ul></div>
+    <div class="card"><h3>Keeping it honest</h3><ul><li>Labeled ground-truth set, re-judged nightly and on every rubric change</li><li>CI invariants: never <i>fail</i> when a detector fired; never <i>success</i> on clean controls; same transcript, same verdict</li><li>Drift alert on agreement drop or clean-control success; fix is a new rubric version, never a silent edit</li></ul></div>
+  </div>
+  <div class="tradeoff"><b>Rejected:</b> LLM-only (expensive, drifts, cannot be sole authority on PHI); deterministic-only (misses partial success); same model as attacker (conflict of interest).</div>
+  <div class="foot"><span>5 / 10</span></div>
+</section>
+
+<section>
+  <div class="kicker">Decision 4</div>
+  <h2>A regression test passes only when the <i>family</i> is blocked</h2>
+  <p class="sub">"The model stopped responding to that exact phrasing" is not a fix.</p>
+  <div class="cols">
+    <div class="card chosen"><h3>Pass requires all four</h3><ul><li>Minimal reproduction is blocked</li><li>Every stored successful variant is blocked</li><li>Fresh deterministic mutations are blocked</li><li>Clean control still gets a helpful answer (no over-blocking)</li></ul><p style="color:var(--muted);margin:10px 0 0">Replayed 3× against a non-deterministic target; majority rules and the flakiness is recorded, not hidden.</p></div>
+    <div class="card"><h3>Also caught</h3><ul><li>Per-category pass rate compared across versions, so fixing one thing that breaks another is flagged</li><li>Minimal repro derived by delta-debugging and re-verified before the report is written</li></ul></div>
+  </div>
+  <div class="tradeoff"><b>Rejected:</b> replay the exact sequence once. Cheapest, and worse than no test.</div>
+  <div class="foot"><span>6 / 10</span></div>
+</section>
+
+<section>
+  <div class="kicker">Decision 5</div>
+  <h2>Humans gate what is expensive to get wrong. Nothing else.</h2>
+  <table>
+    <tr><th>Gate</th><th>Who</th><th>Why here</th></tr>
+    <tr><td>Add a target to the allowlist</td><td>Operator + second approver</td><td>Prevents the platform being pointed at the wrong system</td></tr>
+    <tr><td>Enable a new attack category, raise a budget</td><td>Operator</td><td>Availability and cost blast radius</td></tr>
+    <tr><td>Publish a high or critical report</td><td>Security engineer</td><td>A confident false positive wastes engineering time and trust</td></tr>
+    <tr><td>Act on a remediation</td><td>Never automated</td><td>Platform has no write access to the target</td></tr>
+    <tr><td>Resolve a low-confidence verdict</td><td>Human queue</td><td>Feeds the ground-truth set; makes the Judge measurably better</td></tr>
+    <tr><td>Queue a rerun, set tonight's focus, skip a category (button or chat)</td><td>Autonomous after echo-and-confirm</td><td>Spends only inside tonight's envelope; logged with source</td></tr>
+    <tr><td>Run now, outside the window</td><td>Operator confirms with cost shown</td><td>Spends outside the envelope</td></tr>
+    <tr><td>Attack, mutate, judge, draft, regress</td><td>Autonomous <span class="pill ok">nightly</span></td><td>Reversible, budgeted, fully logged</td></tr>
+  </table>
+  <div class="tradeoff"><b>Rejected:</b> approve every report (humans become the bottleneck) and no gates (a mis-targeted campaign is a real incident).</div>
+  <div class="foot"><span>7 / 10</span></div>
+</section>
+
+<section>
+  <div class="kicker">Decision 6</div>
+  <h2>Typed contracts persisted in Postgres, not an in-memory bus</h2>
+  <p class="sub">Every hand-off is a versioned JSON Schema in <code>/contracts</code>, validated by Ajv on both sides, stored as a row.</p>
+  <div class="cols">
+    <div class="card chosen"><h3>Why</h3><ul><li>Replayable and auditable: reconstruct an overnight run from a trace ID</li><li>Agents are independently testable and swappable through the schema alone</li><li>Typed errors for every known failure (target unreachable, budget exceeded, judge timeout, refusal, regression detected)</li><li>One Postgres for exploits, queue, checkpoints, and event log</li></ul></div>
+    <div class="card"><h3>Alternatives</h3><ul><li><b>In-process calls only:</b> fastest, no durable per-message audit trail</li><li><b>Redis / RabbitMQ / SQS:</b> a second system to deploy and secure this week; revisit at 10K+ runs</li><li><b>SQLite:</b> no roles, weak concurrency; local dev only</li></ul></div>
+  </div>
+  <div class="foot"><span>8 / 10</span></div>
+</section>
+
+<section>
+  <div class="kicker">Decision 7</div>
+  <h2>Self-hosted Langfuse on Railway, instrumenting the target too</h2>
+  <div class="cols">
+    <div class="card chosen"><h3>Chosen</h3><ul><li>Matches the Phase 1–2 decision and the healthcare context</li><li>On Railway so the Co-Pilot can reach it; a laptop instance could not be</li><li>Co-Pilot gets its own Anthropic key and the same Langfuse project, so target spend appears next to platform spend</li><li>Per-role API keys: cost and rate-limit pressure attributable per agent on one shared bill</li></ul></div>
+    <div class="card"><h3>Alternatives</h3><ul><li><b>Langfuse Cloud:</b> zero setup, same SDK; fallback only if self-hosting slips past Tuesday morning</li><li><b>LangSmith:</b> proprietary, data residency questions</li><li><b>Braintrust:</b> eval-centric, another vendor</li><li><b>Custom only:</b> rebuilding a trace UI in a week is wasted effort</li></ul></div>
+  </div>
+  <div class="tradeoff"><b>Cost is controlled structurally:</b> detectors before LLM judge, cached rubric, Batch API for regression verdicts, novelty fingerprints so duplicates never hit the target, per-campaign budget envelopes with a signal-per-dollar halt. The target's own model calls remain the largest line.</div>
+  <div class="foot"><span>9 / 10</span></div>
+</section>
+
+<section>
+  <div class="kicker">Decision 8</div>
+  <h2>Nightly runs, a ticket tracker, and a chat box to the Orchestrator</h2>
+  <p class="sub">Not a continuous loop. One run a night inside a budget envelope, an operator queue that feeds it, and a dashboard that is the product surface.</p>
+  <div class="cols">
+    <div class="card chosen"><h3>Operator Dashboard</h3><ul>
+      <li><b>Findings as tickets:</b> severity, category, OWASP, status, assignee, evidence, repro, history. <b>Re-check tonight</b> queues the exploit family for the next run.</li>
+      <li><b>Tonight's queue</b> in the order the Orchestrator will take it, with estimated cost and what gets cut.</li>
+      <li><b>Run history</b> and the morning report; coverage heatmap; resilience trend; cost per role and for the target; Judge health; live agent activity; approvals.</li>
+      <li><b>Chat with the Orchestrator:</b> ask why, queue reruns, set focus, skip a category. Every directive is echoed, confirmed, typed, and logged.</li></ul></div>
+    <div class="card"><h3>Alternatives</h3><ul>
+      <li><b>Continuous loop:</b> fastest on deploys, but spend is bounded only by envelopes and it competes with daytime Co-Pilot traffic on the shared rate limit. Deploys now queue a regression for tonight; Run now covers urgency and demos.</li>
+      <li><b>GitHub Issues or Linear as tracker:</b> familiar, but two-way sync of status and evidence is its own project and the rerun button becomes a webhook hack.</li>
+      <li><b>Forms only, no chat:</b> cannot answer "why did you choose X". Kept alongside chat for every action.</li>
+      <li><b>Chat with unrestricted actions:</b> a bypass for every human gate. Rejected.</li></ul></div>
+  </div>
+  <div class="tradeoff"><b>Trade-off:</b> up to a day between a deploy and its regression run unless someone presses Run now. React dashboard on TanStack Start, Router, Query, Table, and Form shares the data layer with the worker; tickets are the exploit records, not a second system.</div>
+  <div class="foot"><span>10 / 11</span></div>
+</section>
+
+<section>
+  <div class="kicker">What we would change first</div>
+  <h2>Known weaknesses, in priority order</h2>
+  <table>
+    <tr><th>Weakness</th><th>Mitigation now</th><th>Upgrade when possible</th></tr>
+    <tr><td>Attacker and Judge share a vendor</td><td>Detectors authoritative; separate models, keys, contexts; nightly calibration</td><td>Open-weight attacker via a hosted provider; one-file router change</td></tr>
+    <tr><td>Safety refusals leave category gaps</td><td>Refusal rate per technique tracked; deterministic mutation covers</td><td>Same as above</td></tr>
+    <tr><td>Target is non-deterministic</td><td>3× replay, majority verdict, flakiness recorded</td><td>Pin target model and temperature for regression runs</td></tr>
+    <tr><td>Judge blind spots</td><td>Ground truth grows from every human review</td><td>Non-Anthropic third opinion on disagreements</td></tr>
+    <tr><td>Shared org rate limit with the target</td><td>Per-role token buckets; attacker paused first under 429</td><td>Separate workspace for the platform</td></tr>
+  </table>
+  <p class="sub" style="margin-top:22px">Schedule: Dashboard v1 read-only Tuesday, ticket workflow and queue Wednesday with the first nightly run, chat and OpenRouter Thursday with the second. OWASP-mapped evals are the only required engineering deliverable. Contracts, disclosure, Judge validation, and data-quality checks are kept because the architecture needs them. Triage exercise, ATO packet, and load test are stretch.</p>
+  <div class="foot"><span>11 / 11</span><span>ARCHITECTURE.md v0.3 has every table behind these slides</span></div>
+</section>
+
+</div>
+<script>
+  const slides = Array.from(document.querySelectorAll('section'))
+  let index = 0
+  function show(next) {
+    index = Math.max(0, Math.min(slides.length - 1, next))
+    slides.forEach((slide, i) => slide.classList.toggle('active', i === index))
+    location.hash = String(index + 1)
+  }
+  document.addEventListener('keydown', (event) => {
+    if (['ArrowRight', ' ', 'PageDown'].includes(event.key)) show(index + 1)
+    if (['ArrowLeft', 'PageUp'].includes(event.key)) show(index - 1)
+  })
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('a')) return
+    show(event.clientX > window.innerWidth / 2 ? index + 1 : index - 1)
+  })
+  const fromHash = parseInt(location.hash.slice(1), 10)
+  show(Number.isFinite(fromHash) ? fromHash - 1 : 0)
+</script>
+</body>
+</html>

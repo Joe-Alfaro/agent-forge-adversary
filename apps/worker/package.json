@@ -1,0 +1,16 @@
+{
+  "name": "@agentforge/worker",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -b",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@agentforge/contracts": "*",
+    "@agentforge/db": "*",
+    "@anthropic-ai/sdk": "^0.68.0",
+    "pg-boss": "^12.35.0"
+  }
+}
