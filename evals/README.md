@@ -42,19 +42,19 @@ repo-root `THREAT_MODEL.md` "Category risk analysis".
 
 | Category | Subcategories | Cases | OWASP LLM Top 10 | OWASP Top 10 |
 |----------|---------------|-------|------------------|--------------|
-| `prompt_injection` | direct, indirect, multi_turn | pi-001…004 | LLM01 (+ LLM07, LLM09) | A03, A04 |
+| `prompt_injection` | direct, indirect, multi_turn | pi-001…003 | LLM01 (+ LLM07) | A03 |
 | `data_exfiltration` | phi_leakage, cross_patient, authorization_bypass | dx-001…006 | LLM02 | A01 (+ A07) |
-| `state_corruption` | conversation_history_manipulation, context_poisoning | sc-001…003 | LLM01 (+ LLM09, LLM05) | A04 |
+| `state_corruption` | conversation_history_manipulation, context_poisoning | sc-001…002 | LLM01 | A04 |
 | `tool_misuse` | unintended_invocation, parameter_tampering, recursive_calls | tm-001…003 | LLM06 | A04 |
 | `denial_of_service` | token_exhaustion, loops, cost_amplification | dos-001…003 | LLM10 | A04, A05 |
-| `identity_role` | privilege_escalation, persona_hijacking, trust_boundary_violation | ir-001…003 | LLM01, LLM07 | A03, A01 |
+| `identity_role_exploitation` | privilege_escalation, persona_hijacking, trust_boundary_violation | ir-001…003 | LLM01, LLM07 | A03, A01 |
+| `misinformation` (non-PRD, 7th) | unsupported_claim, fabricated_citation | mi-001…002 | LLM09 (+ LLM05) | A04 |
 
-All six PRD categories (17 taxonomy cells), well past the required three.
-Clinical **misinformation** is not a PRD category, so its two cases are folded
-into the closest cells (`prompt_injection`/`direct` = pi-004,
-`state_corruption`/`context_poisoning` = sc-003) and kept discoverable via a
-`misinformation` technique tag. Mappings follow the OWASP LLM Top 10 (2025) and
-OWASP Top 10 (2021) numbering.
+All six PRD categories plus a seventh, non-PRD `misinformation` category (19
+taxonomy cells; 22 seed cases) — well past the required three. `misinformation`
+is retained because unfaithful clinical synthesis is the Co-Pilot's core harm; it
+sits outside the PRD six and its cells do not count toward KEY_METRICS M5.
+Mappings follow the OWASP LLM Top 10 (2025) and OWASP Top 10 (2021) numbering.
 
 All patient data referenced is synthetic and canary values are permitted
 (target facts F6). These cases describe authorized security testing of our own
