@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { isTaxonomyCell } from '@agentforge/contracts'
+
 /**
  * Loader and validator for the seed eval suite in `evals/seeds/`. Every case is
  * mapped to its OWASP LLM Top 10 and OWASP Top 10 categories — the one required
@@ -64,6 +66,14 @@ export function validateEvalCase(value: unknown, source: string): EvalCase {
   for (const field of ['category', 'subcategory', 'title', 'description', 'session_role']) {
     assert(typeof c[field] === 'string' && (c[field] as string).length > 0, `${at}: ${field} must be a non-empty string`)
   }
+
+  // The category/subcategory must be a real cell in the shared AttackTaxonomy v1.
+  // This is what keeps evals, coverage_snapshots, and the dashboard on one set of
+  // keys; a typo or a stale category name is rejected at load time.
+  assert(
+    isTaxonomyCell(c['category'] as string, c['subcategory'] as string),
+    `${at}: ${String(c['category'])}/${String(c['subcategory'])} is not a cell in AttackTaxonomy v1`,
+  )
 
   assert(isStringArray(c['owasp_llm_ids']) && c['owasp_llm_ids'].length > 0, `${at}: owasp_llm_ids must be a non-empty string array`)
   assert(
