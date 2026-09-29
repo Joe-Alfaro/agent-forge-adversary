@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentforge/contracts/attack_transcript/v1",
+  "title": "AttackTranscript",
+  "description": "Full record of one attack attempt against the target, captured by the Target Adapter. It is the evidence the Detectors and Judge reason over, so it is never redacted; access is controlled at the database level.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "message_id", "campaign_id", "trace_id", "attempt_id",
+    "produced_by", "produced_at", "target", "session", "turns", "totals"
+  ],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "message_id": { "type": "string", "format": "uuid" },
+    "campaign_id": { "type": "string", "format": "uuid" },
+    "trace_id": { "type": "string", "minLength": 1 },
+    "attempt_id": { "type": "string", "format": "uuid" },
+    "produced_by": { "const": "target_adapter" },
+    "produced_at": { "type": "string", "format": "date-time" },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "base_url", "version"],
+      "properties": {
+        "name": { "enum": ["copilot", "openemr"] },
+        "base_url": { "type": "string", "format": "uri" },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "role"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "role": { "type": "string", "minLength": 1 },
+        "context_patient_id": { "type": "integer" }
+      }
+    },
+    "turns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "attacker_message", "http_status", "latency_ms", "token_usage"],
+        "properties": {
+          "index": { "type": "integer", "minimum": 0 },
+          "attacker_message": { "type": "string" },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["document_id", "doc_type"],
+              "properties": {
+                "document_id": { "type": "string", "minLength": 1 },
+                "doc_type": { "type": "string", "minLength": 1 },
+                "seeded_via": { "enum": ["copilot", "openemr"] }
+              }
+            }
+          },
+          "http_status": { "type": "integer" },
+          "target_response": {
+            "description": "The target's raw JSON response body, captured verbatim. Shape varies by target and version.",
+            "type": ["object", "array", "string", "null"]
+          },
+          "tool_sequence": {
+            "description": "The target's own tool/worker call order, when it exposes one (Co-Pilot observability.tool_sequence). Empty when unavailable.",
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "degraded": { "type": "boolean" },
+          "latency_ms": { "type": "number", "minimum": 0 },
+          "token_usage": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["input_tokens", "output_tokens"],
+            "properties": {
+              "input_tokens": { "type": "integer", "minimum": 0 },
+              "output_tokens": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "message"],
+            "properties": {
+              "type": { "type": "string" },
+              "message": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "totals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["turns", "input_tokens", "output_tokens", "latency_ms"],
+      "properties": {
+        "turns": { "type": "integer", "minimum": 0 },
+        "input_tokens": { "type": "integer", "minimum": 0 },
+        "output_tokens": { "type": "integer", "minimum": 0 },
+        "latency_ms": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}
