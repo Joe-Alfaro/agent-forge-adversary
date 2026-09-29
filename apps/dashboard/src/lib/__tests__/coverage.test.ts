@@ -14,10 +14,10 @@ describe('taxonomyCells', () => {
     ])
   })
 
-  it('covers the PRD taxonomy: six categories, seventeen subcategories', () => {
+  it('covers the taxonomy: seven categories, nineteen subcategories', () => {
     const cells = taxonomyCells(ATTACK_TAXONOMY)
-    expect(new Set(cells.map((cell) => cell.category)).size).toBe(6)
-    expect(cells).toHaveLength(17)
+    expect(new Set(cells.map((cell) => cell.category)).size).toBe(7)
+    expect(cells).toHaveLength(19)
   })
 })
 

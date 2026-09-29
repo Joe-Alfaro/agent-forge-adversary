@@ -6,7 +6,7 @@ import { CoverageHeatmap } from '../CoverageHeatmap.js'
 
 const cells: CoverageCell[] = [
   { category: 'prompt_injection', subcategory: 'direct', owaspIds: ['LLM01'], attempts: 420, confirmed: 3, lastRunAt: '2026-09-28T09:10:00Z' },
-  { category: 'prompt_injection', subcategory: 'multi_turn', owaspIds: [], attempts: 0, confirmed: 0 },
+  { category: 'prompt_injection', subcategory: 'multi-turn', owaspIds: [], attempts: 0, confirmed: 0 },
   { category: 'denial_of_service', subcategory: 'token_exhaustion', owaspIds: [], attempts: 0, confirmed: 0 },
 ]
 
@@ -22,7 +22,7 @@ describe('CoverageHeatmap', () => {
 
   it('labels untested gaps in text, not color alone', () => {
     render(<CoverageHeatmap cells={cells} />)
-    const gap = screen.getByRole('listitem', { name: /multi turn: untested/ })
+    const gap = screen.getByRole('listitem', { name: /multi-turn: untested/ })
     expect(within(gap).getByText('Untested')).toBeTruthy()
   })
 
