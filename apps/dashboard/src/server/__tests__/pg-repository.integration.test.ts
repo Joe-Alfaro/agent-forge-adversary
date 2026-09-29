@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { listTaxonomyCells } from '@agentforge/contracts'
 import pg from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
@@ -148,13 +149,16 @@ describe.skipIf(!url)('Postgres repository', () => {
     it('builds coverage for the newest target version only', async () => {
       const coverage = await repo.getCoverage()
       expect(coverage.targetVersion).toBe('copilot@9.1.0')
-      expect(coverage.cells).toEqual([
+      // Every AttackTaxonomy v1 cell is present; only the tested ones have attempts.
+      expect(coverage.cells).toHaveLength(listTaxonomyCells().length)
+      expect(coverage.cells.filter((cell) => cell.attempts > 0)).toEqual([
         {
           category: 'prompt_injection',
           subcategory: 'direct',
           owaspIds: ['LLM01', 'LLM05'],
           attempts: 1,
           confirmed: 1,
+          familiesExercised: 0,
           lastRunAt: '2026-09-29T06:10:00.000Z',
         },
         {
@@ -163,6 +167,7 @@ describe.skipIf(!url)('Postgres repository', () => {
           owaspIds: ['LLM01'],
           attempts: 1,
           confirmed: 0,
+          familiesExercised: 0,
           lastRunAt: '2026-09-29T06:20:00.000Z',
         },
       ])
@@ -179,10 +184,10 @@ describe.skipIf(!url)('Postgres repository', () => {
         ],
       })
       const coverage = await withTaxonomy.getCoverage()
+      // Exactly the taxonomy's cells: prompt_injection/indirect has data but is not in this taxonomy.
       expect(coverage.cells.map((cell) => [cell.category, cell.subcategory, cell.attempts])).toEqual([
         ['prompt_injection', 'direct', 1],
         ['state_corruption', 'context_poisoning', 0],
-        ['prompt_injection', 'indirect', 1],
       ])
     })
 
@@ -200,6 +205,49 @@ describe.skipIf(!url)('Postgres repository', () => {
       expect((await repo.getTicket('AF-A-1'))?.lastVerifiedVersion).toBe('copilot@9.0.0')
     })
 
+    it('drops coverage rows whose category or subcategory is not in the taxonomy', async () => {
+      await pool.query(
+        `INSERT INTO attempts (campaign_id, fingerprint, category, subcategory, transcript, target_version_id)
+         SELECT 'aaaaaaaa-0000-4000-8000-000000000002', 'fp-legacy', 'legacy_probe', 'old', '{}', id
+         FROM target_versions WHERE version = 'copilot@9.1.0'`,
+      )
+      const coverage = await repo.getCoverage()
+      expect(coverage.cells.map((cell) => cell.category)).not.toContain('legacy_probe')
+    })
+
+    it('counts variant families live: distinct roots with at least one variant, per cell', async () => {
+      // A variant of attempt 4 (prompt_injection/direct on 9.1.0), and a grandchild of it: still one family.
+      await pool.query(
+        `INSERT INTO attempts (id, campaign_id, parent_attempt_id, fingerprint, category, subcategory, owasp_ids, transcript, target_version_id, created_at)
+         SELECT 'bbbbbbbb-0000-4000-8000-000000000006', 'aaaaaaaa-0000-4000-8000-000000000002', 'bbbbbbbb-0000-4000-8000-000000000004',
+                'fp-1v', 'prompt_injection', 'direct', '{LLM01}', '{}', id, '2026-09-29T06:30:00Z'
+         FROM target_versions WHERE version = 'copilot@9.1.0'`,
+      )
+      await pool.query(
+        `INSERT INTO attempts (id, campaign_id, parent_attempt_id, fingerprint, category, subcategory, owasp_ids, transcript, target_version_id, created_at)
+         SELECT 'bbbbbbbb-0000-4000-8000-000000000007', 'aaaaaaaa-0000-4000-8000-000000000002', 'bbbbbbbb-0000-4000-8000-000000000006',
+                'fp-1vv', 'prompt_injection', 'direct', '{LLM01}', '{}', id, '2026-09-29T06:40:00Z'
+         FROM target_versions WHERE version = 'copilot@9.1.0'`,
+      )
+      const cells = (await repo.getCoverage()).cells
+      expect(cells.find((cell) => cell.subcategory === 'direct')).toMatchObject({ attempts: 3, familiesExercised: 1 })
+      expect(cells.find((cell) => cell.subcategory === 'indirect')).toMatchObject({ attempts: 1, familiesExercised: 0 })
+    })
+
+    it('uses coverage_snapshots.families_exercised automatically once the column exists', async () => {
+      await pool.query('ALTER TABLE coverage_snapshots ADD COLUMN IF NOT EXISTS families_exercised integer')
+      try {
+        await pool.query(
+          `INSERT INTO coverage_snapshots (target_version_id, category, subcategory, attempts, confirmed, last_run_at, families_exercised)
+           SELECT id, 'prompt_injection', 'direct', 40, 2, '2026-09-29T07:00:00Z', 4 FROM target_versions WHERE version = 'copilot@9.1.0'`,
+        )
+        const direct = (await repo.getCoverage()).cells.find((cell) => cell.subcategory === 'direct')
+        expect(direct).toMatchObject({ attempts: 40, familiesExercised: 4 })
+      } finally {
+        await pool.query('ALTER TABLE coverage_snapshots DROP COLUMN IF EXISTS families_exercised')
+      }
+    })
+
     it('reads coverage from coverage_snapshots once the Orchestrator has materialized them', async () => {
       const latest = await pool.query<{ id: number }>(`SELECT id FROM target_versions WHERE version = 'copilot@9.1.0'`)
       await pool.query(
@@ -208,13 +256,16 @@ describe.skipIf(!url)('Postgres repository', () => {
         [latest.rows[0]?.id],
       )
       const coverage = await repo.getCoverage()
-      expect(coverage.cells).toEqual([
+      // 40 attempts on 2026-09-29, but no variant family yet: not covered for M5.
+      expect(coverage.m5).toMatchObject({ covered: 0, coveredKeys: [] })
+      expect(coverage.cells.filter((cell) => cell.attempts > 0)).toEqual([
         {
           category: 'prompt_injection',
           subcategory: 'direct',
           owaspIds: ['LLM01', 'LLM05'],
           attempts: 40,
           confirmed: 2,
+          familiesExercised: 0,
           lastRunAt: '2026-09-29T07:00:00.000Z',
         },
       ])

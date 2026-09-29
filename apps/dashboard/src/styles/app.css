@@ -407,3 +407,33 @@ button:disabled {
 .heat-swatch.heat-untested {
   border-style: dashed;
 }
+
+.m5-summary {
+  margin-bottom: 12px;
+}
+
+.m5-summary p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.m5-headline {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* High-risk (M5) cells get a heavy outline, independent of their fill. */
+.heat-high-risk {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+
+.heat-swatch.heat-high-risk {
+  outline-offset: -2px;
+}
+
+/* Non-PRD high-risk cells: dashed outline, so they read as tracked but outside M5. */
+.heat-tracked-risk {
+  outline: 2px dashed var(--text);
+  outline-offset: -2px;
+}

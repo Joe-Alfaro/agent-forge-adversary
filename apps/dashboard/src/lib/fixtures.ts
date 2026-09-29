@@ -170,20 +170,20 @@ export const runs: RunSummary[] = [
   },
 ]
 
-export const coverage: CoverageMatrix = {
+export const coverage: Omit<CoverageMatrix, 'm5' | 'prdCategories'> = {
   targetVersion: TARGET_VERSION,
   cells: [
-    { category: 'prompt_injection', subcategory: 'direct', owaspIds: ['LLM01'], attempts: 420, confirmed: 3, lastRunAt: '2026-09-28T09:10:00Z' },
-    { category: 'prompt_injection', subcategory: 'indirect', owaspIds: ['LLM01'], attempts: 188, confirmed: 2, lastRunAt: '2026-09-28T08:55:00Z' },
-    { category: 'prompt_injection', subcategory: 'multi-turn', owaspIds: ['LLM01'], attempts: 64, confirmed: 0, lastRunAt: '2026-09-27T08:30:00Z' },
-    { category: 'data_exfiltration', subcategory: 'phi_leakage', owaspIds: ['LLM02'], attempts: 96, confirmed: 1, lastRunAt: '2026-09-28T08:12:00Z' },
-    { category: 'data_exfiltration', subcategory: 'cross_patient', owaspIds: ['LLM02', 'A01'], attempts: 132, confirmed: 2, lastRunAt: '2026-09-28T07:44:00Z' },
-    { category: 'data_exfiltration', subcategory: 'authorization_bypass', owaspIds: ['A01'], attempts: 41, confirmed: 0, lastRunAt: '2026-09-27T08:40:00Z' },
-    { category: 'state_corruption', subcategory: 'context_poisoning', owaspIds: ['LLM04'], attempts: 22, confirmed: 0, lastRunAt: '2026-09-26T07:10:00Z' },
-    { category: 'tool_misuse', subcategory: 'unintended_invocation', owaspIds: ['LLM06'], attempts: 77, confirmed: 1, lastRunAt: '2026-09-27T08:02:00Z' },
-    { category: 'tool_misuse', subcategory: 'parameter_tampering', owaspIds: ['LLM06'], attempts: 35, confirmed: 0, lastRunAt: '2026-09-27T08:20:00Z' },
-    { category: 'identity_role_exploitation', subcategory: 'persona_hijacking', owaspIds: ['LLM01'], attempts: 58, confirmed: 1, lastRunAt: '2026-09-26T07:15:00Z' },
-    { category: 'misinformation', subcategory: 'unsupported_claim', owaspIds: ['LLM09'], attempts: 46, confirmed: 1, lastRunAt: '2026-09-27T08:50:00Z' },
+    { category: 'prompt_injection', subcategory: 'direct', owaspIds: ['LLM01'], attempts: 420, confirmed: 3, familiesExercised: 6, lastRunAt: '2026-09-28T09:10:00Z' },
+    { category: 'prompt_injection', subcategory: 'indirect', owaspIds: ['LLM01'], attempts: 188, confirmed: 2, familiesExercised: 3, lastRunAt: '2026-09-28T08:55:00Z' },
+    { category: 'prompt_injection', subcategory: 'multi_turn', owaspIds: ['LLM01'], attempts: 64, confirmed: 0, familiesExercised: 1, lastRunAt: '2026-09-27T08:30:00Z' },
+    { category: 'data_exfiltration', subcategory: 'phi_leakage', owaspIds: ['LLM02'], attempts: 96, confirmed: 1, familiesExercised: 2, lastRunAt: '2026-09-28T08:12:00Z' },
+    { category: 'data_exfiltration', subcategory: 'cross_patient', owaspIds: ['LLM02', 'A01'], attempts: 132, confirmed: 2, familiesExercised: 4, lastRunAt: '2026-09-28T07:44:00Z' },
+    { category: 'data_exfiltration', subcategory: 'authorization_bypass', owaspIds: ['A01'], attempts: 41, confirmed: 0, familiesExercised: 0, lastRunAt: '2026-09-27T08:40:00Z' },
+    { category: 'state_corruption', subcategory: 'context_poisoning', owaspIds: ['LLM04'], attempts: 22, confirmed: 0, familiesExercised: 1, lastRunAt: '2026-09-26T07:10:00Z' },
+    { category: 'tool_misuse', subcategory: 'unintended_invocation', owaspIds: ['LLM06'], attempts: 77, confirmed: 1, familiesExercised: 2, lastRunAt: '2026-09-27T08:02:00Z' },
+    { category: 'tool_misuse', subcategory: 'parameter_tampering', owaspIds: ['LLM06'], attempts: 35, confirmed: 0, familiesExercised: 1, lastRunAt: '2026-09-27T08:20:00Z' },
+    { category: 'identity_role_exploitation', subcategory: 'persona_hijacking', owaspIds: ['LLM01'], attempts: 58, confirmed: 1, familiesExercised: 2, lastRunAt: '2026-09-26T07:15:00Z' },
+    { category: 'misinformation', subcategory: 'unsupported_claim', owaspIds: ['LLM09'], attempts: 46, confirmed: 1, familiesExercised: 1, lastRunAt: '2026-09-27T08:50:00Z' },
   ],
 }
 

@@ -1,4 +1,4 @@
-import type { RerunSource, VerdictOutcome } from '@agentforge/contracts'
+import type { AttackCategory, AttackSubcategory, RerunSource, VerdictOutcome } from '@agentforge/contracts'
 
 /**
  * Read models for the v1 dashboard panels. Each mirrors a table or view in
@@ -29,11 +29,13 @@ export interface RunSummary {
 
 /** One cell of `coverage_snapshots` for the current target version. */
 export interface CoverageCell {
-  category: string
-  subcategory: string
+  category: AttackCategory
+  subcategory: AttackSubcategory
   owaspIds: string[]
   attempts: number
   confirmed: number
+  /** Distinct variant families (roots with at least one variant) on this version. */
+  familiesExercised?: number
   lastRunAt?: string
 }
 
@@ -41,6 +43,23 @@ export interface CoverageCell {
 export interface CoverageMatrix {
   targetVersion: string
   cells: CoverageCell[]
+  /** KEY_METRICS.md M5 over these cells. */
+  m5: M5Summary
+  /** The PRD's six categories; any other taxonomy category is an extra. */
+  prdCategories: AttackCategory[]
+}
+
+export interface M5Summary {
+  total: number
+  covered: number
+  minAttempts: number
+  windowDays: number
+  /** `category/subcategory` keys of the high-risk cells. */
+  highRiskKeys: string[]
+  /** High-risk keys that currently count as covered. */
+  coveredKeys: string[]
+  /** High-risk cells outside the PRD categories: shown, but not part of M5. */
+  trackedKeys: string[]
 }
 
 export interface RoleSpend {
@@ -71,7 +90,7 @@ export interface QueueItem {
   id: string
   kind: QueueItemKind
   exploitId?: string
-  category?: string
+  category?: AttackCategory
   requestedBy: string
   requestedAt: string
   source: RerunSource

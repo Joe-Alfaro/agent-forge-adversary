@@ -1,12 +1,34 @@
-import { mergeCoverage, type TaxonomyCell } from '../lib/coverage.js'
+import { listTaxonomyCells, PRD_CATEGORIES, type TaxonomyCell } from '@agentforge/contracts'
+
+import { mergeCoverage } from '../lib/coverage.js'
 import * as fixtures from '../lib/fixtures.js'
 import type { QueueItem, TonightQueue } from '../lib/models.js'
 import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
 import { nextRunDate } from '../lib/schedule.js'
 import type { TicketRow } from '../lib/tickets.js'
-import type { QueueConfig } from './config.js'
+import { m5Options, type QueueConfig } from './config.js'
+import { computeM5 } from './m5.js'
 import type { DashboardRepository } from './repository.js'
 import { assertCanRecheck, assertRerunRequest, assertTransition, normalizeAssignee } from './rules.js'
+
+const DAY_MS = 86_400_000
+
+/** The day the fixture timestamps were written for. Reads shift them by whole days to today. */
+const FIXTURE_DAY = Date.parse('2026-09-29T00:00:00Z')
+
+/** Whole days between the fixture day and `now`, so times of day are preserved. */
+function dayOffsetMs(now: Date): number {
+  return Math.floor((now.getTime() - FIXTURE_DAY) / DAY_MS) * DAY_MS
+}
+
+function shift(iso: string, offsetMs: number): string {
+  return new Date(Date.parse(iso) + offsetMs).toISOString()
+}
+
+function shiftOptional<T extends object, K extends keyof T & string>(value: T, key: K, offsetMs: number): T {
+  const iso = value[key]
+  return typeof iso === 'string' ? { ...value, [key]: shift(iso, offsetMs) } : value
+}
 
 export interface FixtureSeed {
   tickets: TicketRow[]
@@ -17,7 +39,7 @@ export interface FixtureRepositoryOptions {
   config: QueueConfig
   now?: () => Date
   seed?: FixtureSeed
-  /** Every cell the Coverage panel must show, tested or not. */
+  /** Every cell the Coverage panel must show, tested or not (defaults to AttackTaxonomy v1). */
   taxonomy?: readonly TaxonomyCell[]
 }
 
@@ -30,9 +52,14 @@ export function createFixtureRepository({
   config,
   now = () => new Date(),
   seed = { tickets: fixtures.tickets, queueItems: fixtures.queueItems },
-  taxonomy = [],
+  taxonomy = listTaxonomyCells(),
 }: FixtureRepositoryOptions): DashboardRepository {
-  const store = structuredClone(seed)
+  // Seeded queue items move once, at creation; items enqueued later already use now().
+  const createdOffset = dayOffsetMs(now())
+  const store = {
+    tickets: structuredClone(seed.tickets),
+    queueItems: seed.queueItems.map((item) => ({ ...item, requestedAt: shift(item.requestedAt, createdOffset) })),
+  }
 
   function findTicket(id: string): TicketRow {
     const ticket = store.tickets.find((row) => row.id === id)
@@ -71,21 +98,32 @@ export function createFixtureRepository({
     },
 
     async listRuns() {
-      return structuredClone(fixtures.runs)
+      const offset = dayOffsetMs(now())
+      return fixtures.runs.map((run) =>
+        shiftOptional({ ...structuredClone(run), startedAt: shift(run.startedAt, offset) }, 'finishedAt', offset),
+      )
     },
 
     async getMorningReport(runId) {
       const report = fixtures.morningReports.find((row) => row.runId === runId)
-      return report ? structuredClone(report) : null
+      if (!report) {
+        return null
+      }
+      return { ...structuredClone(report), generatedAt: shift(report.generatedAt, dayOffsetMs(now())) }
     },
 
     async getCoverage() {
+      const offset = dayOffsetMs(now())
       const coverage = structuredClone(fixtures.coverage)
-      return { ...coverage, cells: mergeCoverage(coverage.cells, taxonomy) }
+      const shifted = coverage.cells.map((cell) => shiftOptional(cell, 'lastRunAt', offset))
+      const cells = mergeCoverage(shifted, taxonomy)
+      return { ...coverage, cells, m5: computeM5(cells, m5Options(config, now())), prdCategories: [...PRD_CATEGORIES] }
     },
 
     async getCost() {
-      return structuredClone(fixtures.cost)
+      const offset = dayOffsetMs(now())
+      const cost = structuredClone(fixtures.cost)
+      return { ...cost, byRun: cost.byRun.map((run) => ({ ...run, startedAt: shift(run.startedAt, offset) })) }
     },
 
     async getQueue() {

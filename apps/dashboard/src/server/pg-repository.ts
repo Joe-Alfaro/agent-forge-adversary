@@ -1,12 +1,15 @@
 import type pg from 'pg'
 
-import { mergeCoverage, type TaxonomyCell } from '../lib/coverage.js'
+import { listTaxonomyCells, PRD_CATEGORIES, type TaxonomyCell } from '@agentforge/contracts'
+
+import { cellKey, mergeCoverage } from '../lib/coverage.js'
 import type { CostSummary, CoverageCell, RunSpend } from '../lib/models.js'
 import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
 import { nextRunDate } from '../lib/schedule.js'
 import { isExploitStatus } from '../lib/tickets.js'
-import type { QueueConfig } from './config.js'
-import { mapMorningReport, mapQueueItem, mapRunSummary, mapTicket } from './pg-mappers.js'
+import { m5Options, type QueueConfig } from './config.js'
+import { computeM5 } from './m5.js'
+import { mapCoverageRow, mapMorningReport, mapQueueItem, mapRunSummary, mapTicket } from './pg-mappers.js'
 import type { DashboardRepository } from './repository.js'
 import { assertCanRecheck, assertRerunRequest, assertTransition, normalizeAssignee } from './rules.js'
 
@@ -14,7 +17,7 @@ export interface PgRepositoryOptions {
   pool: pg.Pool
   config: QueueConfig
   now?: () => Date
-  /** Every cell the Coverage panel must show, tested or not. */
+  /** Every cell the Coverage panel must show, tested or not (defaults to AttackTaxonomy v1). */
   taxonomy?: readonly TaxonomyCell[]
 }
 
@@ -107,9 +110,28 @@ const COVERAGE_SQL = `
   LEFT JOIN confirmed USING (category, subcategory)
   ORDER BY cells.category, cells.subcategory`
 
+/**
+ * Variant families per cell on version $1: distinct lineage roots (following
+ * parent_attempt_id) among the cell's variant attempts.
+ */
+const FAMILIES_SQL = `
+  WITH RECURSIVE lineage AS (
+    SELECT id, id AS root FROM attempts WHERE parent_attempt_id IS NULL
+    UNION ALL
+    SELECT a.id, l.root FROM attempts a JOIN lineage l ON a.parent_attempt_id = l.id
+  )
+  SELECT a.category, COALESCE(a.subcategory, '') AS subcategory,
+         count(DISTINCT l.root) FILTER (WHERE a.parent_attempt_id IS NOT NULL) AS families_exercised
+  FROM attempts a
+  JOIN lineage l ON l.id = a.id
+  WHERE a.target_version_id = $1
+  GROUP BY a.category, COALESCE(a.subcategory, '')`
+
 /** Materialized cells for version $1, with OWASP ids from that version's attempts. */
-const SNAPSHOT_SQL = `
+function snapshotSql(hasFamiliesColumn: boolean): string {
+  return `
   SELECT s.category, s.subcategory, s.attempts, s.confirmed, s.last_run_at,
+         ${hasFamiliesColumn ? 's.families_exercised' : 'NULL::integer AS families_exercised'},
          COALESCE((
            SELECT array_agg(DISTINCT o.owasp)
            FROM attempts a, unnest(a.owasp_ids) AS o(owasp)
@@ -120,6 +142,7 @@ const SNAPSHOT_SQL = `
   FROM coverage_snapshots s
   WHERE s.target_version_id = $1
   ORDER BY s.category, s.subcategory`
+}
 
 /** Queued requests up to tonight in drain order; $1 is tonight's run date. */
 function queueSql(lock: boolean): string {
@@ -138,18 +161,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const COST_RUN_WINDOW = 14
 const COST_DAYS = 30
 
-function sortedStrings(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return []
-  }
-  return value.filter((item): item is string => typeof item === 'string').sort()
-}
-
 export function createPgRepository({
   pool,
   config,
   now = () => new Date(),
-  taxonomy = [],
+  taxonomy = listTaxonomyCells(),
 }: PgRepositoryOptions): DashboardRepository {
   async function transaction<T>(work: (client: pg.PoolClient) => Promise<T>): Promise<T> {
     const client = await pool.connect()
@@ -228,21 +244,39 @@ export function createPgRepository({
       const latest = await pool.query('SELECT id, version FROM target_versions ORDER BY first_seen DESC, id DESC LIMIT 1')
       const version = latest.rows[0]
       if (!version) {
-        return { targetVersion: 'no target version yet', cells: mergeCoverage([], taxonomy) }
-      }
-      const snapshot = await pool.query(SNAPSHOT_SQL, [version.id])
-      const result = snapshot.rowCount ? snapshot : await pool.query(COVERAGE_SQL, [version.id])
-      const cells = result.rows.map((row): CoverageCell => {
-        const cell: CoverageCell = {
-          category: String(row.category),
-          subcategory: row.subcategory === '' ? 'unspecified' : String(row.subcategory),
-          owaspIds: sortedStrings(row.owasp_ids),
-          attempts: Number(row.attempts),
-          confirmed: Number(row.confirmed),
+        const empty = mergeCoverage([], taxonomy)
+        return {
+          targetVersion: 'no target version yet',
+          cells: empty,
+          m5: computeM5(empty, m5Options(config, now())),
+          prdCategories: [...PRD_CATEGORIES],
         }
-        return row.last_run_at instanceof Date ? { ...cell, lastRunAt: row.last_run_at.toISOString() } : cell
-      })
-      return { targetVersion: String(version.version), cells: mergeCoverage(cells, taxonomy) }
+      }
+      // Use coverage_snapshots.families_exercised as soon as the column exists; count live until then.
+      const familiesColumn = await pool.query(
+        `SELECT 1 FROM information_schema.columns
+         WHERE table_schema = current_schema() AND table_name = 'coverage_snapshots' AND column_name = 'families_exercised'`,
+      )
+      const snapshot = await pool.query(snapshotSql((familiesColumn.rowCount ?? 0) > 0), [version.id])
+      const result = snapshot.rowCount ? snapshot : await pool.query(COVERAGE_SQL, [version.id])
+      const liveFamilies = await pool.query(FAMILIES_SQL, [version.id])
+      const familiesByKey = new Map(
+        liveFamilies.rows.map((row) => [cellKey({ category: String(row.category), subcategory: String(row.subcategory) }), Number(row.families_exercised)]),
+      )
+      const mapped = result.rows.map(mapCoverageRow)
+      const cells = mapped
+        .filter((cell): cell is CoverageCell => cell !== null)
+        .map((cell) => ({ ...cell, familiesExercised: cell.familiesExercised ?? familiesByKey.get(cellKey(cell)) ?? 0 }))
+      if (cells.length < mapped.length) {
+        console.warn(`coverage: ignored ${mapped.length - cells.length} cell(s) outside AttackTaxonomy v1`)
+      }
+      const merged = mergeCoverage(cells, taxonomy)
+      return {
+        targetVersion: String(version.version),
+        cells: merged,
+        m5: computeM5(merged, m5Options(config, now())),
+        prdCategories: [...PRD_CATEGORIES],
+      }
     },
 
     async getCost(): Promise<CostSummary> {

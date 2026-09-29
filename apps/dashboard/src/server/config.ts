@@ -8,7 +8,13 @@ export interface QueueConfig {
   envelopeUsd: number
   timeZone: string
   runHour: number
+  /** M5 attempt target per high-risk cell (COVERAGE_TARGET_ATTEMPTS; target_attempts in §7.2). */
+  coverageTargetAttempts?: number
 }
+
+/** M5 counts a cell as covered only with a run in this many days. */
+export const M5_WINDOW_DAYS = 7
+const DEFAULT_COVERAGE_TARGET_ATTEMPTS = 20
 
 export type DashboardConfig = QueueConfig &
   ({ mode: 'fixtures' } | { mode: 'postgres'; connectionString: string })
@@ -18,6 +24,27 @@ const DEFAULT_TIME_ZONE = 'America/Chicago'
 const DEFAULT_ENVELOPE_USD = 25
 
 type Env = NodeJS.ProcessEnv
+
+function readTargetAttempts(env: Env): number {
+  const raw = env.COVERAGE_TARGET_ATTEMPTS
+  if (raw === undefined || raw === '') {
+    return DEFAULT_COVERAGE_TARGET_ATTEMPTS
+  }
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`COVERAGE_TARGET_ATTEMPTS must be a positive integer, got "${raw}"`)
+  }
+  return value
+}
+
+/** The M5 options for a repository at time `now`. */
+export function m5Options(config: QueueConfig, now: Date) {
+  return {
+    now,
+    minAttempts: config.coverageTargetAttempts ?? DEFAULT_COVERAGE_TARGET_ATTEMPTS,
+    windowDays: M5_WINDOW_DAYS,
+  }
+}
 
 function readEnvelope(env: Env): number {
   const raw = env.NIGHTLY_BUDGET_USD
@@ -41,6 +68,7 @@ export function resolveDashboardConfig(env: Env): DashboardConfig {
     envelopeUsd: readEnvelope(env),
     timeZone: env.NIGHTLY_TIMEZONE || DEFAULT_TIME_ZONE,
     runHour: runHourFromCron(env.NIGHTLY_CRON),
+    coverageTargetAttempts: readTargetAttempts(env),
   }
   const mode = env.DASHBOARD_DATA_SOURCE || 'postgres'
   if (mode === 'fixtures') {
