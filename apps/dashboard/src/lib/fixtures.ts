@@ -170,7 +170,7 @@ export const runs: RunSummary[] = [
   },
 ]
 
-export const coverage: CoverageMatrix = {
+export const coverage: Omit<CoverageMatrix, 'm5'> = {
   targetVersion: TARGET_VERSION,
   cells: [
     { category: 'prompt_injection', subcategory: 'direct', owaspIds: ['LLM01'], attempts: 420, confirmed: 3, lastRunAt: '2026-09-28T09:10:00Z' },

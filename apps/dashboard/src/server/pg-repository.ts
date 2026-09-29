@@ -5,7 +5,8 @@ import type { CostSummary, CoverageCell, RunSpend } from '../lib/models.js'
 import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
 import { nextRunDate } from '../lib/schedule.js'
 import { isExploitStatus } from '../lib/tickets.js'
-import type { QueueConfig } from './config.js'
+import { computeM5 } from '../lib/m5.js'
+import { m5Options, type QueueConfig } from './config.js'
 import { mapMorningReport, mapQueueItem, mapRunSummary, mapTicket } from './pg-mappers.js'
 import type { DashboardRepository } from './repository.js'
 import { assertCanRecheck, assertRerunRequest, assertTransition, normalizeAssignee } from './rules.js'
@@ -228,7 +229,8 @@ export function createPgRepository({
       const latest = await pool.query('SELECT id, version FROM target_versions ORDER BY first_seen DESC, id DESC LIMIT 1')
       const version = latest.rows[0]
       if (!version) {
-        return { targetVersion: 'no target version yet', cells: mergeCoverage([], taxonomy) }
+        const empty = mergeCoverage([], taxonomy)
+        return { targetVersion: 'no target version yet', cells: empty, m5: computeM5(empty, m5Options(config, now())) }
       }
       const snapshot = await pool.query(SNAPSHOT_SQL, [version.id])
       const result = snapshot.rowCount ? snapshot : await pool.query(COVERAGE_SQL, [version.id])
@@ -242,7 +244,8 @@ export function createPgRepository({
         }
         return row.last_run_at instanceof Date ? { ...cell, lastRunAt: row.last_run_at.toISOString() } : cell
       })
-      return { targetVersion: String(version.version), cells: mergeCoverage(cells, taxonomy) }
+      const merged = mergeCoverage(cells, taxonomy)
+      return { targetVersion: String(version.version), cells: merged, m5: computeM5(merged, m5Options(config, now())) }
     },
 
     async getCost(): Promise<CostSummary> {

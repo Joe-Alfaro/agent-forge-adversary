@@ -30,4 +30,12 @@ describe('fixture repository defaults', () => {
     )
     expect(cells.filter((cell) => cell.attempts === 0).length).toBeGreaterThan(0)
   })
+
+  it('reports M5 over the high-risk cells', async () => {
+    const repo = createFixtureRepository({ config, now: () => contractNow, taxonomy: taxonomyCells(ATTACK_TAXONOMY) })
+    const { m5 } = await repo.getCoverage()
+    expect(m5).toMatchObject({ total: 6, minAttempts: 20, windowDays: 7 })
+    expect(m5.covered).toBeGreaterThan(0)
+    expect(m5.covered).toBeLessThan(6)
+  })
 })

@@ -4,7 +4,8 @@ import type { QueueItem, TonightQueue } from '../lib/models.js'
 import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
 import { nextRunDate } from '../lib/schedule.js'
 import type { TicketRow } from '../lib/tickets.js'
-import type { QueueConfig } from './config.js'
+import { computeM5 } from '../lib/m5.js'
+import { m5Options, type QueueConfig } from './config.js'
 import type { DashboardRepository } from './repository.js'
 import { assertCanRecheck, assertRerunRequest, assertTransition, normalizeAssignee } from './rules.js'
 
@@ -81,7 +82,8 @@ export function createFixtureRepository({
 
     async getCoverage() {
       const coverage = structuredClone(fixtures.coverage)
-      return { ...coverage, cells: mergeCoverage(coverage.cells, taxonomy) }
+      const cells = mergeCoverage(coverage.cells, taxonomy)
+      return { ...coverage, cells, m5: computeM5(cells, m5Options(config, now())) }
     },
 
     async getCost() {

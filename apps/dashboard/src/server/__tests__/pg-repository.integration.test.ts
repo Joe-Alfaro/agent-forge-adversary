@@ -208,6 +208,8 @@ describe.skipIf(!url)('Postgres repository', () => {
         [latest.rows[0]?.id],
       )
       const coverage = await repo.getCoverage()
+      // 40 attempts on 2026-09-29 clears the M5 bar for prompt_injection/direct.
+      expect(coverage.m5).toMatchObject({ covered: 1, coveredKeys: ['prompt_injection/direct'] })
       expect(coverage.cells).toEqual([
         {
           category: 'prompt_injection',

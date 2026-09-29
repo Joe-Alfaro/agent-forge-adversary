@@ -17,7 +17,7 @@ function CoveragePage() {
         <h1>Coverage</h1>
         <p>Category × subcategory for {data.targetVersion}: attempts, confirmed, last tested.</p>
       </header>
-      <CoverageHeatmap cells={data.cells} />
+      <CoverageHeatmap cells={data.cells} m5={data.m5} />
       <h2>Details</h2>
       <CoverageTable cells={data.cells} />
     </>

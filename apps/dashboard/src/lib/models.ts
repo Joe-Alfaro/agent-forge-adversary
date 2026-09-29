@@ -1,5 +1,7 @@
 import type { RerunSource, VerdictOutcome } from '@agentforge/contracts'
 
+import type { M5Summary } from './m5.js'
+
 /**
  * Read models for the v1 dashboard panels. Each mirrors a table or view in
  * ARCHITECTURE.md Section 14.3 so the fixture layer can be swapped for server
@@ -41,6 +43,8 @@ export interface CoverageCell {
 export interface CoverageMatrix {
   targetVersion: string
   cells: CoverageCell[]
+  /** KEY_METRICS.md M5 over these cells. */
+  m5: M5Summary
 }
 
 export interface RoleSpend {
