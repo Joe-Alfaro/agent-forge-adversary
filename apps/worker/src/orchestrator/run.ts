@@ -11,6 +11,7 @@ import type {
   RunArtifactAttempt,
   RunArtifactCampaign,
   RunArtifactCoverage,
+  RunArtifactEvent,
   RunArtifactExploit,
 } from '@agentforge/db'
 
@@ -19,7 +20,7 @@ import { judgeAttempt, type JudgeModel } from '../judge/index.js'
 import type { PlatformTracer, TraceScope } from '../observability/index.js'
 import { runCampaign, type CampaignAdapter, type CampaignSeed, type AttemptDetail } from '../redteam/index.js'
 import { buildNightlyPlan, type QueuedRequest } from './planner.js'
-import type { CoverageSnapshotRow, OrchestratorRepository } from './repository.js'
+import type { AgentEventRow, CoverageSnapshotRow, OrchestratorRepository } from './repository.js'
 
 /**
  * The Orchestrator RUN executor (ARCHITECTURE 7.0). It runs a NightlyPlan end to
@@ -139,7 +140,22 @@ async function executePlan(
   const startedAtIso = new Date(params.clock.now()).toISOString()
   const artifactCampaigns: RunArtifactCampaign[] = []
   const artifactExploits = new Map<string, RunArtifactExploit>()
+  const artifactEvents: RunArtifactEvent[] = []
   const seedOwaspFor = (seedId: string) => params.seedsById.get(seedId)?.owasp_ids ?? []
+
+  // Per-role spend/audit rows: written to the local DB and mirrored into the
+  // artifact so the Cost panel populates on both the local and imported DB.
+  const emitEvent = async (
+    agent: AgentEventRow['agent'],
+    traceId: string,
+    eventType: string,
+    costUsd: number,
+    payload?: unknown,
+  ) => {
+    const createdAt = new Date(params.clock.now()).toISOString()
+    await params.repo.insertAgentEvent({ traceId, agent, eventType, costUsd, createdAt, ...(payload === undefined ? {} : { payload }) })
+    artifactEvents.push({ trace_id: traceId, agent, event_type: eventType, cost_usd: Number(costUsd.toFixed(6)), created_at: createdAt, ...(payload === undefined ? {} : { payload }) })
+  }
 
   const runItems = params.plan.items.filter((i) => i.decision === 'run')
 
@@ -224,6 +240,17 @@ async function executePlan(
       verdictSplit[verdict.outcome] += 1
       if (verdict.needs_review) verdictSplit.needs_review += 1
 
+      // Per-role spend: the Co-Pilot's own model spend (agent='target') and the
+      // Judge's spend (agent='judge', zero when a detector was authoritative).
+      await emitEvent('target', detail.transcript.trace_id, 'answer', attemptTargetCost, {
+        attempt_id: detail.transcript.attempt_id,
+        tokens: detail.transcript.totals.input_tokens + detail.transcript.totals.output_tokens,
+      })
+      await emitEvent('judge', detail.transcript.trace_id, verdict.stage, judgeCost, {
+        attempt_id: detail.transcript.attempt_id,
+        outcome: verdict.outcome,
+      })
+
       // Mirror the attempt into the run artifact (id-space: transcript.attempt_id).
       if (item.subcategory) {
         const parentTranscriptId = detail.isSeed ? undefined : rootTranscriptIdBySeed.get(detail.seedId)
@@ -281,6 +308,14 @@ async function executePlan(
         coverage.set(key, entry)
       }
     }
+
+    // Red Team spend for the campaign: deterministic mutation is free; this row
+    // is the per-role marker (model-variant cost would accrue here when wired).
+    await emitEvent('redteam', campaignPlan.trace_id, 'generate', 0, {
+      campaign_id: campaignId,
+      attempts: campaign.attempts,
+      refusal_rate: campaign.refusalRate,
+    })
 
     await params.repo.updateCampaign(campaignId, { spendUsd: campaignSpend, status: aborted ? 'aborted' : 'completed' })
     artifactCampaigns.push({
@@ -355,6 +390,7 @@ async function executePlan(
     summary,
     campaigns: artifactCampaigns,
     exploits: [...artifactExploits.values()],
+    agent_events: artifactEvents,
     coverage: artifactCoverage,
     queue_request_ids: params.plan.items
       .filter((i) => i.kind === 'operator_request' && i.request_id && i.decision === 'run' && !aborted)

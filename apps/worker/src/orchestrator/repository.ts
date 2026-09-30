@@ -43,6 +43,15 @@ export interface ExploitRow {
   familyIds: string[]
 }
 
+export interface AgentEventRow {
+  traceId: string
+  agent: 'redteam' | 'judge' | 'docs' | 'orchestrator' | 'target'
+  eventType: string
+  payload?: unknown
+  costUsd: number
+  createdAt: string
+}
+
 export interface CoverageSnapshotRow {
   targetVersionId: number
   category: string
@@ -78,6 +87,8 @@ export interface OrchestratorRepository {
   createCampaign(row: { nightlyRunId: number; plan: NightlyPlanItem; budgetUsd: number }): Promise<string>
   insertAttempt(row: AttemptRow): Promise<string>
   insertVerdict(row: VerdictRow): Promise<void>
+  /** Per-role spend/audit row; the Cost panel reads per-agent sums from here. */
+  insertAgentEvent(row: AgentEventRow): Promise<void>
   /** Upserts by fingerprint; returns the (possibly newly minted) exploit id and whether it was new. */
   upsertExploit(row: ExploitRow): Promise<{ id: string; isNew: boolean }>
   upsertCoverageSnapshot(row: CoverageSnapshotRow): Promise<void>

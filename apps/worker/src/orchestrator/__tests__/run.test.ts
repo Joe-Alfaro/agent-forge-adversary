@@ -75,6 +75,10 @@ class FakeRepo implements OrchestratorRepository {
   async insertVerdict(row: VerdictRow) {
     this.verdicts.push(row)
   }
+  events: { agent: string; costUsd: number }[] = []
+  async insertAgentEvent(row: { agent: string; costUsd: number }) {
+    this.events.push({ agent: row.agent, costUsd: row.costUsd })
+  }
   async upsertExploit(row: ExploitRow) {
     const existing = this.exploits.find((e) => e.fingerprint === row.fingerprint)
     if (existing) return { id: `AF-${this.exploits.indexOf(existing) + 1}`, isNew: false }
@@ -375,5 +379,11 @@ describe('runPlan run artifact', () => {
     importPlanShape.attempts.forEach((a) => expect(a.verdicts.length).toBeGreaterThan(0))
     expect(result.artifact.run_key).toBeTruthy()
     expect(result.artifact.coverage?.length).toBeGreaterThan(0)
+    // Cost panel data: per-role agent_events for target, judge, and redteam.
+    const roles = new Set((result.artifact.agent_events ?? []).map((e) => e.agent))
+    expect(roles.has('target')).toBe(true)
+    expect(roles.has('judge')).toBe(true)
+    expect(roles.has('redteam')).toBe(true)
+    expect(repo.events.some((e) => e.agent === 'target')).toBe(true)
   })
 })

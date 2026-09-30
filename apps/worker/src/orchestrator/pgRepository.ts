@@ -93,6 +93,14 @@ export class PgOrchestratorRepository implements OrchestratorRepository {
     )
   }
 
+  async insertAgentEvent(row: import('./repository.js').AgentEventRow): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO agent_events (trace_id, agent, event_type, payload, source, cost_usd, created_at)
+       VALUES ($1, $2, $3, $4, 'orchestrator_run', $5, $6)`,
+      [row.traceId, row.agent, row.eventType, row.payload === undefined ? null : JSON.stringify(row.payload), row.costUsd, row.createdAt],
+    )
+  }
+
   async upsertExploit(row: ExploitRow): Promise<{ id: string; isNew: boolean }> {
     // Conflict behavior is kept identical to packages/db import-writer.ts (the
     // shared row-shape authority): a re-found exploit merges its family_ids and
