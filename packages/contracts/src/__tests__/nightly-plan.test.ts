@@ -63,6 +63,38 @@ describe('validateNightlyPlan', () => {
     expect(validateNightlyPlan({ ...valid, items }).valid).toBe(false)
   })
 
+  it('accepts owasp_ids on an item, and a plan without them (backward compatible)', () => {
+    const items = [{ ...valid.items[1], owasp_ids: ['LLM02', 'A01'] }]
+    expect(validateNightlyPlan({ ...valid, items }).errors).toEqual([])
+    expect(validateNightlyPlan(valid).valid).toBe(true)
+  })
+
+  it('rejects malformed or empty owasp_ids', () => {
+    expect(validateNightlyPlan({ ...valid, items: [{ ...valid.items[1], owasp_ids: ['OWASP-1'] }] }).valid).toBe(false)
+    expect(validateNightlyPlan({ ...valid, items: [{ ...valid.items[1], owasp_ids: [] }] }).valid).toBe(false)
+  })
+
+  it('accepts a regression item with its cause', () => {
+    const items = [
+      {
+        item_id: 'regress-AF-2026-0001',
+        kind: 'regression',
+        regression_cause: 'ticket_fixed',
+        exploit_id: 'AF-2026-0001',
+        category: 'prompt_injection',
+        subcategory: 'direct',
+        owasp_ids: ['LLM01', 'A03'],
+        seed_case_ids: ['AF-2026-0001'],
+        max_attempts: 3,
+        estimated_cost_usd: 0.15,
+        decision: 'run',
+        reason: 'ticket moved to fixed',
+      },
+    ]
+    expect(validateNightlyPlan({ ...valid, items }).errors).toEqual([])
+    expect(validateNightlyPlan({ ...valid, items: [{ ...items[0], regression_cause: 'vibes' }] }).valid).toBe(false)
+  })
+
   it('rejects an unknown decision', () => {
     const items = [{ ...valid.items[0], decision: 'maybe' }]
     expect(validateNightlyPlan({ ...valid, items }).valid).toBe(false)
