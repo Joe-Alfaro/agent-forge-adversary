@@ -5,7 +5,8 @@
  *   1. a trailing newline / whitespace in the env value (raw vs trimmed), and
  *   2. clock skew (a longer token TTL).
  * It makes NO judge/Anthropic call and prints no secret value — only lengths and
- * the exact server responses.
+ * the exact server responses. Exits 0 only on a 200: a 401 on every trial exits
+ * 3 and any other status exits 4, so it can gate a run.
  *
  * Usage: node apps/worker/dist/scripts/authPreflight.js
  */
@@ -62,7 +63,13 @@ async function main(): Promise<void> {
   for (const t of trials) {
     const { status, body } = await attempt(base, t.secret, t.ttl)
     console.log(`[${t.label}] -> ${status} ${JSON.stringify(body).slice(0, 200)}`)
-    if (status !== 401) {
+    if (status !== 401 && status !== 200) {
+      // Not an auth failure, but not a healthy target either: as a gate, stop here.
+      console.error(`[${t.label}] non-200 status ${status}: target is not healthy; aborting.`)
+      process.exitCode = 4
+      return
+    }
+    if (status === 200) {
       console.log(`AUTH OK with ${t.label} (status ${status}). Use LIVE_TOKEN_TTL_SECONDS=${t.ttl}${t.secret === trimmed && raw !== trimmed ? ' and note the env value had trailing whitespace' : ''}.`)
       return
     }
