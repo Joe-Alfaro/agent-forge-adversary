@@ -31,8 +31,8 @@ export interface DashboardRepository {
   enqueueRerun(request: unknown): Promise<TonightQueue>
   removeQueueItem(id: string): Promise<TonightQueue>
   moveQueueItem(id: string, direction: MoveDirection): Promise<TonightQueue>
-  /** Sets the nightly budget envelope (platform_settings); takes untrusted input and validates it. */
-  updateNightlyBudget(value: unknown): Promise<TonightQueue>
+  /** Sets the nightly budget envelope (platform_settings), recording who; takes untrusted input and validates it. */
+  updateNightlyBudget(value: unknown, updatedBy: string): Promise<TonightQueue>
   /** The newest `limit` agent_events, newest first. */
   listAgentEvents(limit: number): Promise<AgentEvent[]>
   /** Judge verdicts flagged needs_review with no human decision yet, oldest first. */

@@ -329,15 +329,15 @@ export function describeRepositoryContract(name: string, options: ContractOption
 
     describe('nightly budget', () => {
       it('persists a new envelope, and tonight’s queue uses it at once', async () => {
-        const queue = await repo.updateNightlyBudget('40.5')
+        const queue = await repo.updateNightlyBudget('40.5', 'operator')
         expect(queue.envelopeUsd).toBe(40.5)
         expect((await repo.getQueue()).envelopeUsd).toBe(40.5)
       })
 
       it('refuses budgets that are not positive, too large, or not numbers, and keeps the old one', async () => {
-        await expect(repo.updateNightlyBudget(0)).rejects.toThrow('more than $0')
-        await expect(repo.updateNightlyBudget(5000)).rejects.toThrow('at most $1000')
-        await expect(repo.updateNightlyBudget('lots')).rejects.toThrow('must be a number')
+        await expect(repo.updateNightlyBudget(0, 'operator')).rejects.toThrow('more than $0')
+        await expect(repo.updateNightlyBudget(5000, 'operator')).rejects.toThrow('at most $1000')
+        await expect(repo.updateNightlyBudget('lots', 'operator')).rejects.toThrow('must be a number')
         expect((await repo.getQueue()).envelopeUsd).toBe(25)
       })
     })

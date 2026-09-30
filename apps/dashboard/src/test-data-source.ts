@@ -84,4 +84,4 @@ export const resolveReview: typeof DataSource.resolveReview = (verdictId, review
 export const fetchRun: typeof DataSource.fetchRun = (runId) => state.repository.getRun(runId)
 export const runNow: typeof DataSource.runNow = (scope) => state.repository.runNow(scope, 'operator')
 export const updateNightlyBudget: typeof DataSource.updateNightlyBudget = (budgetUsd) =>
-  state.repository.updateNightlyBudget(budgetUsd)
+  state.repository.updateNightlyBudget(budgetUsd, 'operator')

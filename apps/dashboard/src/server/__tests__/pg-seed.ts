@@ -178,7 +178,8 @@ export async function ensurePlatformSettings(pool: pg.Pool, budgetUsd = 25): Pro
     `CREATE TABLE IF NOT EXISTS platform_settings (
        id integer PRIMARY KEY,
        nightly_budget_usd numeric(10,2) NOT NULL DEFAULT 25,
-       updated_at timestamptz NOT NULL DEFAULT now()
+       updated_at timestamptz NOT NULL DEFAULT now(),
+       updated_by text
      )`,
   )
   await pool.query(

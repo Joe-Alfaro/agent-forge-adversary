@@ -140,7 +140,7 @@ How the read models are derived:
 - **Nightly budget** is `platform_settings.nightly_budget_usd` (row `id = 1`),
   shown and edited on Tonight's queue (gate G3). A new value must be more than
   $0 and at most $1000, rounded to cents; it is written with an upsert that
-  stamps `updated_at`, and the queue's envelope, run/cut markers, and Run-now
+  stamps `updated_at` and records the operator's login in `updated_by`, and the queue's envelope, run/cut markers, and Run-now
   estimate use it at once. When tonight's plan was made with a different
   `budget_usd`, the page says so; `plan:preview` re-plans against the new
   budget. Until the `platform_settings` table exists the budget comes from

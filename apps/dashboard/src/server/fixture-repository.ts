@@ -372,6 +372,7 @@ export function createFixtureRepository({
       return queue()
     },
 
+    // The demo store keeps only the value; Postgres also records updated_by.
     async updateNightlyBudget(value) {
       store.budgetUsd = parseNightlyBudget(value)
       return queue()

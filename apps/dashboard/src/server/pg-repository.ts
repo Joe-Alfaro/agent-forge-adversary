@@ -547,7 +547,7 @@ export function createPgRepository({
       return readQueue(pool)
     },
 
-    async updateNightlyBudget(value) {
+    async updateNightlyBudget(value, updatedBy) {
       const budgetUsd = parseNightlyBudget(value)
       if (!(await hasPlatformSettings(pool))) {
         throw new Error(
@@ -555,9 +555,10 @@ export function createPgRepository({
         )
       }
       await pool.query(
-        `INSERT INTO platform_settings (id, nightly_budget_usd, updated_at) VALUES (1, $1, now())
-         ON CONFLICT (id) DO UPDATE SET nightly_budget_usd = EXCLUDED.nightly_budget_usd, updated_at = now()`,
-        [budgetUsd],
+        `INSERT INTO platform_settings (id, nightly_budget_usd, updated_at, updated_by) VALUES (1, $1, now(), $2)
+         ON CONFLICT (id) DO UPDATE
+           SET nightly_budget_usd = EXCLUDED.nightly_budget_usd, updated_at = now(), updated_by = EXCLUDED.updated_by`,
+        [budgetUsd, updatedBy],
       )
       return readQueue(pool)
     },

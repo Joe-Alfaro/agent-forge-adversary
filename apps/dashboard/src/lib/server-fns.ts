@@ -79,7 +79,8 @@ export const enqueueRerunFn = createServerFn({ method: 'POST' })
 /** Gate G3 (raise a budget envelope) is the operator's; validated here and again in the repository. */
 export const updateNightlyBudgetFn = createServerFn({ method: 'POST' })
   .validator((value: unknown) => parseNightlyBudget(value))
-  .handler(({ data }) => getRepository().updateNightlyBudget(data))
+  // Recorded as updated_by under the login's username, never taken from the browser.
+  .handler(({ data }) => getRepository().updateNightlyBudget(data, operatorName(process.env)))
 
 export const removeQueueItemFn = createServerFn({ method: 'POST' })
   .validator((id: unknown) => requireString(id, 'Request id'))

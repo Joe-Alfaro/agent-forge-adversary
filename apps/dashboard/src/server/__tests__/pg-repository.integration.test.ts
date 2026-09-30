@@ -122,12 +122,13 @@ describe.skipIf(!url)('Postgres repository', () => {
   })
 
   describe('nightly budget storage', () => {
-    it('writes platform_settings row 1 and stamps updated_at', async () => {
+    it('writes platform_settings row 1 with who changed it and when', async () => {
       const repo = await seededRepo()
-      await repo.updateNightlyBudget(33.333)
-      const row = await pool.query('SELECT nightly_budget_usd, updated_at FROM platform_settings WHERE id = 1')
+      await repo.updateNightlyBudget(33.333, 'priya')
+      const row = await pool.query('SELECT nightly_budget_usd, updated_at, updated_by FROM platform_settings WHERE id = 1')
       expect(Number(row.rows[0]?.nightly_budget_usd)).toBe(33.33)
       expect(row.rows[0]?.updated_at).toBeInstanceOf(Date)
+      expect(row.rows[0]?.updated_by).toBe('priya')
     })
 
     it('falls back to NIGHTLY_BUDGET_USD and refuses to save until platform_settings is migrated', async () => {
@@ -135,7 +136,7 @@ describe.skipIf(!url)('Postgres repository', () => {
       await pool.query('DROP TABLE platform_settings')
       try {
         expect((await repo.getQueue()).envelopeUsd).toBe(18)
-        await expect(repo.updateNightlyBudget(30)).rejects.toThrow('platform_settings')
+        await expect(repo.updateNightlyBudget(30, 'operator')).rejects.toThrow('platform_settings')
       } finally {
         await ensurePlatformSettings(pool)
       }
