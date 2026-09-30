@@ -2,6 +2,7 @@ import {
   isTaxonomyCell,
   validateNightlyPlan,
   validateNightlyRunSummary,
+  type AttackTranscript,
   type CampaignPlan,
   type NightlyPlan,
   type NightlyPlanItem,
@@ -20,7 +21,14 @@ import type {
 import { runDetectors, type DetectorContext, type RunDetectorsClock } from '../detectors/index.js'
 import { judgeAttempt, type JudgeModel } from '../judge/index.js'
 import type { PlatformTracer, TraceScope } from '../observability/index.js'
-import { fingerprintTurns, runCampaign, type CampaignAdapter, type CampaignSeed, type AttemptDetail } from '../redteam/index.js'
+import {
+  fingerprintTurns,
+  runCampaign,
+  type AttemptDetail,
+  type CampaignAdapter,
+  type CampaignSeed,
+  type VariantTurns,
+} from '../redteam/index.js'
 import { buildNightlyPlan, REGRESSION_REPLAYS, type QueuedRequest } from './planner.js'
 import { DEFAULT_NIGHTLY_BUDGET_USD } from './budget.js'
 import type { AgentEventRow, CoverageSnapshotRow, OrchestratorRepository, RegressionFamily } from './repository.js'
@@ -39,18 +47,45 @@ import type { AgentEventRow, CoverageSnapshotRow, OrchestratorRepository, Regres
  * URL is written into the summary.
  */
 
+/**
+ * Modeled spend, deliberately conservative so the hard cap holds: every rate is
+ * Sonnet-class ($3 / $15 per MTok) even where a cheaper model runs (Haiku
+ * variants), and a target that reports no token usage is charged a flat
+ * per-turn estimate (the top of ARCHITECTURE 13.3's $0.02–0.05 per case).
+ */
 export interface CostModel {
   /** Rough per-token target rates (USD) for the estimate. */
   targetInputPerToken: number
   targetOutputPerToken: number
-  /** Flat per-Judge-call estimate (USD). */
+  /** Charged per turn when the target reports zero token usage. */
+  targetFallbackPerTurnUsd: number
+  /** Floor per LLM Judge call (USD); the reported usage is charged when higher. */
   judgePerCallUsd: number
+  judgeInputPerToken: number
+  judgeOutputPerToken: number
+  /** Red Team model generation (strategy + variants) rates. */
+  generationInputPerToken: number
+  generationOutputPerToken: number
+  /** Worst-case cost of one generation call, checked against the cap before calling. */
+  generationWorstCaseUsd: number
 }
 
 export const DEFAULT_COST_MODEL: CostModel = {
   targetInputPerToken: 3 / 1_000_000,
   targetOutputPerToken: 15 / 1_000_000,
+  targetFallbackPerTurnUsd: 0.05,
   judgePerCallUsd: 0.008,
+  judgeInputPerToken: 3 / 1_000_000,
+  judgeOutputPerToken: 15 / 1_000_000,
+  generationInputPerToken: 3 / 1_000_000,
+  generationOutputPerToken: 15 / 1_000_000,
+  generationWorstCaseUsd: 0.03,
+}
+
+/** The model-backed variant source (ModelVariantGenerator's surface). */
+export interface VariantGenerator {
+  readonly usage: { inputTokens: number; outputTokens: number }
+  generate(seed: CampaignSeed, count: number): Promise<VariantTurns[]>
 }
 
 export interface RunPlanParams {
@@ -75,6 +110,10 @@ export interface RunPlanParams {
   scheduledFor?: string
   /** Replays per regression sequence (R, ARCHITECTURE 9.5); default 3. */
   regressionReplays?: number
+  /** Model-backed Red Team variants (Haiku variants + Sonnet strategy); off when absent. */
+  variantGenerator?: VariantGenerator
+  /** Model variants requested per seed; default 3. */
+  modelVariantsPerSeed?: number
 }
 
 export interface RunPlanResult {
@@ -168,6 +207,18 @@ async function executePlan(
 
   const runItems = params.plan.items.filter((i) => i.decision === 'run')
 
+  const targetCostOf = (t: AttackTranscript): number =>
+    t.totals.input_tokens + t.totals.output_tokens > 0
+      ? t.totals.input_tokens * cost.targetInputPerToken + t.totals.output_tokens * cost.targetOutputPerToken
+      : t.turns.length * cost.targetFallbackPerTurnUsd
+  const judgeCostOf = (stage: string): number => {
+    // A detector-authoritative verdict costs no model call.
+    if (stage === 'detector') return 0
+    const usage = (params.judgeModel as { lastUsage?: { input_tokens: number; output_tokens: number } }).lastUsage
+    const reported = usage ? usage.input_tokens * cost.judgeInputPerToken + usage.output_tokens * cost.judgeOutputPerToken : 0
+    return Math.max(cost.judgePerCallUsd, reported)
+  }
+
   // Regression Harness (ARCHITECTURE 9): each stored sequence of the exploit's
   // family is replayed R times unchanged, and the verdict is the majority. The
   // exploit passes only when every sequence is blocked. Replays are not new
@@ -209,8 +260,7 @@ async function executePlan(
           session: params.newSession(seed),
           turns: sequence.turns.map((message) => ({ message })),
         })
-        const targetCost =
-          transcript.totals.input_tokens * cost.targetInputPerToken + transcript.totals.output_tokens * cost.targetOutputPerToken
+        const targetCost = targetCostOf(transcript)
         if (spendUsd + targetCost + cost.judgePerCallUsd > params.spendCapUsd) {
           aborted = true
           notes.push(`Spend cap $${params.spendCapUsd} reached; aborted during regression ${exploitId}.`)
@@ -218,7 +268,7 @@ async function executePlan(
         }
         const detectorResult = runDetectors(transcript, detectorContext, params.clock)
         const verdict = await judgeAttempt({ transcript, detectorResult, category: item.category, model: params.judgeModel, clock: params.clock })
-        const judgeCost = verdict.stage === 'detector' ? 0 : cost.judgePerCallUsd
+        const judgeCost = judgeCostOf(verdict.stage)
         recordGeneration(trace, verdict.stage, verdict.outcome, params.judgeModel.id)
         const attemptCost = targetCost + judgeCost
         spendUsd += attemptCost
@@ -289,6 +339,12 @@ async function executePlan(
 
   for (const item of runItems) {
     if (aborted) break
+    // Hard cap: never start an item whose planned cost would cross it.
+    if (spendUsd + item.estimated_cost_usd > params.spendCapUsd) {
+      aborted = true
+      notes.push(`Spend cap $${params.spendCapUsd} would be exceeded by ${item.item_id} (est $${item.estimated_cost_usd.toFixed(2)}, spent $${spendUsd.toFixed(3)}); stopped before it.`)
+      break
+    }
     if (item.kind === 'regression') {
       await runRegression(item)
       continue
@@ -299,6 +355,29 @@ async function executePlan(
       continue
     }
     const campaignId = await params.repo.createCampaign({ nightlyRunId, plan: item, budgetUsd: item.estimated_cost_usd })
+    let campaignSpend = 0
+    let redteamCost = 0
+    const generator = params.variantGenerator
+    const generationTokensBefore = generator ? { ...generator.usage } : undefined
+
+    // Model variants: each generation is charged as it happens, and skipped once
+    // a worst-case call could cross the hard cap (deterministic families still run).
+    const modelVariants = generator
+      ? async (seed: CampaignSeed): Promise<VariantTurns[]> => {
+          if (spendUsd + cost.generationWorstCaseUsd > params.spendCapUsd) return []
+          const before = { ...generator.usage }
+          try {
+            return await generator.generate(seed, params.modelVariantsPerSeed ?? 3)
+          } finally {
+            const c =
+              (generator.usage.inputTokens - before.inputTokens) * cost.generationInputPerToken +
+              (generator.usage.outputTokens - before.outputTokens) * cost.generationOutputPerToken
+            spendUsd += c
+            campaignSpend += c
+            redteamCost += c
+          }
+        }
+      : undefined
 
     const campaign = await runCampaign({
       adapter: params.adapter,
@@ -308,6 +387,7 @@ async function executePlan(
       perFamily: params.perFamily ?? 1,
       maxAttempts: item.max_attempts,
       campaignId,
+      ...(modelVariants ? { modelVariants } : {}),
     })
     refusals += campaign.refusals
 
@@ -317,13 +397,10 @@ async function executePlan(
     const campaignAttempts: RunArtifactAttempt[] = []
     const rootTranscriptIdBySeed = new Map<string, string>()
     const campaignPlan: CampaignPlan = buildCampaignPlan(item, seeds, params, campaignId, startedAtIso)
-    let campaignSpend = 0
 
     for (const detail of campaign.attemptsDetail) {
       // Hard spend cap: stop before incurring more cost.
-      const attemptTargetCost =
-        detail.transcript.totals.input_tokens * cost.targetInputPerToken +
-        detail.transcript.totals.output_tokens * cost.targetOutputPerToken
+      const attemptTargetCost = targetCostOf(detail.transcript)
       if (spendUsd + attemptTargetCost + cost.judgePerCallUsd > params.spendCapUsd) {
         aborted = true
         notes.push(`Spend cap $${params.spendCapUsd} reached; aborted before completing ${item.item_id}.`)
@@ -343,8 +420,7 @@ async function executePlan(
         model: params.judgeModel,
         clock: params.clock,
       })
-      // A detector-authoritative verdict costs no model call.
-      const judgeCost = verdict.stage === 'detector' ? 0 : cost.judgePerCallUsd
+      const judgeCost = judgeCostOf(verdict.stage)
       recordGeneration(trace, verdict.stage, verdict.outcome, params.judgeModel.id)
 
       const attemptCost = attemptTargetCost + judgeCost
@@ -441,12 +517,21 @@ async function executePlan(
       }
     }
 
-    // Red Team spend for the campaign: deterministic mutation is free; this row
-    // is the per-role marker (model-variant cost would accrue here when wired).
-    await emitEvent('redteam', campaignPlan.trace_id, 'generate', 0, {
+    // Red Team spend for the campaign: deterministic mutation is free; model
+    // generation (strategy + variants) is what this row carries.
+    await emitEvent('redteam', campaignPlan.trace_id, 'generate', redteamCost, {
       campaign_id: campaignId,
       attempts: campaign.attempts,
       refusal_rate: campaign.refusalRate,
+      ...(generator && generationTokensBefore
+        ? {
+            model_variants: campaign.byFamily['model']?.attempts ?? 0,
+            generation_tokens: {
+              input: generator.usage.inputTokens - generationTokensBefore.inputTokens,
+              output: generator.usage.outputTokens - generationTokensBefore.outputTokens,
+            },
+          }
+        : {}),
     })
 
     await params.repo.updateCampaign(campaignId, { spendUsd: campaignSpend, status: aborted ? 'aborted' : 'completed' })
