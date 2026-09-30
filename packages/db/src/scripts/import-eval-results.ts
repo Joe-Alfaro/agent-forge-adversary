@@ -7,7 +7,8 @@ import { join } from 'node:path'
 
 import pg from 'pg'
 
-import { importEvalResults, planEvalImport, type EvalResultsFile, type SeedCase } from '../eval-import.js'
+import { planEvalImport, type EvalResultsFile, type SeedCase } from '../eval-import.js'
+import { importPlan } from '../import-writer.js'
 import { resolveDbConfig } from '../index.js'
 
 function readJson<T>(path: string): T {
@@ -27,7 +28,7 @@ async function main() {
 
   const pool = new pg.Pool({ connectionString: resolveDbConfig().connectionString })
   try {
-    const result = await importEvalResults(pool, plan)
+    const result = await importPlan(pool, plan)
     console.log(`${result.status}: ${source} as nightly run ${result.runId} (${plan.attempts.length} attempts)`)
   } finally {
     await pool.end()

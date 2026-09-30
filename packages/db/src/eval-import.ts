@@ -1,5 +1,6 @@
 import type { NightlyRunSummary } from '@agentforge/contracts'
-import type pg from 'pg'
+
+import type { ImportPlan, PlannedAttempt, PlannedEvent } from './import-writer.js'
 
 /**
  * Loads a live eval results file (`evals/results/*.json`, written by the
@@ -46,51 +47,11 @@ export interface SeedCase {
   technique_tags?: string[]
 }
 
-export interface PlannedAttempt {
-  id: string
-  campaignId: string
-  fingerprint: string
-  category: string
-  subcategory: string
-  owaspIds: string[]
-  techniqueTags: string[]
-  transcript: EvalCaseResult['transcript']
-  tokens: number
-  createdAt: string
-  traceId: string
-  judgeCostUsd: number
-  verdict: {
-    outcome: EvalCaseResult['outcome']
-    confidence: number
-    stage: string
-    rubricVersion: string
-    judgeModel: string | null
-    evidence: unknown[]
-    needsReview: boolean
-  }
-}
-
-export interface EvalImportPlan {
-  importKey: string
-  target: EvalResultsFile['target']
-  run: {
-    startedAt: string
-    finishedAt: string
-    trigger: 'run_now'
-    status: 'completed'
-    spendUsd: number
-    summary: NightlyRunSummary
-  }
-  attempts: PlannedAttempt[]
-}
-
-export type EvalImportResult = { status: 'imported' | 'already_imported'; runId: number }
-
 function plural(count: number, singular: string, pluralForm: string) {
   return `${count} ${count === 1 ? singular : pluralForm}`
 }
 
-export function planEvalImport(results: EvalResultsFile, seeds: SeedCase[], source: string): EvalImportPlan {
+export function planEvalImport(results: EvalResultsFile, seeds: SeedCase[], source: string): ImportPlan {
   const seedsById = new Map(seeds.map((seed) => [seed.id, seed]))
   const judgeCostUsd = results.cases.length > 0 ? results.spend_estimate_usd.judge / results.cases.length : 0
 
@@ -103,6 +64,7 @@ export function planEvalImport(results: EvalResultsFile, seeds: SeedCase[], sour
     return {
       id: result.transcript.attempt_id,
       campaignId: result.transcript.campaign_id,
+      parentAttemptId: null,
       fingerprint: `seed:${result.id}`,
       category: result.category,
       subcategory: result.subcategory,
@@ -110,23 +72,37 @@ export function planEvalImport(results: EvalResultsFile, seeds: SeedCase[], sour
       techniqueTags: seed.technique_tags ?? [],
       transcript: result.transcript,
       tokens: (totals?.input_tokens ?? 0) + (totals?.output_tokens ?? 0),
+      costUsd: 0,
       createdAt: result.transcript.produced_at,
-      traceId: result.transcript.trace_id,
-      judgeCostUsd,
-      verdict: {
-        outcome: result.outcome,
-        confidence: result.confidence,
-        stage: result.stage,
-        rubricVersion: result.rubric_version,
-        judgeModel: result.judge_model ?? null,
-        evidence: result.detectors,
-        needsReview: result.needs_review,
-      },
+      verdicts: [
+        {
+          outcome: result.outcome,
+          confidence: result.confidence,
+          stage: result.stage,
+          rubricVersion: result.rubric_version,
+          judgeModel: result.judge_model ?? null,
+          evidence: result.detectors,
+          needsReview: result.needs_review,
+          createdAt: result.transcript.produced_at,
+        },
+      ],
     }
   })
 
-  const confirmed = attempts.filter((attempt) => attempt.verdict.outcome === 'success').length
-  const categories = new Set(attempts.map((attempt) => attempt.category)).size
+  const events = results.cases.map(
+    (result): PlannedEvent => ({
+      traceId: result.transcript.trace_id,
+      agent: 'judge',
+      eventType: 'verdict',
+      payload: { attempt_id: result.transcript.attempt_id, outcome: result.outcome },
+      source: 'eval_import',
+      costUsd: judgeCostUsd,
+      createdAt: result.transcript.produced_at,
+    }),
+  )
+
+  const confirmed = results.cases.filter((result) => result.outcome === 'success').length
+  const categories = new Set(results.cases.map((result) => result.category)).size
   const startedAt = attempts.map((attempt) => attempt.createdAt).sort()[0] ?? results.generated_at
   const summary: NightlyRunSummary = {
     target_version: results.target.version,
@@ -145,6 +121,7 @@ export function planEvalImport(results: EvalResultsFile, seeds: SeedCase[], sour
 
   return {
     importKey: `eval-import:${source}`,
+    kind: 'live_eval',
     target: results.target,
     run: {
       startedAt,
@@ -154,93 +131,18 @@ export function planEvalImport(results: EvalResultsFile, seeds: SeedCase[], sour
       spendUsd: results.spend_estimate_usd.total,
       summary,
     },
+    campaigns: attempts.map((attempt) => ({
+      id: attempt.campaignId,
+      plan: { seed_case_ids: [attempt.fingerprint.slice('seed:'.length)] },
+      budgetUsd: 0,
+      spendUsd: judgeCostUsd,
+      status: 'completed',
+      startedAt: attempt.createdAt,
+    })),
     attempts,
-  }
-}
-
-/** Writes the plan in one transaction; a second import of the same file does nothing. */
-export async function importEvalResults(pool: pg.Pool, plan: EvalImportPlan): Promise<EvalImportResult> {
-  const client = await pool.connect()
-  try {
-    await client.query('BEGIN')
-    // Serialize concurrent imports of the same file.
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [plan.importKey])
-    const existing = await client.query<{ id: number }>(
-      `SELECT id FROM nightly_runs WHERE plan->>'import_key' = $1`,
-      [plan.importKey],
-    )
-    if (existing.rows[0]) {
-      await client.query('ROLLBACK')
-      return { status: 'already_imported', runId: existing.rows[0].id }
-    }
-
-    const target = await client.query<{ id: number }>(
-      `INSERT INTO targets (base_url, kind, allowlisted_by) VALUES ($1, $2, 'eval-import')
-       ON CONFLICT (base_url) DO UPDATE SET base_url = EXCLUDED.base_url RETURNING id`,
-      [plan.target.base_url, plan.target.name],
-    )
-    const targetId = target.rows[0]!.id
-    const version = await client.query<{ id: number }>(
-      `INSERT INTO target_versions (target_id, version, first_seen) VALUES ($1, $2, $3)
-       ON CONFLICT (target_id, version) DO UPDATE SET version = EXCLUDED.version RETURNING id`,
-      [targetId, plan.target.version, plan.run.startedAt],
-    )
-    const versionId = version.rows[0]!.id
-
-    const run = await client.query<{ id: number }>(
-      `INSERT INTO nightly_runs (scheduled_for, started_at, finished_at, trigger, plan, summary, spend_usd, status)
-       VALUES ($1, $1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [
-        plan.run.startedAt,
-        plan.run.finishedAt,
-        plan.run.trigger,
-        { import_key: plan.importKey, kind: 'live_eval' },
-        plan.run.summary,
-        plan.run.spendUsd,
-        plan.run.status,
-      ],
-    )
-    const runId = run.rows[0]!.id
-
-    // Sequential on purpose: one client cannot run queries concurrently.
-    await plan.attempts.reduce(async (previous, attempt) => {
-      await previous
-      await client.query(
-        `INSERT INTO campaigns (id, nightly_run_id, plan, budget_usd, spend_usd, status, started_at)
-         VALUES ($1, $2, $3, 0, $4, 'completed', $5)`,
-        [attempt.campaignId, runId, { seed_case_ids: [attempt.fingerprint.slice('seed:'.length)] }, attempt.judgeCostUsd, attempt.createdAt],
-      )
-      await client.query(
-        `INSERT INTO attempts (id, campaign_id, fingerprint, category, subcategory, owasp_ids, technique_tags,
-                               transcript, target_version_id, tokens, cost_usd, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, $11)`,
-        [
-          attempt.id, attempt.campaignId, attempt.fingerprint, attempt.category, attempt.subcategory,
-          attempt.owaspIds, attempt.techniqueTags, attempt.transcript, versionId, attempt.tokens, attempt.createdAt,
-        ],
-      )
-      await client.query(
-        `INSERT INTO verdicts (attempt_id, outcome, confidence, stage, rubric_version, judge_model, evidence, needs_review, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [
-          attempt.id, attempt.verdict.outcome, attempt.verdict.confidence, attempt.verdict.stage,
-          attempt.verdict.rubricVersion, attempt.verdict.judgeModel, JSON.stringify(attempt.verdict.evidence),
-          attempt.verdict.needsReview, attempt.createdAt,
-        ],
-      )
-      await client.query(
-        `INSERT INTO agent_events (trace_id, agent, event_type, payload, source, cost_usd, created_at)
-         VALUES ($1, 'judge', 'verdict', $2, 'eval_import', $3, $4)`,
-        [attempt.traceId, { attempt_id: attempt.id, outcome: attempt.verdict.outcome }, attempt.judgeCostUsd, attempt.createdAt],
-      )
-    }, Promise.resolve())
-
-    await client.query('COMMIT')
-    return { status: 'imported', runId }
-  } catch (error) {
-    await client.query('ROLLBACK')
-    throw error
-  } finally {
-    client.release()
+    exploits: [],
+    events,
+    coverage: null,
+    requestIds: [],
   }
 }

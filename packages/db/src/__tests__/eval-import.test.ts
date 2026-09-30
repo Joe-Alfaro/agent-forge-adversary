@@ -2,10 +2,12 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { validateNightlyRunSummary } from '@agentforge/contracts'
-import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { importEvalResults, planEvalImport, type EvalResultsFile, type SeedCase } from '../eval-import.js'
+import { createIsolatedSchema, type IsolatedSchema } from './isolated-schema.js'
+
+import { planEvalImport, type EvalResultsFile, type SeedCase } from '../eval-import.js'
+import { importPlan } from '../import-writer.js'
 
 const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 const RESULTS_FILE = 'evals/results/2026-09-29-copilot-c1f011e.json'
@@ -45,9 +47,10 @@ describe('planEvalImport', () => {
       category: 'data_exfiltration',
       subcategory: 'phi_leakage',
       owaspIds: ['LLM02', 'A01'],
-      verdict: { outcome: 'fail', confidence: 0.9, stage: 'llm_primary', needsReview: false },
+      verdicts: [{ outcome: 'fail', confidence: 0.9, stage: 'llm_primary', needsReview: false }],
     })
-    const judgeSpend = plan.attempts.reduce((sum, attempt) => sum + attempt.judgeCostUsd, 0)
+    expect(plan.events.every((event) => event.agent === 'judge')).toBe(true)
+    const judgeSpend = plan.events.reduce((sum, event) => sum + event.costUsd, 0)
     expect(judgeSpend).toBeCloseTo(results.spend_estimate_usd.judge, 6)
   })
 
@@ -56,24 +59,25 @@ describe('planEvalImport', () => {
   })
 })
 
-// Needs a disposable, migrated database; it truncates the platform tables.
+// Needs a Postgres it may create schemas in. Each run migrates its own throwaway
+// schema and drops it afterwards, so it never touches `public` or other suites.
 const testDbUrl = process.env.DB_TEST_DATABASE_URL
 
 describe.skipIf(!testDbUrl)('importEvalResults (Postgres)', () => {
-  const pool = new pg.Pool({ connectionString: testDbUrl })
+  let isolated: IsolatedSchema
+  let pool: IsolatedSchema['pool']
 
   beforeAll(async () => {
-    await pool.query(
-      'TRUNCATE agent_events, verdicts, attempts, campaigns, nightly_runs, target_versions, targets RESTART IDENTITY CASCADE',
-    )
+    isolated = await createIsolatedSchema(testDbUrl!)
+    pool = isolated.pool
   })
 
-  afterAll(() => pool.end())
+  afterAll(() => isolated?.drop())
 
   it('imports once and is a no-op the second time', async () => {
     const plan = planEvalImport(results, seeds, RESULTS_FILE)
-    const first = await importEvalResults(pool, plan)
-    const second = await importEvalResults(pool, plan)
+    const first = await importPlan(pool, plan)
+    const second = await importPlan(pool, plan)
     expect(first.status).toBe('imported')
     expect(second).toEqual({ status: 'already_imported', runId: first.runId })
 
