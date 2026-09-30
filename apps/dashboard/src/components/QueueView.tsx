@@ -5,6 +5,7 @@ import { useMoveQueueItem, useRemoveQueueItem, useRunNow } from '../lib/mutation
 import { useQueue } from '../lib/queries.js'
 import { estimateRunNow, type RunNowScope } from '../lib/run-now.js'
 import { planTonightRows } from '../lib/tonight.js'
+import { BudgetControl } from './BudgetControl.js'
 import { QueueTable } from './QueueTable.js'
 import { RunNowDialog } from './RunNowDialog.js'
 import { RunNowStatus } from './RunNowStatus.js'
@@ -29,8 +30,9 @@ export function QueueView({ runId, onRunScheduled, onDismissRun, pollMs = 3_000 
   const [scheduledRunId, setScheduledRunId] = useState<string | undefined>(runId)
   const followed = scheduledRunId ?? runId
 
-  // The Orchestrator applies the plan's budget; before it has planned, the configured envelope.
-  const envelopeUsd = queue.plan?.budgetUsd ?? queue.envelopeUsd
+  // The operator's budget (platform_settings) applies at once; the plan catches up on its next preview.
+  const envelopeUsd = queue.envelopeUsd
+  const planBudgetDiffers = queue.plan !== null && queue.plan.budgetUsd !== envelopeUsd
   const rows = planTonightRows(queue.items, queue.plan?.items ?? [], envelopeUsd)
   const running = rows.filter((row) => row.decision === 'run')
   const spent = running.at(-1)?.cumulativeUsd ?? 0
@@ -62,6 +64,13 @@ export function QueueView({ runId, onRunScheduled, onDismissRun, pollMs = 3_000 
             Run on {queue.runDate}. {running.length} of {rows.length} items will run for {formatUsd(spent)} of the{' '}
             {formatUsd(envelopeUsd)} envelope{cutCount > 0 ? `; ${cutCount} cut.` : '.'}
           </p>
+          <BudgetControl budgetUsd={envelopeUsd} />
+          {queue.plan && planBudgetDiffers && (
+            <p className="muted">
+              Tonight’s plan was made with a {formatUsd(queue.plan.budgetUsd)} envelope; run and cut above use{' '}
+              {formatUsd(envelopeUsd)}, and the Orchestrator re-plans against it on its next preview.
+            </p>
+          )}
           {queue.plan ? (
             <p className="muted">
               Planned by the Orchestrator at {formatDateTime(queue.plan.producedAt)} for {queue.plan.targetVersion}.

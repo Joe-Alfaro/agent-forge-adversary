@@ -4,6 +4,7 @@ import { operatorName } from '../server/config.js'
 import { getRepository, getRuntime } from '../server/runtime.js'
 import { ACTIVITY_LIMIT } from './activity.js'
 import { isApprovalDecision } from './approvals.js'
+import { parseNightlyBudget } from './budget.js'
 import { parseRunNowScope } from './run-now.js'
 import { isReviewDecision, isVerdictOutcome, type ReviewInput } from './judge.js'
 import type { MoveDirection } from './queue.js'
@@ -74,6 +75,11 @@ export const getQueueFn = createServerFn({ method: 'GET' }).handler(() => getRep
 export const enqueueRerunFn = createServerFn({ method: 'POST' })
   .validator((request: unknown) => request)
   .handler(({ data }) => getRepository().enqueueRerun(data))
+
+/** Gate G3 (raise a budget envelope) is the operator's; validated here and again in the repository. */
+export const updateNightlyBudgetFn = createServerFn({ method: 'POST' })
+  .validator((value: unknown) => parseNightlyBudget(value))
+  .handler(({ data }) => getRepository().updateNightlyBudget(data))
 
 export const removeQueueItemFn = createServerFn({ method: 'POST' })
   .validator((id: unknown) => requireString(id, 'Request id'))

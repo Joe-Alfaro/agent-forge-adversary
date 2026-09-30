@@ -28,7 +28,7 @@ npm run typecheck -w apps/dashboard
 |----------|---------|
 | `DASHBOARD_DATA_SOURCE` | `postgres` (default) or `fixtures`. There is no silent fallback: Postgres mode without `DATABASE_URL` fails at the first request. Fixture mode shows a "Demo data" badge in the sidebar. |
 | `DATABASE_URL` | Platform Postgres, migrated with `npm run migrate up` from the repo root. |
-| `NIGHTLY_BUDGET_USD` | Tonight's budget envelope for the queue view (default 25). |
+| `NIGHTLY_BUDGET_USD` | Fallback nightly budget envelope (default 25), used until `platform_settings` exists. The operator sets the budget in-app on Tonight's queue. |
 | `COVERAGE_TARGET_ATTEMPTS` | Attempts a high-risk cell needs to count toward M5 (`target_attempts`, ARCHITECTURE.md 7.2; default 20). |
 | `RUN_NOW_ENABLED` | `true` (default) or `false`. Set `false` on deployments where no executor consumes `run_now` rows (Railway): the Run-now buttons render disabled with a note, and the server function refuses. Any other value fails at startup. |
 | `NIGHTLY_CRON`, `NIGHTLY_TIMEZONE` | Used to work out tonight's run date for `requested_for` (defaults `0 1 * * *`, `America/Chicago`). |
@@ -137,6 +137,14 @@ How the read models are derived:
   `estimated_cost_usd`; requests without one show a family-size estimate
   (reruns) or $0 (focus, skip, note, which reshape the plan rather than spend).
   Without a scheduled plan the queue shows operator requests only.
+- **Nightly budget** is `platform_settings.nightly_budget_usd` (row `id = 1`),
+  shown and edited on Tonight's queue (gate G3). A new value must be more than
+  $0 and at most $1000, rounded to cents; it is written with an upsert that
+  stamps `updated_at`, and the queue's envelope, run/cut markers, and Run-now
+  estimate use it at once. When tonight's plan was made with a different
+  `budget_usd`, the page says so; `plan:preview` re-plans against the new
+  budget. Until the `platform_settings` table exists the budget comes from
+  `NIGHTLY_BUDGET_USD` and saving is refused with a message.
 - **Run history and Cost** list only runs that have started: every
   `status = 'scheduled'` row is left out (the cron plan preview belongs to the
   queue page; a scheduled run-now is followed by id until it starts).

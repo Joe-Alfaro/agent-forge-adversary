@@ -8,6 +8,7 @@ import {
   resolvedOutcome,
   summarizeJudgeHealth,
 } from '../lib/judge.js'
+import { parseNightlyBudget } from '../lib/budget.js'
 import { mergeCoverage } from '../lib/coverage.js'
 import * as fixtures from '../lib/fixtures.js'
 import type { MorningReport, QueueItem, RunStatus, RunSummary, TonightQueue } from '../lib/models.js'
@@ -127,6 +128,8 @@ export function createFixtureRepository({
     groundTruthLabels: seed.groundTruthLabels ?? 0,
     resolved: new Set<string>(),
     runNowRuns: [] as SimulatedRun[],
+    /** Stands in for platform_settings.nightly_budget_usd; starts at NIGHTLY_BUDGET_USD. */
+    budgetUsd: config.envelopeUsd,
     reports: (seed.reports ?? []).map((report) =>
       shiftOptional({ ...report, createdAt: shift(report.createdAt, createdOffset) }, 'publishedAt', createdOffset),
     ),
@@ -268,7 +271,7 @@ export function createFixtureRepository({
   function queue(): TonightQueue {
     return structuredClone({
       runDate: nextRunDate(now(), config),
-      envelopeUsd: config.envelopeUsd,
+      envelopeUsd: store.budgetUsd,
       items: pendingItems(),
       runNowEnabled: isRunNowEnabled(config),
       plan: tonightPlan(),
@@ -366,6 +369,11 @@ export function createFixtureRepository({
       }
       const item = request.reason ? { ...base, reason: request.reason } : base
       store.queueItems = [...store.queueItems, item]
+      return queue()
+    },
+
+    async updateNightlyBudget(value) {
+      store.budgetUsd = parseNightlyBudget(value)
       return queue()
     },
 
