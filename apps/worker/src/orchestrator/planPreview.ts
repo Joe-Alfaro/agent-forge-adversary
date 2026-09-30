@@ -154,8 +154,9 @@ export async function buildPreviewPlan(params: Omit<PlanPreviewParams, 'pool'> &
 
 /**
  * Inserts or refreshes the ONE `trigger = 'cron'`, `status = 'scheduled'`
- * nightly_runs row. If several exist (from before this path), the earliest is
- * refreshed and the rest are left alone.
+ * nightly_runs row. The row refreshed is the one the dashboard reads — the
+ * latest by `scheduled_for DESC, id DESC` — so if strays exist (from before this
+ * path) they are left alone and never shadow the current plan.
  */
 export async function upsertScheduledNightlyPlan(
   pool: Pick<pg.Pool, 'connect'>,
@@ -167,7 +168,7 @@ export async function upsertScheduledNightlyPlan(
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [PREVIEW_LOCK_KEY])
     const existing = await client.query(
       `SELECT id FROM nightly_runs WHERE trigger = 'cron' AND status = 'scheduled'
-       ORDER BY scheduled_for, id LIMIT 1 FOR UPDATE`,
+       ORDER BY scheduled_for DESC, id DESC LIMIT 1 FOR UPDATE`,
     )
     const existingId = existing.rows[0]?.id
     const result =

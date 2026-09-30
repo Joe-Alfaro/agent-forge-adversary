@@ -186,10 +186,14 @@ export class PgOrchestratorRepository implements OrchestratorRepository {
 
   // ---- Read side, used by the Run-now entrypoint to build a plan ----
 
-  /** Drains the operator queue in the documented order: position NULLS LAST, created_at. */
+  /**
+   * Drains the operator queue in the documented order: position NULLS LAST,
+   * created_at. Each row's `estimated_cost_usd` (the dashboard's family-size
+   * estimate) is carried so reruns consume the envelope in the run/cut decision.
+   */
   async drainOperatorRequests(runDate: string, singleId?: string): Promise<QueuedRequest[]> {
     const result = await this.pool.query(
-      `SELECT id, kind, exploit_id, category, reason
+      `SELECT id, kind, exploit_id, category, reason, estimated_cost_usd
        FROM operator_requests
        WHERE status = 'queued' AND (requested_for IS NULL OR requested_for <= $1)${singleId === undefined ? '' : ' AND id = $2'}
        ORDER BY position NULLS LAST, created_at, id`,
@@ -201,6 +205,7 @@ export class PgOrchestratorRepository implements OrchestratorRepository {
       ...(r.exploit_id ? { exploit_id: String(r.exploit_id) } : {}),
       ...(r.category ? { category: String(r.category) } : {}),
       ...(r.reason ? { reason: String(r.reason) } : {}),
+      ...(r.estimated_cost_usd === null || r.estimated_cost_usd === undefined ? {} : { estimatedCostUsd: Number(r.estimated_cost_usd) }),
     }))
   }
 

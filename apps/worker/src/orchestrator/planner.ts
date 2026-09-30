@@ -32,7 +32,10 @@ export interface QueuedRequest {
   category?: string
   subcategory?: string
   reason?: string
-  /** The queue's own estimate (operator_requests.estimated_cost_usd); 0 when absent. */
+  /**
+   * operator_requests.estimated_cost_usd (the dashboard's family-size estimate),
+   * so planner and dashboard agree on run/cut. 0 when the row has none.
+   */
   estimatedCostUsd?: number
   /** The target exploit's stored OWASP ids, preferred over the cell mapping. */
   owaspIds?: string[]
