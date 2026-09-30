@@ -348,4 +348,8 @@ that nothing will run, and exits 0. It makes no model calls and spends nothing.
 | `COPILOT_TOKEN_SECRET` | operator (secret) | required when enabled |
 | `ANTHROPIC_API_KEY_JUDGE` | operator (secret) | required when enabled |
 | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` | operator (secret) | optional; tracing is off without them |
+| `RUN_MODEL_VARIANTS` | operator | `true` adds model-backed Red Team variants (Haiku variants, Sonnet strategy); these spend |
+| `ANTHROPIC_API_KEY_REDTEAM` | operator (secret) | required when `RUN_MODEL_VARIANTS=true`; without it the worker fails at startup, before any spend |
+| `RUN_MODEL_VARIANTS_PER_SEED` | operator | optional, default 3 |
+| `RUN_SPEND_CAP_USD` | operator | required only for a one-off `run:nightly` (the manual run's own hard cap) |
 | `NIGHTLY_BUDGET_USD` | operator | optional envelope fallback; the dashboard's `platform_settings` value wins |
