@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { resolveDashboardConfig } from '../config.js'
+import { operatorName, resolveDashboardConfig } from '../config.js'
 
 describe('resolveDashboardConfig', () => {
   it('uses fixtures when asked, without needing a database', () => {
@@ -43,5 +43,12 @@ describe('resolveDashboardConfig', () => {
     expect(() => resolveDashboardConfig({ DASHBOARD_DATA_SOURCE: 'fixtures', NIGHTLY_BUDGET_USD: 'lots' })).toThrow(
       'NIGHTLY_BUDGET_USD',
     )
+  })
+})
+
+describe('operatorName', () => {
+  it('records decisions under the login username, defaulting like the login does', () => {
+    expect(operatorName({ OPERATOR_USERNAME: 'priya' })).toBe('priya')
+    expect(operatorName({})).toBe('operator')
   })
 })

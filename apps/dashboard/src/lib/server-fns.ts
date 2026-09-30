@@ -1,6 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 
-import { OPERATOR_NAME } from '../server/config.js'
+import { operatorName } from '../server/config.js'
 import { getRepository, getRuntime } from '../server/runtime.js'
 import { isApprovalDecision } from './approvals.js'
 import type { MoveDirection } from './queue.js'
@@ -87,4 +87,6 @@ export const decideApprovalFn = createServerFn({ method: 'POST' })
     return { reportId: requireString(input.reportId, 'Report id'), decision: input.decision }
   })
   // The reviewer is set on the server, never taken from the browser.
-  .handler(({ data }) => getRepository().decideApproval(data.reportId, data.decision, OPERATOR_NAME))
+  .handler(({ data }) =>
+    getRepository().decideApproval(data.reportId, data.decision, operatorName(process.env)),
+  )
