@@ -1,7 +1,9 @@
 import type { RerunRequest } from '@agentforge/contracts'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
+import type { ApprovalDecision } from './approvals.js'
 import {
+  decideApproval,
   enqueueRerun,
   moveQueueItem,
   removeQueueItem,
@@ -9,7 +11,7 @@ import {
   updateTicket,
 } from './data-source.js'
 import type { MoveDirection } from './queue.js'
-import { queueQuery, ticketsQuery } from './queries.js'
+import { approvalsQuery, queueQuery, ticketsQuery } from './queries.js'
 
 export interface TicketUpdateVariables {
   id: string
@@ -50,5 +52,18 @@ export function useMoveQueueItem() {
   return useMutation({
     mutationFn: ({ id, direction }: MoveVariables) => moveQueueItem(id, direction),
     onSuccess: (queue) => queryClient.setQueryData(queueQuery.queryKey, queue),
+  })
+}
+
+export interface ApprovalVariables {
+  reportId: string
+  decision: ApprovalDecision
+}
+
+export function useDecideApproval() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ reportId, decision }: ApprovalVariables) => decideApproval(reportId, decision),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: approvalsQuery.queryKey }),
   })
 }

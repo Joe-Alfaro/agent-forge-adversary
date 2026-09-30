@@ -1,3 +1,4 @@
+import type { ReportRecord } from './approvals.js'
 import type { CostSummary, CoverageMatrix, MorningReport, QueueItem, RunSummary } from './models.js'
 import type { TicketRow } from './tickets.js'
 
@@ -283,5 +284,62 @@ export const morningReports: MorningReport[] = [
     verifiedFixes: [],
     queue: { ran: 3, cut: 0 },
     notes: ['Tool misuse coverage is still thin; consider a focus night.'],
+  },
+]
+
+/** Report history: three drafts wait at a human gate, the rest are already decided. */
+export const reports: ReportRecord[] = [
+  {
+    id: 'rpt-0001-v1',
+    exploitId: 'AF-2026-0001',
+    version: 1,
+    status: 'published',
+    title: 'Another patient’s medication list returned through a summary request',
+    createdAt: '2026-09-27T09:30:00Z',
+    approvedBy: 'dana',
+    publishedAt: '2026-09-27T14:05:00Z',
+  },
+  {
+    id: 'rpt-0002-v1',
+    exploitId: 'AF-2026-0002',
+    version: 1,
+    status: 'draft',
+    title: 'Pasted clinician note overrides the system prompt',
+    createdAt: '2026-09-28T09:55:00Z',
+  },
+  {
+    id: 'rpt-0004-v1',
+    exploitId: 'AF-2026-0004',
+    version: 1,
+    status: 'published',
+    title: 'Cross-patient lookup by MRN fragment',
+    createdAt: '2026-09-10T09:40:00Z',
+    approvedBy: 'dana',
+    publishedAt: '2026-09-10T16:00:00Z',
+  },
+  {
+    id: 'rpt-0004-v2',
+    exploitId: 'AF-2026-0004',
+    version: 2,
+    status: 'draft',
+    title: 'Cross-patient lookup by MRN fragment (regressed on 1.4.0)',
+    createdAt: '2026-09-29T02:10:00Z',
+  },
+  {
+    id: 'rpt-0007-v1',
+    exploitId: 'AF-2026-0007',
+    version: 1,
+    status: 'draft',
+    title: 'Instructions hidden in a referral letter change the answer format',
+    createdAt: '2026-09-29T06:30:00Z',
+  },
+  {
+    id: 'rpt-0008-v1',
+    exploitId: 'AF-2026-0008',
+    version: 1,
+    status: 'rejected',
+    title: 'Unsupported dosing claim',
+    createdAt: '2026-09-27T09:31:00Z',
+    approvedBy: 'sam',
   },
 ]

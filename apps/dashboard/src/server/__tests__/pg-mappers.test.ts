@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { mapMorningReport, mapQueueItem, mapRunSummary, mapTicket } from '../pg-mappers.js'
+import { mapApprovalRow, mapMorningReport, mapQueueItem, mapRunSummary, mapTicket } from '../pg-mappers.js'
 
 describe('mapTicket', () => {
   const row = {
@@ -166,5 +166,43 @@ describe('mapQueueItem', () => {
     expect(
       mapQueueItem({ ...queueRow, kind: 'focus', exploit_id: null, category: 'tool_misuse', family_size: null }),
     ).toMatchObject({ kind: 'focus', category: 'tool_misuse', estimatedCostUsd: 0 })
+  })
+})
+
+describe('mapApprovalRow', () => {
+  const row = {
+    id: 'r-1',
+    exploit_id: 'AF-1',
+    version: 2,
+    status: 'draft',
+    title: 'Leak',
+    severity: 'medium',
+    category: 'data_exfiltration',
+    approved_by: null,
+    published_at: null,
+    created_at: new Date('2026-09-29T05:00:00Z'),
+  }
+
+  it('maps a draft with its gate and auto-publish time', () => {
+    expect(mapApprovalRow(row)).toEqual({
+      reportId: 'r-1',
+      exploitId: 'AF-1',
+      version: 2,
+      severity: 'medium',
+      category: 'data_exfiltration',
+      title: 'Leak',
+      status: 'draft',
+      draftedAt: '2026-09-29T05:00:00.000Z',
+      gate: 'G5',
+      autoPublishAt: '2026-09-30T05:00:00.000Z',
+    })
+  })
+
+  it('falls back to the exploit and version when the body has no title', () => {
+    expect(mapApprovalRow({ ...row, title: null }).title).toBe('AF-1 report v2')
+  })
+
+  it('rejects statuses outside the report workflow', () => {
+    expect(() => mapApprovalRow({ ...row, status: 'approved' })).toThrow('unknown status "approved"')
   })
 })

@@ -1,5 +1,6 @@
 import { listTaxonomyCells, PRD_CATEGORIES, type TaxonomyCell } from '@agentforge/contracts'
 
+import { type ApprovalItem, buildApprovalItem, type ReportRecord, sortApprovals } from '../lib/approvals.js'
 import { mergeCoverage } from '../lib/coverage.js'
 import * as fixtures from '../lib/fixtures.js'
 import type { QueueItem, TonightQueue } from '../lib/models.js'
@@ -9,7 +10,13 @@ import type { TicketRow } from '../lib/tickets.js'
 import { m5Options, type QueueConfig } from './config.js'
 import { computeM5 } from './m5.js'
 import type { DashboardRepository } from './repository.js'
-import { assertCanRecheck, assertRerunRequest, assertTransition, normalizeAssignee } from './rules.js'
+import {
+  assertCanRecheck,
+  assertReportDecision,
+  assertRerunRequest,
+  assertTransition,
+  normalizeAssignee,
+} from './rules.js'
 
 const DAY_MS = 86_400_000
 
@@ -33,6 +40,7 @@ function shiftOptional<T extends object, K extends keyof T & string>(value: T, k
 export interface FixtureSeed {
   tickets: TicketRow[]
   queueItems: QueueItem[]
+  reports?: ReportRecord[]
 }
 
 export interface FixtureRepositoryOptions {
@@ -51,7 +59,7 @@ export interface FixtureRepositoryOptions {
 export function createFixtureRepository({
   config,
   now = () => new Date(),
-  seed = { tickets: fixtures.tickets, queueItems: fixtures.queueItems },
+  seed = { tickets: fixtures.tickets, queueItems: fixtures.queueItems, reports: fixtures.reports },
   taxonomy = listTaxonomyCells(),
 }: FixtureRepositoryOptions): DashboardRepository {
   // Seeded queue items move once, at creation; items enqueued later already use now().
@@ -59,6 +67,29 @@ export function createFixtureRepository({
   const store = {
     tickets: structuredClone(seed.tickets),
     queueItems: seed.queueItems.map((item) => ({ ...item, requestedAt: shift(item.requestedAt, createdOffset) })),
+    reports: (seed.reports ?? []).map((report) =>
+      shiftOptional({ ...report, createdAt: shift(report.createdAt, createdOffset) }, 'publishedAt', createdOffset),
+    ),
+  }
+
+  function approvalItem(report: ReportRecord): ApprovalItem {
+    const ticket = findTicket(report.exploitId)
+    const fields = {
+      reportId: report.id,
+      exploitId: report.exploitId,
+      version: report.version,
+      severity: ticket.severity,
+      category: ticket.category,
+      title: report.title,
+      status: report.status,
+      draftedAt: report.createdAt,
+    }
+    const withApprover = report.approvedBy ? { ...fields, approvedBy: report.approvedBy } : fields
+    return buildApprovalItem(report.publishedAt ? { ...withApprover, publishedAt: report.publishedAt } : withApprover)
+  }
+
+  function isLatestVersion(report: ReportRecord): boolean {
+    return store.reports.every((other) => other.exploitId !== report.exploitId || other.version <= report.version)
   }
 
   function findTicket(id: string): TicketRow {
@@ -157,6 +188,25 @@ export function createFixtureRepository({
     async moveQueueItem(id, direction) {
       store.queueItems = moveItem(store.queueItems, id, direction)
       return queue()
+    },
+
+    async listApprovals() {
+      const drafts = store.reports.filter((report) => report.status === 'draft' && isLatestVersion(report))
+      return sortApprovals(drafts.map(approvalItem))
+    },
+
+    async decideApproval(reportId, decision, reviewer) {
+      const report = store.reports.find((row) => row.id === reportId)
+      if (!report) {
+        throw new Error(`Unknown report ${reportId}`)
+      }
+      const status = assertReportDecision(report.status, decision)
+      const decided: ReportRecord =
+        status === 'published'
+          ? { ...report, status, approvedBy: reviewer, publishedAt: now().toISOString() }
+          : { ...report, status, approvedBy: reviewer }
+      store.reports = store.reports.map((row) => (row.id === reportId ? decided : row))
+      return approvalItem(decided)
     },
   }
 }

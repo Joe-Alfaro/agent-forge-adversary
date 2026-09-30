@@ -2,6 +2,7 @@ import type pg from 'pg'
 
 import { listTaxonomyCells, PRD_CATEGORIES, type TaxonomyCell } from '@agentforge/contracts'
 
+import { isReportStatus, sortApprovals } from '../lib/approvals.js'
 import { cellKey, mergeCoverage } from '../lib/coverage.js'
 import type { CostSummary, CoverageCell, RunSpend } from '../lib/models.js'
 import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
@@ -9,9 +10,22 @@ import { nextRunDate } from '../lib/schedule.js'
 import { isExploitStatus } from '../lib/tickets.js'
 import { m5Options, type QueueConfig } from './config.js'
 import { computeM5 } from './m5.js'
-import { mapCoverageRow, mapMorningReport, mapQueueItem, mapRunSummary, mapTicket } from './pg-mappers.js'
+import {
+  mapApprovalRow,
+  mapCoverageRow,
+  mapMorningReport,
+  mapQueueItem,
+  mapRunSummary,
+  mapTicket,
+} from './pg-mappers.js'
 import type { DashboardRepository } from './repository.js'
-import { assertCanRecheck, assertRerunRequest, assertTransition, normalizeAssignee } from './rules.js'
+import {
+  assertCanRecheck,
+  assertReportDecision,
+  assertRerunRequest,
+  assertTransition,
+  normalizeAssignee,
+} from './rules.js'
 
 export interface PgRepositoryOptions {
   pool: pg.Pool
@@ -156,6 +170,18 @@ function queueSql(lock: boolean): string {
     ORDER BY r.position NULLS LAST, r.created_at, r.id
     ${lock ? 'FOR UPDATE OF r' : ''}`
 }
+
+/** Report rows with the fields the approvals queue shows. */
+const REPORTS_SQL = `
+  SELECT r.id, r.exploit_id, r.version, r.status, r.approved_by, r.published_at, r.created_at,
+         r.body->>'title' AS title, e.severity, e.category
+  FROM reports r
+  JOIN exploits e ON e.id = r.exploit_id`
+
+/** A superseded draft is not offered: only the newest version per exploit waits for approval. */
+const PENDING_APPROVALS_SQL = `${REPORTS_SQL}
+  WHERE r.status = 'draft'
+    AND NOT EXISTS (SELECT 1 FROM reports newer WHERE newer.exploit_id = r.exploit_id AND newer.version > r.version)`
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const COST_RUN_WINDOW = 14
@@ -375,6 +401,33 @@ export function createPgRepository({
         )
       })
       return readQueue(pool)
+    },
+
+    async listApprovals() {
+      const result = await pool.query(PENDING_APPROVALS_SQL)
+      return sortApprovals(result.rows.map(mapApprovalRow))
+    },
+
+    async decideApproval(reportId, decision, reviewer) {
+      if (!UUID.test(reportId)) {
+        throw new Error(`Unknown report ${reportId}`)
+      }
+      await transaction(async (client) => {
+        const current = await client.query('SELECT status FROM reports WHERE id = $1 FOR UPDATE', [reportId])
+        const status: unknown = current.rows[0]?.status
+        if (!isReportStatus(status)) {
+          throw new Error(`Unknown report ${reportId}`)
+        }
+        const next = assertReportDecision(status, decision)
+        await client.query(
+          `UPDATE reports SET status = $2, approved_by = $3,
+                  published_at = CASE WHEN $2 = 'published' THEN $4::timestamptz ELSE published_at END
+           WHERE id = $1`,
+          [reportId, next, reviewer, now()],
+        )
+      })
+      const result = await pool.query(`${REPORTS_SQL} WHERE r.id = $1`, [reportId])
+      return mapApprovalRow(result.rows[0])
     },
   }
 }

@@ -1,6 +1,7 @@
 import { queryOptions, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 
 import {
+  fetchApprovals,
   fetchCost,
   fetchCoverage,
   fetchDataSourceMode,
@@ -57,6 +58,11 @@ export const costQuery = queryOptions({
   queryFn: fetchCost,
 })
 
+export const approvalsQuery = queryOptions({
+  queryKey: ['approvals'],
+  queryFn: fetchApprovals,
+})
+
 export function useTickets() {
   return useSuspenseQuery(ticketsQuery)
 }
@@ -88,4 +94,8 @@ export function useCoverage() {
 
 export function useCost() {
   return useSuspenseQuery(costQuery)
+}
+
+export function useApprovals() {
+  return useSuspenseQuery(approvalsQuery)
 }

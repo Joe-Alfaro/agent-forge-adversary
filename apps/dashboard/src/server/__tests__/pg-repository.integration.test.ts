@@ -4,10 +4,11 @@ import pg from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { createPgRepository } from '../pg-repository.js'
-import { resetDatabase, seedQueue, seedTickets } from './pg-seed.js'
+import { resetDatabase, seedQueue, seedReports, seedTickets } from './pg-seed.js'
 import {
   contractNow,
   contractQueue,
+  contractReports,
   contractRunDate,
   contractTickets,
   describeRepositoryContract,
@@ -32,6 +33,7 @@ describe.skipIf(!url)('Postgres repository', () => {
     const versions = await resetDatabase(pool, ['copilot@9.0.0'])
     await seedTickets(pool, contractTickets, versions)
     await seedQueue(pool, contractQueue, contractRunDate)
+    await seedReports(pool, contractReports)
     return createPgRepository({ pool, config, now: () => contractNow })
   }
 

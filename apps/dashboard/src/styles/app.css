@@ -155,6 +155,7 @@ h2 {
 }
 
 .status-regressed,
+.gate-g4,
 .run-failed,
 .untested {
   background: #fee4e2;

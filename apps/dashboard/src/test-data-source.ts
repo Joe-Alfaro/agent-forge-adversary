@@ -41,3 +41,6 @@ export const enqueueRerun: typeof DataSource.enqueueRerun = (request) => state.r
 export const removeQueueItem: typeof DataSource.removeQueueItem = (id) => state.repository.removeQueueItem(id)
 export const moveQueueItem: typeof DataSource.moveQueueItem = (id, direction) =>
   state.repository.moveQueueItem(id, direction)
+export const fetchApprovals: typeof DataSource.fetchApprovals = () => state.repository.listApprovals()
+export const decideApproval: typeof DataSource.decideApproval = (reportId, decision) =>
+  state.repository.decideApproval(reportId, decision, 'operator')

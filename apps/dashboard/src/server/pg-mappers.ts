@@ -8,6 +8,7 @@ import {
   type VerdictOutcome,
 } from '@agentforge/contracts'
 
+import { type ApprovalItem, buildApprovalItem, isReportStatus } from '../lib/approvals.js'
 import type {
   CoverageCell,
   MorningReport,
@@ -284,4 +285,35 @@ export function mapQueueItem(row: unknown): QueueItem {
   }
   const withCategory = withOptional(withExploit, 'category', category)
   return withOptional(withCategory, 'reason', optionalText(row, 'reason'))
+}
+
+/** One `reports` row joined to its exploit; the title comes from the VulnReport body when it has one. */
+export function mapApprovalRow(row: unknown): ApprovalItem {
+  const reportId = text(row, 'id')
+  const status = field(row, 'status')
+  const severity = field(row, 'severity')
+  if (!isReportStatus(status)) {
+    throw new Error(`Report ${reportId} has an unknown status "${String(status)}"`)
+  }
+  if (!isSeverity(severity)) {
+    throw new Error(`Report ${reportId} has an unknown severity "${String(severity)}"`)
+  }
+  const category = attackCategory(field(row, 'category'))
+  if (!category) {
+    throw new Error(`Report ${reportId} has category "${String(field(row, 'category'))}", which is not in AttackTaxonomy v1`)
+  }
+  const exploitId = text(row, 'exploit_id')
+  const version = num(row, 'version')
+  const base = {
+    reportId,
+    exploitId,
+    version,
+    severity,
+    category,
+    title: optionalText(row, 'title') || `${exploitId} report v${version}`,
+    status,
+    draftedAt: iso(row, 'created_at'),
+  }
+  const withApprover = withOptional(base, 'approvedBy', optionalText(row, 'approved_by'))
+  return buildApprovalItem(withOptional(withApprover, 'publishedAt', optionalIso(row, 'published_at')))
 }

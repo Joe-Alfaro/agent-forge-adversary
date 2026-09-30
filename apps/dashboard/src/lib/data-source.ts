@@ -1,8 +1,10 @@
 import type { RerunRequest } from '@agentforge/contracts'
 
+import type { ApprovalDecision, ApprovalItem } from './approvals.js'
 import type { CostSummary, CoverageMatrix, MorningReport, RunSummary, TonightQueue } from './models.js'
 import type { MoveDirection } from './queue.js'
 import {
+  decideApprovalFn,
   enqueueRerunFn,
   getCostFn,
   getCoverageFn,
@@ -10,6 +12,7 @@ import {
   getMorningReportFn,
   getQueueFn,
   getTicketFn,
+  listApprovalsFn,
   listRunsFn,
   listTicketsFn,
   moveQueueItemFn,
@@ -74,4 +77,12 @@ export function removeQueueItem(id: string): Promise<TonightQueue> {
 
 export function moveQueueItem(id: string, direction: MoveDirection): Promise<TonightQueue> {
   return moveQueueItemFn({ data: { id, direction } })
+}
+
+export function fetchApprovals(): Promise<ApprovalItem[]> {
+  return listApprovalsFn()
+}
+
+export function decideApproval(reportId: string, decision: ApprovalDecision): Promise<ApprovalItem> {
+  return decideApprovalFn({ data: { reportId, decision } })
 }

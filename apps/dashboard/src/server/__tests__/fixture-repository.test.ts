@@ -4,13 +4,23 @@ import { describe, expect, it } from 'vitest'
 import { listTaxonomyCells } from '@agentforge/contracts'
 
 import { createFixtureRepository } from '../fixture-repository.js'
-import { contractNow, contractQueue, contractTickets, describeRepositoryContract } from './repository-contract.js'
+import {
+  contractNow,
+  contractQueue,
+  contractReports,
+  contractTickets,
+  describeRepositoryContract,
+} from './repository-contract.js'
 
 const config = { envelopeUsd: 25, timeZone: 'America/Chicago', runHour: 1 }
 
 describeRepositoryContract('fixture', {
   setup: async () =>
-    createFixtureRepository({ config, now: () => contractNow, seed: { tickets: contractTickets, queueItems: contractQueue } }),
+    createFixtureRepository({
+      config,
+      now: () => contractNow,
+      seed: { tickets: contractTickets, queueItems: contractQueue, reports: contractReports },
+    }),
 })
 
 describe('fixture repository defaults', () => {

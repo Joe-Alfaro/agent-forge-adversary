@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import type { ReportRecord } from '../../lib/approvals.js'
 import type { QueueItem } from '../../lib/models.js'
 import { buildRerunRequest } from '../../lib/queue.js'
 import type { TicketRow } from '../../lib/tickets.js'
@@ -61,6 +62,51 @@ export const contractQueue: QueueItem[] = [
   },
 ]
 
+export const contractReportIds = {
+  highDraft: '30000000-0000-4000-8000-000000000001',
+  mediumDraft: '30000000-0000-4000-8000-000000000002',
+  criticalPublished: '30000000-0000-4000-8000-000000000003',
+  criticalRedraft: '30000000-0000-4000-8000-000000000004',
+} as const
+
+/** AF-T-0003 has a published v1 and a newer v2 draft; only the draft waits for approval. */
+export const contractReports: ReportRecord[] = [
+  {
+    id: contractReportIds.highDraft,
+    exploitId: 'AF-T-0001',
+    version: 1,
+    status: 'draft',
+    title: 'System prompt override through a pasted note',
+    createdAt: '2026-09-29T06:00:00.000Z',
+  },
+  {
+    id: contractReportIds.mediumDraft,
+    exploitId: 'AF-T-0002',
+    version: 1,
+    status: 'draft',
+    title: 'Partial MRN echoed back',
+    createdAt: '2026-09-29T05:00:00.000Z',
+  },
+  {
+    id: contractReportIds.criticalPublished,
+    exploitId: 'AF-T-0003',
+    version: 1,
+    status: 'published',
+    title: 'Cross-patient summary',
+    createdAt: '2026-09-20T05:00:00.000Z',
+    approvedBy: 'dana',
+    publishedAt: '2026-09-20T09:00:00.000Z',
+  },
+  {
+    id: contractReportIds.criticalRedraft,
+    exploitId: 'AF-T-0003',
+    version: 2,
+    status: 'draft',
+    title: 'Cross-patient summary (regressed)',
+    createdAt: '2026-09-29T07:00:00.000Z',
+  },
+]
+
 /** Clock for the suite: 2026-09-29 15:00 CDT, so tonight's run date is 2026-09-30. */
 export const contractNow = new Date('2026-09-29T20:00:00Z')
 export const contractRunDate = '2026-09-30'
@@ -118,6 +164,59 @@ export function describeRepositoryContract(name: string, options: ContractOption
 
       it('rejects unknown tickets', async () => {
         await expect(repo.updateTicket('AF-NOPE', { status: 'open', assignee: '' })).rejects.toThrow('AF-NOPE')
+      })
+    })
+
+    describe('approvals', () => {
+      it('lists the latest draft per exploit, operator-gated first and oldest first', async () => {
+        const items = await repo.listApprovals()
+        expect(items.map((item) => [item.reportId, item.gate])).toEqual([
+          [contractReportIds.highDraft, 'G4'],
+          [contractReportIds.criticalRedraft, 'G4'],
+          [contractReportIds.mediumDraft, 'G5'],
+        ])
+        expect(items[1]).toMatchObject({
+          exploitId: 'AF-T-0003',
+          version: 2,
+          severity: 'critical',
+          category: 'data_exfiltration',
+          title: 'Cross-patient summary (regressed)',
+          status: 'draft',
+          draftedAt: '2026-09-29T07:00:00.000Z',
+        })
+        expect(items[1]?.autoPublishAt).toBeUndefined()
+        expect(items[2]?.autoPublishAt).toBe('2026-09-30T05:00:00.000Z')
+      })
+
+      it('approving publishes the report and records the approver', async () => {
+        const decided = await repo.decideApproval(contractReportIds.highDraft, 'approve', 'operator')
+        expect(decided).toMatchObject({ status: 'published', approvedBy: 'operator', publishedAt: contractNow.toISOString() })
+        const remaining = await repo.listApprovals()
+        expect(remaining.map((item) => item.reportId)).not.toContain(contractReportIds.highDraft)
+      })
+
+      it('rejecting records the reviewer and does not publish', async () => {
+        const decided = await repo.decideApproval(contractReportIds.mediumDraft, 'reject', 'operator')
+        expect(decided).toMatchObject({ status: 'rejected', approvedBy: 'operator' })
+        expect(decided.publishedAt).toBeUndefined()
+        expect((await repo.listApprovals()).map((item) => item.reportId)).not.toContain(contractReportIds.mediumDraft)
+      })
+
+      it('refuses decisions on reports that are not drafts, and unknown reports', async () => {
+        await expect(repo.decideApproval(contractReportIds.criticalPublished, 'approve', 'operator')).rejects.toThrow(
+          'published → published',
+        )
+        await expect(
+          repo.decideApproval('30000000-0000-4000-8000-00000000ffff', 'approve', 'operator'),
+        ).rejects.toThrow('Unknown report')
+        await expect(repo.decideApproval('not-a-uuid', 'reject', 'operator')).rejects.toThrow('Unknown report')
+      })
+
+      it('refuses a decision twice', async () => {
+        await repo.decideApproval(contractReportIds.highDraft, 'reject', 'operator')
+        await expect(repo.decideApproval(contractReportIds.highDraft, 'approve', 'operator')).rejects.toThrow(
+          'rejected → published',
+        )
       })
     })
 

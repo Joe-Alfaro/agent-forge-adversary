@@ -1,5 +1,6 @@
 import { type RerunRequest, validateRerunRequest } from '@agentforge/contracts'
 
+import { type ApprovalDecision, decisionStatus, nextReportStatuses, type ReportStatus } from '../lib/approvals.js'
 import { canRecheckTonight, type ExploitStatus, nextStatuses } from '../lib/tickets.js'
 
 /** Shared write rules, so both repositories reject exactly the same requests. */
@@ -35,4 +36,13 @@ export function assertCanRecheck(exploitId: string, status: ExploitStatus, alrea
 export function normalizeAssignee(assignee: string): string | undefined {
   const trimmed = assignee.trim()
   return trimmed === '' ? undefined : trimmed
+}
+
+/** Returns the status an approval decision moves a report to, or throws when the workflow forbids it. */
+export function assertReportDecision(from: ReportStatus, decision: ApprovalDecision): ReportStatus {
+  const to = decisionStatus(decision)
+  if (!nextReportStatuses(from).includes(to)) {
+    throw new Error(`Report status change ${from} → ${to} is not allowed`)
+  }
+  return to
 }

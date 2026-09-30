@@ -12,6 +12,9 @@ export interface QueueConfig {
   coverageTargetAttempts?: number
 }
 
+/** Single shared operator login for the sprint (Section 15.1): every human decision is recorded under this name. */
+export const OPERATOR_NAME = 'operator'
+
 /** M5 counts a cell as covered only with a run in this many days. */
 export const M5_WINDOW_DAYS = 7
 const DEFAULT_COVERAGE_TARGET_ATTEMPTS = 20

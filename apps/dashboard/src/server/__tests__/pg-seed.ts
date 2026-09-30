@@ -1,5 +1,6 @@
 import type pg from 'pg'
 
+import type { ReportRecord } from '../../lib/approvals.js'
 import type { QueueItem } from '../../lib/models.js'
 import type { TicketRow } from '../../lib/tickets.js'
 
@@ -81,4 +82,25 @@ export async function seedQueue(pool: pg.Pool, items: QueueItem[], requestedFor:
       ],
     )
   }, Promise.resolve())
+}
+
+export async function seedReports(pool: pg.Pool, reports: ReportRecord[]): Promise<void> {
+  await Promise.all(
+    reports.map((report) =>
+      pool.query(
+        `INSERT INTO reports (id, exploit_id, version, body, status, approved_by, published_at, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          report.id,
+          report.exploitId,
+          report.version,
+          { schema_version: '1', title: report.title },
+          report.status,
+          report.approvedBy ?? null,
+          report.publishedAt ?? null,
+          report.createdAt,
+        ],
+      ),
+    ),
+  )
 }

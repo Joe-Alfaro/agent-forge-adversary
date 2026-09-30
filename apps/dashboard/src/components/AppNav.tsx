@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 
 const PANELS = [
   { to: '/findings', label: 'Findings' },
+  { to: '/approvals', label: 'Approvals' },
   { to: '/queue', label: "Tonight's queue" },
   { to: '/runs', label: 'Run history' },
   { to: '/coverage', label: 'Coverage' },

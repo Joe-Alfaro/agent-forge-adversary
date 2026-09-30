@@ -1,6 +1,8 @@
 import { createServerFn } from '@tanstack/react-start'
 
+import { OPERATOR_NAME } from '../server/config.js'
 import { getRepository, getRuntime } from '../server/runtime.js'
+import { isApprovalDecision } from './approvals.js'
 import type { MoveDirection } from './queue.js'
 import { isExploitStatus } from './tickets.js'
 
@@ -74,3 +76,15 @@ export const moveQueueItemFn = createServerFn({ method: 'POST' })
     return { id: requireString(input.id, 'Request id'), direction }
   })
   .handler(({ data }) => getRepository().moveQueueItem(data.id, data.direction))
+
+export const listApprovalsFn = createServerFn({ method: 'GET' }).handler(() => getRepository().listApprovals())
+
+export const decideApprovalFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => {
+    if (!isRecord(input) || !isApprovalDecision(input.decision)) {
+      throw new Error('Expected { reportId, decision: "approve" | "reject" }')
+    }
+    return { reportId: requireString(input.reportId, 'Report id'), decision: input.decision }
+  })
+  // The reviewer is set on the server, never taken from the browser.
+  .handler(({ data }) => getRepository().decideApproval(data.reportId, data.decision, OPERATOR_NAME))
