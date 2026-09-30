@@ -66,7 +66,6 @@ export interface PlannedAttempt {
 }
 
 export interface PlannedExploit {
-  id: string
   fingerprint: string
   severity: string
   category: string
@@ -182,19 +181,27 @@ export async function importPlan(pool: pg.Pool, plan: ImportPlan): Promise<Impor
       (attempt) => client.query('UPDATE attempts SET parent_attempt_id = $2 WHERE id = $1', [attempt.id, attempt.parentAttemptId]),
     )
 
-    // A re-found exploit merges its family; the operator's status and assignee are never touched.
+    // Ids come from agentforge_exploit_seq, in the same format the run executor
+    // mints, so every writer shares one id space. A re-found exploit keeps its
+    // id and merges its family; the operator's status and assignee are never touched.
+    const newTicketIds: string[] = []
     await sequentially(plan.exploits, async (exploit) => {
-      await client.query(
+      const upserted = await client.query<{ id: string; is_new: boolean }>(
         `INSERT INTO exploits (id, fingerprint, severity, category, subcategory, owasp_ids, min_repro, family_ids, discovered_version_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         VALUES ('AF-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('agentforge_exploit_seq')::text, 4, '0'),
+                 $1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (fingerprint) DO UPDATE
            SET family_ids = ARRAY(SELECT DISTINCT unnest(exploits.family_ids || EXCLUDED.family_ids)),
-               updated_at = now()`,
+               updated_at = now()
+         RETURNING id, (xmax = 0) AS is_new`,
         [
-          exploit.id, exploit.fingerprint, exploit.severity, exploit.category, exploit.subcategory, exploit.owaspIds,
+          exploit.fingerprint, exploit.severity, exploit.category, exploit.subcategory, exploit.owaspIds,
           JSON.stringify(exploit.minRepro), exploit.familyIds, versionId,
         ],
       )
+      if (upserted.rows[0]?.is_new) {
+        newTicketIds.push(upserted.rows[0].id)
+      }
       if (exploit.report !== null) {
         await client.query(
           `INSERT INTO reports (exploit_id, body)
@@ -204,6 +211,12 @@ export async function importPlan(pool: pg.Pool, plan: ImportPlan): Promise<Impor
         )
       }
     })
+
+    // The artifact cannot know the assigned ids, so the writer owns new_tickets.
+    await client.query(
+      `UPDATE nightly_runs SET summary = jsonb_set(summary, '{new_tickets}', $2::jsonb) WHERE id = $1`,
+      [runId, JSON.stringify(newTicketIds)],
+    )
 
     await sequentially(plan.events, (event) =>
       client.query(
