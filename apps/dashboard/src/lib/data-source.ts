@@ -1,6 +1,7 @@
 import type { RerunRequest } from '@agentforge/contracts'
 
 import type { ApprovalDecision, ApprovalItem } from './approvals.js'
+import type { ResilienceTrend } from './resilience.js'
 import type { CostSummary, CoverageMatrix, MorningReport, RunSummary, TonightQueue } from './models.js'
 import type { MoveDirection } from './queue.js'
 import {
@@ -11,6 +12,7 @@ import {
   getDataSourceModeFn,
   getMorningReportFn,
   getQueueFn,
+  getResilienceTrendFn,
   getTicketFn,
   listApprovalsFn,
   listRunsFn,
@@ -85,4 +87,8 @@ export function fetchApprovals(): Promise<ApprovalItem[]> {
 
 export function decideApproval(reportId: string, decision: ApprovalDecision): Promise<ApprovalItem> {
   return decideApprovalFn({ data: { reportId, decision } })
+}
+
+export function fetchResilienceTrend(): Promise<ResilienceTrend> {
+  return getResilienceTrendFn()
 }

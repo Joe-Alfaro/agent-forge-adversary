@@ -44,3 +44,4 @@ export const moveQueueItem: typeof DataSource.moveQueueItem = (id, direction) =>
 export const fetchApprovals: typeof DataSource.fetchApprovals = () => state.repository.listApprovals()
 export const decideApproval: typeof DataSource.decideApproval = (reportId, decision) =>
   state.repository.decideApproval(reportId, decision, 'operator')
+export const fetchResilienceTrend: typeof DataSource.fetchResilienceTrend = () => state.repository.getResilienceTrend()

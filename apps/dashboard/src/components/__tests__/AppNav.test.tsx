@@ -23,7 +23,7 @@ function renderWithRouter(initialPath: string) {
       )
     },
   })
-  const pages = ['findings', 'approvals', 'queue', 'runs', 'coverage', 'cost'].map((page) =>
+  const pages = ['findings', 'approvals', 'queue', 'runs', 'coverage', 'resilience', 'cost'].map((page) =>
     createRoute({
       getParentRoute: () => rootRoute,
       path: `/${page}`,
@@ -47,7 +47,7 @@ describe('AppNav', () => {
     renderWithRouter('/findings')
     const nav = await screen.findByRole('navigation', { name: 'Dashboard' })
     const labels = Array.from(nav.querySelectorAll('a')).map((link) => link.textContent)
-    expect(labels).toEqual(['Findings', 'Approvals', "Tonight's queue", 'Run history', 'Coverage', 'Cost'])
+    expect(labels).toEqual(['Findings', 'Approvals', "Tonight's queue", 'Run history', 'Coverage', 'Resilience trend', 'Cost'])
   })
 
   it('marks the current panel', async () => {

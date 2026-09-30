@@ -190,6 +190,10 @@ export function createFixtureRepository({
       return queue()
     },
 
+    async getResilienceTrend() {
+      return structuredClone(fixtures.resilience)
+    },
+
     async listApprovals() {
       const drafts = store.reports.filter((report) => report.status === 'draft' && isLatestVersion(report))
       return sortApprovals(drafts.map(approvalItem))

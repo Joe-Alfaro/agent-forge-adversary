@@ -14,6 +14,7 @@ import { Route as ApprovalsRouteImport } from './routes/approvals'
 import { Route as CostRouteImport } from './routes/cost'
 import { Route as CoverageRouteImport } from './routes/coverage'
 import { Route as QueueRouteImport } from './routes/queue'
+import { Route as ResilienceRouteImport } from './routes/resilience'
 import { Route as RunsRouteImport } from './routes/runs'
 import { Route as FindingsIndexRouteImport } from './routes/findings.index'
 import { Route as FindingsTicketIdRouteImport } from './routes/findings.$ticketId'
@@ -44,6 +45,11 @@ const QueueRoute = QueueRouteImport.update({
   path: '/queue',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ResilienceRoute = ResilienceRouteImport.update({
+  id: '/resilience',
+  path: '/resilience',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RunsRoute = RunsRouteImport.update({
   id: '/runs',
   path: '/runs',
@@ -71,6 +77,7 @@ export interface FileRoutesByFullPath {
   '/cost': typeof CostRoute
   '/coverage': typeof CoverageRoute
   '/queue': typeof QueueRoute
+  '/resilience': typeof ResilienceRoute
   '/runs': typeof RunsRoute
   '/findings/$ticketId': typeof FindingsTicketIdRoute
   '/reports/$runId': typeof ReportsRunIdRoute
@@ -82,6 +89,7 @@ export interface FileRoutesByTo {
   '/cost': typeof CostRoute
   '/coverage': typeof CoverageRoute
   '/queue': typeof QueueRoute
+  '/resilience': typeof ResilienceRoute
   '/runs': typeof RunsRoute
   '/findings/$ticketId': typeof FindingsTicketIdRoute
   '/reports/$runId': typeof ReportsRunIdRoute
@@ -94,6 +102,7 @@ export interface FileRoutesById {
   '/cost': typeof CostRoute
   '/coverage': typeof CoverageRoute
   '/queue': typeof QueueRoute
+  '/resilience': typeof ResilienceRoute
   '/runs': typeof RunsRoute
   '/findings/$ticketId': typeof FindingsTicketIdRoute
   '/reports/$runId': typeof ReportsRunIdRoute
@@ -107,6 +116,7 @@ export interface FileRouteTypes {
     | '/cost'
     | '/coverage'
     | '/queue'
+    | '/resilience'
     | '/runs'
     | '/findings/$ticketId'
     | '/reports/$runId'
@@ -118,6 +128,7 @@ export interface FileRouteTypes {
     | '/cost'
     | '/coverage'
     | '/queue'
+    | '/resilience'
     | '/runs'
     | '/findings/$ticketId'
     | '/reports/$runId'
@@ -129,6 +140,7 @@ export interface FileRouteTypes {
     | '/cost'
     | '/coverage'
     | '/queue'
+    | '/resilience'
     | '/runs'
     | '/findings/$ticketId'
     | '/reports/$runId'
@@ -141,6 +153,7 @@ export interface RootRouteChildren {
   CostRoute: typeof CostRoute
   CoverageRoute: typeof CoverageRoute
   QueueRoute: typeof QueueRoute
+  ResilienceRoute: typeof ResilienceRoute
   RunsRoute: typeof RunsRoute
   FindingsTicketIdRoute: typeof FindingsTicketIdRoute
   ReportsRunIdRoute: typeof ReportsRunIdRoute
@@ -184,6 +197,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof QueueRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/resilience': {
+      id: '/resilience'
+      path: '/resilience'
+      fullPath: '/resilience'
+      preLoaderRoute: typeof ResilienceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/runs': {
       id: '/runs'
       path: '/runs'
@@ -221,6 +241,7 @@ const rootRouteChildren: RootRouteChildren = {
   CostRoute: CostRoute,
   CoverageRoute: CoverageRoute,
   QueueRoute: QueueRoute,
+  ResilienceRoute: ResilienceRoute,
   RunsRoute: RunsRoute,
   FindingsTicketIdRoute: FindingsTicketIdRoute,
   ReportsRunIdRoute: ReportsRunIdRoute,

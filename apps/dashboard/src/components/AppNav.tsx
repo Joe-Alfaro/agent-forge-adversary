@@ -6,6 +6,7 @@ const PANELS = [
   { to: '/queue', label: "Tonight's queue" },
   { to: '/runs', label: 'Run history' },
   { to: '/coverage', label: 'Coverage' },
+  { to: '/resilience', label: 'Resilience trend' },
   { to: '/cost', label: 'Cost' },
 ] as const
 

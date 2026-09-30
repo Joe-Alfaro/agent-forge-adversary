@@ -273,6 +273,43 @@ describe.skipIf(!url)('Postgres repository', () => {
       ])
     })
 
+    it('computes M4 per version from novel attempts and their latest verdict', async () => {
+      // Attempt 4 repeats fp-1 from 9.0.0, so it is not novel on 9.1.0.
+      expect(await repo.getResilienceTrend()).toEqual({
+        versions: ['copilot@9.0.0', 'copilot@9.1.0'],
+        points: [
+          { targetVersion: 'copilot@9.0.0', rubricVersion: 'r1', novelAttempts: 3, confirmed: 1 },
+          { targetVersion: 'copilot@9.1.0', rubricVersion: 'r1', novelAttempts: 1, confirmed: 1 },
+        ],
+      })
+    })
+
+    it('keeps rubrics apart and counts a needs_review success only once a human confirms it', async () => {
+      await pool.query(
+        `INSERT INTO attempts (id, campaign_id, fingerprint, category, transcript, target_version_id, created_at)
+         SELECT 'bbbbbbbb-0000-4000-8000-000000000008', 'aaaaaaaa-0000-4000-8000-000000000002', 'fp-new', 'tool_misuse', '{}', id,
+                '2026-09-29T06:50:00Z'
+         FROM target_versions WHERE version = 'copilot@9.1.0'`,
+      )
+      await pool.query(
+        `INSERT INTO verdicts (attempt_id, outcome, confidence, stage, rubric_version, needs_review, created_at)
+         VALUES ('bbbbbbbb-0000-4000-8000-000000000008', 'success', 0.550, 'llm_tiebreak', 'r2', true, '2026-09-29T06:51:00Z')`,
+      )
+      const pending = await repo.getResilienceTrend()
+      expect(pending.points.find((point) => point.rubricVersion === 'r2')).toEqual({
+        targetVersion: 'copilot@9.1.0',
+        rubricVersion: 'r2',
+        novelAttempts: 1,
+        confirmed: 0,
+      })
+      await pool.query(
+        `INSERT INTO verdicts (attempt_id, outcome, confidence, stage, rubric_version, needs_review, created_at)
+         VALUES ('bbbbbbbb-0000-4000-8000-000000000008', 'success', 1, 'human', 'r2', false, '2026-09-29T09:00:00Z')`,
+      )
+      const confirmed = await repo.getResilienceTrend()
+      expect(confirmed.points.find((point) => point.rubricVersion === 'r2')?.confirmed).toBe(1)
+    })
+
     it('reports spend per run and per agent role for the last 30 days', async () => {
       const cost = await repo.getCost()
       expect(cost.byRun.map((run) => [run.runId, run.spendUsd])).toEqual([

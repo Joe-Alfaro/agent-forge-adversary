@@ -74,4 +74,11 @@ describe('fixture repository defaults', () => {
     expect(prdCategories).not.toContain('misinformation')
     expect(cells.some((cell) => cell.category === 'misinformation')).toBe(true)
   })
+
+  it('serves an M4 demo trend with a rubric change', async () => {
+    const repo = createFixtureRepository({ config, now: () => contractNow })
+    const trend = await repo.getResilienceTrend()
+    expect(trend.versions.length).toBeGreaterThan(2)
+    expect(new Set(trend.points.map((point) => point.rubricVersion)).size).toBe(2)
+  })
 })

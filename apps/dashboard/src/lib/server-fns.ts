@@ -77,6 +77,10 @@ export const moveQueueItemFn = createServerFn({ method: 'POST' })
   })
   .handler(({ data }) => getRepository().moveQueueItem(data.id, data.direction))
 
+export const getResilienceTrendFn = createServerFn({ method: 'GET' }).handler(() =>
+  getRepository().getResilienceTrend(),
+)
+
 export const listApprovalsFn = createServerFn({ method: 'GET' }).handler(() => getRepository().listApprovals())
 
 export const decideApprovalFn = createServerFn({ method: 'POST' })

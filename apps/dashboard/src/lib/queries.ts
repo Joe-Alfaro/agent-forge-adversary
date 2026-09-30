@@ -7,6 +7,7 @@ import {
   fetchDataSourceMode,
   fetchMorningReport,
   fetchQueue,
+  fetchResilienceTrend,
   fetchRuns,
   fetchTicket,
   fetchTickets,
@@ -63,6 +64,11 @@ export const approvalsQuery = queryOptions({
   queryFn: fetchApprovals,
 })
 
+export const resilienceQuery = queryOptions({
+  queryKey: ['resilience'],
+  queryFn: fetchResilienceTrend,
+})
+
 export function useTickets() {
   return useSuspenseQuery(ticketsQuery)
 }
@@ -98,4 +104,8 @@ export function useCost() {
 
 export function useApprovals() {
   return useSuspenseQuery(approvalsQuery)
+}
+
+export function useResilienceTrend() {
+  return useSuspenseQuery(resilienceQuery)
 }

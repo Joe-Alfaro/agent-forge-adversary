@@ -171,6 +171,33 @@ function queueSql(lock: boolean): string {
     ${lock ? 'FOR UPDATE OF r' : ''}`
 }
 
+/**
+ * M4 inputs. An attempt is novel when it is the first with its fingerprint (the
+ * Red Team's novelty check). Each is counted under its latest verdict's rubric;
+ * it is confirmed when that verdict is a success no longer awaiting review, so a
+ * human verdict (Section 8.4) settles a needs_review success either way.
+ * Unjudged attempts are left out.
+ */
+const RESILIENCE_SQL = `
+  WITH novel AS (
+    SELECT DISTINCT ON (fingerprint) id, target_version_id
+    FROM attempts
+    ORDER BY fingerprint, created_at, id
+  ), latest AS (
+    SELECT DISTINCT ON (attempt_id) attempt_id, outcome, rubric_version, needs_review, created_at
+    FROM verdicts
+    ORDER BY attempt_id, created_at DESC, id
+  )
+  SELECT tv.version, latest.rubric_version,
+         count(*) AS novel_attempts,
+         count(*) FILTER (WHERE latest.outcome = 'success' AND NOT latest.needs_review) AS confirmed
+  FROM novel
+  JOIN target_versions tv ON tv.id = novel.target_version_id
+  JOIN latest ON latest.attempt_id = novel.id
+  GROUP BY tv.id, tv.version, tv.first_seen, latest.rubric_version
+  -- Within a version, the older rubric first, so series keep the order rubrics were introduced.
+  ORDER BY tv.first_seen, tv.id, min(latest.created_at), latest.rubric_version`
+
 /** Report rows with the fields the approvals queue shows. */
 const REPORTS_SQL = `
   SELECT r.id, r.exploit_id, r.version, r.status, r.approved_by, r.published_at, r.created_at,
@@ -401,6 +428,20 @@ export function createPgRepository({
         )
       })
       return readQueue(pool)
+    },
+
+    async getResilienceTrend() {
+      const versions = await pool.query('SELECT version FROM target_versions ORDER BY first_seen, id')
+      const points = await pool.query(RESILIENCE_SQL)
+      return {
+        versions: versions.rows.map((row) => String(row.version)),
+        points: points.rows.map((row) => ({
+          targetVersion: String(row.version),
+          rubricVersion: String(row.rubric_version),
+          novelAttempts: Number(row.novel_attempts),
+          confirmed: Number(row.confirmed),
+        })),
+      }
     },
 
     async listApprovals() {

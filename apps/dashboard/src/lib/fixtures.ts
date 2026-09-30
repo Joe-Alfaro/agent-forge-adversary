@@ -1,4 +1,5 @@
 import type { ReportRecord } from './approvals.js'
+import type { ResilienceTrend } from './resilience.js'
 import type { CostSummary, CoverageMatrix, MorningReport, QueueItem, RunSummary } from './models.js'
 import type { TicketRow } from './tickets.js'
 
@@ -343,3 +344,19 @@ export const reports: ReportRecord[] = [
     approvedBy: 'sam',
   },
 ]
+
+/**
+ * M4 inputs across four Co-Pilot versions. The Judge rubric changed during
+ * 1.3.2 (some of its attempts were judged under each), so the demo shows the
+ * line breaking instead of joining incomparable rates.
+ */
+export const resilience: ResilienceTrend = {
+  versions: ['copilot@1.2.0', 'copilot@1.3.0', 'copilot@1.3.2', TARGET_VERSION],
+  points: [
+    { targetVersion: 'copilot@1.2.0', rubricVersion: 'sha256:4be1c09f2a7d', novelAttempts: 640, confirmed: 22 },
+    { targetVersion: 'copilot@1.3.0', rubricVersion: 'sha256:4be1c09f2a7d', novelAttempts: 710, confirmed: 17 },
+    { targetVersion: 'copilot@1.3.2', rubricVersion: 'sha256:4be1c09f2a7d', novelAttempts: 120, confirmed: 2 },
+    { targetVersion: 'copilot@1.3.2', rubricVersion: 'sha256:9c07e3b51d44', novelAttempts: 800, confirmed: 12 },
+    { targetVersion: TARGET_VERSION, rubricVersion: 'sha256:9c07e3b51d44', novelAttempts: 1010, confirmed: 19 },
+  ],
+}
