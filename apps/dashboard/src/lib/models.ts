@@ -103,6 +103,8 @@ export interface TonightQueue {
   runDate: string
   envelopeUsd: number
   items: QueueItem[]
+  /** False when the deployment has Run now turned off (RUN_NOW_ENABLED=false). */
+  runNowEnabled: boolean
 }
 
 export interface PlannedQueueItem extends QueueItem {

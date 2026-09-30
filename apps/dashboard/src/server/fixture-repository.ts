@@ -15,7 +15,7 @@ import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
 import { isRunNowActive, type RunNowScope, scopedItems } from '../lib/run-now.js'
 import { nextRunDate } from '../lib/schedule.js'
 import type { TicketRow } from '../lib/tickets.js'
-import { m5Options, type QueueConfig } from './config.js'
+import { isRunNowEnabled, m5Options, type QueueConfig } from './config.js'
 import { computeM5 } from './m5.js'
 import type { DashboardRepository } from './repository.js'
 import {
@@ -23,6 +23,7 @@ import {
   assertReportDecision,
   assertRerunRequest,
   assertRunNow,
+  assertRunNowEnabled,
   assertTransition,
   normalizeAssignee,
 } from './rules.js'
@@ -240,6 +241,7 @@ export function createFixtureRepository({
       runDate: nextRunDate(now(), config),
       envelopeUsd: config.envelopeUsd,
       items: pendingItems(),
+      runNowEnabled: isRunNowEnabled(config),
     })
   }
 
@@ -272,6 +274,7 @@ export function createFixtureRepository({
     },
 
     async runNow(scope, requestedBy) {
+      assertRunNowEnabled(isRunNowEnabled(config))
       const active = allRuns().some((run) => run.trigger === 'run_now' && isRunNowActive(run.status))
       const pending = pendingItems()
       assertRunNow(pending, scope, active)

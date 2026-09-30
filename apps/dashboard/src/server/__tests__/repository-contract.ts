@@ -6,6 +6,7 @@ import type { ReviewItem } from '../../lib/judge.js'
 import type { QueueItem } from '../../lib/models.js'
 import { buildRerunRequest } from '../../lib/queue.js'
 import type { TicketRow } from '../../lib/tickets.js'
+import type { QueueConfig } from '../config.js'
 import type { DashboardRepository } from '../repository.js'
 
 /** Seed shared by the fixture and Postgres runs of the contract suite. */
@@ -196,7 +197,7 @@ export const contractRunDate = '2026-09-30'
 
 export interface ContractOptions {
   /** Creates a repository over a freshly seeded store. */
-  setup: () => Promise<DashboardRepository>
+  setup: (overrides?: Partial<QueueConfig>) => Promise<DashboardRepository>
 }
 
 function rerun(exploitId: string, messageId = '11111111-1111-4111-8111-111111111111') {
@@ -290,6 +291,13 @@ export function describeRepositoryContract(name: string, options: ContractOption
       it('refuses a second run-now while one is still scheduled', async () => {
         await repo.runNow({ kind: 'queue' }, 'operator')
         await expect(repo.runNow({ kind: 'queue' }, 'operator')).rejects.toThrow('already scheduled or running')
+      })
+
+      it('is refused, and reported as off, when RUN_NOW_ENABLED is false', async () => {
+        const disabled = await options.setup({ runNowEnabled: false })
+        expect((await disabled.getQueue()).runNowEnabled).toBe(false)
+        await expect(disabled.runNow({ kind: 'queue' }, 'operator')).rejects.toThrow('Run now is disabled')
+        expect((await disabled.listRuns()).filter((run) => run.trigger === 'run_now' && run.status === 'scheduled')).toEqual([])
       })
 
       it('returns null for an unknown run', async () => {
@@ -451,6 +459,7 @@ export function describeRepositoryContract(name: string, options: ContractOption
         const queue = await repo.getQueue()
         expect(queue.runDate).toBe(contractRunDate)
         expect(queue.envelopeUsd).toBe(25)
+        expect(queue.runNowEnabled).toBe(true)
         expect(queue.items.map((item) => item.id)).toEqual(contractQueue.map((item) => item.id))
         expect(queue.items[1]).toMatchObject({ kind: 'rerun', exploitId: 'AF-T-0003', estimatedCostUsd: 0.3 })
       })

@@ -8,6 +8,7 @@ import {
   fetchRuns,
   removeQueueItem,
   resetTestData,
+  setRunNowEnabled,
 } from '../../test-data-source.js'
 import { renderWithProviders } from '../../test-utils.js'
 import { QueueView } from '../QueueView.js'
@@ -95,6 +96,14 @@ describe('QueueView run now', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Run request 2 now' }))
     fireEvent.click(screen.getByRole('button', { name: /^Confirm: run now/ }))
     expect((await screen.findByRole('alert')).textContent).toContain('already scheduled or running')
+  })
+
+  it('disables both Run-now buttons, with a note, when the server has run now turned off', async () => {
+    setRunNowEnabled(false)
+    await renderQueue()
+    expect(screen.getByRole('button', { name: 'Run queue now' })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: 'Run request 1 now' })).toHaveProperty('disabled', true)
+    expect(screen.getByText('Run now executes in the local demo; it is turned off on this deployment.')).toBeTruthy()
   })
 
   it('disables Run queue now when nothing is queued', async () => {
