@@ -7,7 +7,9 @@ export interface CostPanelProps {
 
 export function CostPanel({ cost }: CostPanelProps) {
   const targetSpend = cost.byRole.find((entry) => entry.role === 'target')?.spendUsd ?? 0
-  const targetShare = cost.totalUsd === 0 ? 0 : targetSpend / cost.totalUsd
+  // Shares divide by the unrounded role total; totalUsd is rounded to cents for display.
+  const roleTotal = cost.byRole.reduce((sum, entry) => sum + entry.spendUsd, 0)
+  const share = (spend: number) => (roleTotal === 0 ? 0 : spend / roleTotal)
 
   return (
     <div className="cost-panel">
@@ -18,7 +20,7 @@ export function CostPanel({ cost }: CostPanelProps) {
         </div>
         <div className="stat">
           <dt>Target's own share</dt>
-          <dd>{formatPercent(targetShare)}</dd>
+          <dd>{formatPercent(share(targetSpend))}</dd>
         </div>
         <div className="stat">
           <dt>Projected monthly</dt>
@@ -41,7 +43,7 @@ export function CostPanel({ cost }: CostPanelProps) {
               <tr key={entry.role}>
                 <td>{humanize(entry.role)}</td>
                 <td>{formatUsd(entry.spendUsd)}</td>
-                <td>{formatPercent(cost.totalUsd === 0 ? 0 : entry.spendUsd / cost.totalUsd)}</td>
+                <td>{formatPercent(share(entry.spendUsd))}</td>
               </tr>
             ))}
           </tbody>
