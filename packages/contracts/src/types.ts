@@ -197,7 +197,10 @@ export interface PriorityTerms {
   cost: number
 }
 
-export type NightlyPlanItemKind = 'operator_request' | 'coverage_campaign'
+/** ARCHITECTURE 7.0 order: operator reruns, owed regressions, then coverage campaigns. */
+export type NightlyPlanItemKind = 'operator_request' | 'regression' | 'coverage_campaign'
+/** Why a `regression` item is owed: a new target version, or a ticket moved to `fixed`. */
+export type RegressionCause = 'target_changed' | 'ticket_fixed'
 export type OperatorRequestKind = 'rerun' | 'focus' | 'skip' | 'note'
 
 export interface NightlyPlanItem {
@@ -205,9 +208,12 @@ export interface NightlyPlanItem {
   kind: NightlyPlanItemKind
   request_id?: string
   request_kind?: OperatorRequestKind
+  regression_cause?: RegressionCause
   exploit_id?: string
   category: string
   subcategory?: string
+  /** OWASP LLM Top 10 (`LLMnn`) and/or Top 10 (`Ann`) ids; set on every coverage_campaign item. */
+  owasp_ids?: string[]
   priority?: number
   score?: PriorityTerms
   seed_case_ids: string[]

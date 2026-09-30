@@ -3,7 +3,7 @@ import type pg from 'pg'
 import { listTaxonomyCells } from '@agentforge/contracts'
 
 import type { CoverageCellInput, Severity } from './priority.js'
-import type { QueuedRequest } from './planner.js'
+import type { QueuedRequest, RegressionOwed } from './planner.js'
 import type {
   AttemptRow,
   CoverageSnapshotRow,
@@ -202,6 +202,97 @@ export class PgOrchestratorRepository implements OrchestratorRepository {
       ...(r.category ? { category: String(r.category) } : {}),
       ...(r.reason ? { reason: String(r.reason) } : {}),
     }))
+  }
+
+  /**
+   * The queue as the dry-run preview sees it: the same rows and order as
+   * {@link drainOperatorRequests}, plus each request's cost estimate and, for a
+   * rerun, its exploit's cell and OWASP ids. Read-only; statuses are untouched.
+   */
+  async previewOperatorRequests(runDate: string): Promise<QueuedRequest[]> {
+    const result = await this.pool.query(
+      `SELECT r.id, r.kind, r.exploit_id, COALESCE(r.category, e.category) AS category, e.subcategory,
+              r.reason, r.estimated_cost_usd, e.owasp_ids
+       FROM operator_requests r
+       LEFT JOIN exploits e ON e.id = r.exploit_id
+       WHERE r.status = 'queued' AND (r.requested_for IS NULL OR r.requested_for <= $1)
+       ORDER BY r.position NULLS LAST, r.created_at, r.id`,
+      [runDate],
+    )
+    return result.rows.map((r) => ({
+      id: String(r.id),
+      kind: r.kind,
+      ...(r.exploit_id ? { exploit_id: String(r.exploit_id) } : {}),
+      ...(r.category ? { category: String(r.category) } : {}),
+      ...(r.subcategory ? { subcategory: String(r.subcategory) } : {}),
+      ...(r.reason ? { reason: String(r.reason) } : {}),
+      ...(r.estimated_cost_usd === null || r.estimated_cost_usd === undefined ? {} : { estimatedCostUsd: Number(r.estimated_cost_usd) }),
+      ...(Array.isArray(r.owasp_ids) && r.owasp_ids.length > 0 ? { owaspIds: r.owasp_ids.map(String) } : {}),
+    }))
+  }
+
+  /** The most recently seen target version, or a named one; null when none is recorded. */
+  async findTargetVersion(version?: string): Promise<{ id: number; version: string } | null> {
+    const result = await this.pool.query(
+      `SELECT id, version FROM target_versions${version === undefined ? '' : ' WHERE version = $1'}
+       ORDER BY first_seen DESC, id DESC LIMIT 1`,
+      version === undefined ? [] : [version],
+    )
+    const row = result.rows[0]
+    return row ? { id: Number(row.id), version: String(row.version) } : null
+  }
+
+  /**
+   * The last run that actually ran (not a `scheduled` placeholder): when it
+   * ended and which target version it tested, from its summary or plan.
+   */
+  async lastFinishedRun(): Promise<{ endedAt: string; targetVersion: string | null } | null> {
+    const result = await this.pool.query(
+      `SELECT COALESCE(finished_at, started_at, scheduled_for) AS ended_at,
+              COALESCE(summary->>'target_version', plan->>'target_version') AS target_version
+       FROM nightly_runs
+       WHERE status IN ('completed', 'aborted', 'failed')
+       ORDER BY COALESCE(finished_at, started_at, scheduled_for) DESC, id DESC LIMIT 1`,
+    )
+    const row = result.rows[0]
+    if (!row) return null
+    return {
+      endedAt: new Date(row.ended_at as string | Date).toISOString(),
+      targetVersion: row.target_version ? String(row.target_version) : null,
+    }
+  }
+
+  /**
+   * Regressions owed tonight (ARCHITECTURE 7.0 steps 2–3): the full suite of
+   * stored exploits (all but false positives and accepted risks) when the
+   * target version changed since the last run, and every ticket moved to
+   * `fixed` since that run (all `fixed` tickets when there is no prior run).
+   */
+  async getOwedRegressions(args: { targetChanged: boolean; since: string | null }): Promise<RegressionOwed[]> {
+    const owed: RegressionOwed[] = []
+    const toOwed = (cause: RegressionOwed['cause']) => (r: Record<string, unknown>): RegressionOwed => ({
+      exploitId: String(r.id),
+      category: String(r.category),
+      ...(r.subcategory ? { subcategory: String(r.subcategory) } : {}),
+      cause,
+      ...(Array.isArray(r.owasp_ids) && r.owasp_ids.length > 0 ? { owaspIds: r.owasp_ids.map(String) } : {}),
+    })
+    if (args.targetChanged) {
+      const suite = await this.pool.query(
+        `SELECT id, category, subcategory, owasp_ids FROM exploits
+         WHERE status NOT IN ('false_positive', 'accepted_risk')
+         ORDER BY created_at, id`,
+      )
+      owed.push(...suite.rows.map(toOwed('target_changed')))
+    }
+    const fixed = await this.pool.query(
+      `SELECT id, category, subcategory, owasp_ids FROM exploits
+       WHERE status = 'fixed'${args.since === null ? '' : ' AND updated_at > $1'}
+       ORDER BY updated_at, id`,
+      args.since === null ? [] : [args.since],
+    )
+    owed.push(...fixed.rows.map(toOwed('ticket_fixed')))
+    return owed
   }
 
   /**
