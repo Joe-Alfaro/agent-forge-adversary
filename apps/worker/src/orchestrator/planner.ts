@@ -50,6 +50,11 @@ export interface RegressionOwed {
   owaspIds?: string[]
   /** Seeds to replay; defaults to the exploit id (replayed from its min_repro). */
   seedCaseIds?: string[]
+  /**
+   * Stored sequences to replay (min_repro + variants), as the dashboard counts
+   * it: max(cardinality(family_ids), 1). Default 1.
+   */
+  familySize?: number
 }
 
 /** Replays per exploit in a regression re-check (Section 9.2 majority vote). */
@@ -128,6 +133,12 @@ export function buildNightlyPlan(inputs: PlannerInputs): NightlyPlan {
     .forEach((req) => {
       const category = req.category ?? 'unknown'
       const key = req.subcategory ? cellKey(category, req.subcategory) : undefined
+      // A category-only rerun exercises every seed in that category.
+      const seeds = key
+        ? inputs.seedsByCell[key] ?? []
+        : Object.entries(inputs.seedsByCell)
+            .filter(([cell]) => cell.startsWith(`${category}/`))
+            .flatMap(([, ids]) => ids)
       items.push({
         item_id: `req-${req.id}`,
         kind: 'operator_request',
@@ -137,7 +148,7 @@ export function buildNightlyPlan(inputs: PlannerInputs): NightlyPlan {
         category,
         ...(req.subcategory ? { subcategory: req.subcategory } : {}),
         ...owaspField(owaspFor(inputs, req.owaspIds, category, req.subcategory)),
-        seed_case_ids: (key && inputs.seedsByCell[key]) || [],
+        seed_case_ids: seeds,
         max_attempts: inputs.maxAttemptsPerCampaign,
         estimated_cost_usd: req.estimatedCostUsd ?? 0,
         decision: 'run',
@@ -154,6 +165,7 @@ export function buildNightlyPlan(inputs: PlannerInputs): NightlyPlan {
     .forEach((reg) => {
       if (planned.has(reg.exploitId)) return
       planned.add(reg.exploitId)
+      const maxAttempts = replays * Math.max(reg.familySize ?? 1, 1)
       items.push({
         item_id: `regress-${reg.exploitId}`,
         kind: 'regression',
@@ -163,8 +175,8 @@ export function buildNightlyPlan(inputs: PlannerInputs): NightlyPlan {
         ...(reg.subcategory ? { subcategory: reg.subcategory } : {}),
         ...owaspField(owaspFor(inputs, reg.owaspIds, reg.category, reg.subcategory)),
         seed_case_ids: reg.seedCaseIds ?? [reg.exploitId],
-        max_attempts: replays,
-        estimated_cost_usd: Number((replays * costPerAttempt).toFixed(6)),
+        max_attempts: maxAttempts,
+        estimated_cost_usd: Number((maxAttempts * costPerAttempt).toFixed(6)),
         decision: 'run',
         reason:
           reg.cause === 'target_changed'

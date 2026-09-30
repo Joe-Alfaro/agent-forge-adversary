@@ -81,6 +81,8 @@ export interface PlanPreviewParams {
   seeds: PreviewSeed[]
   config: PlanPreviewConfig
   now: Date
+  /** The window to plan for; defaults to the next window after `now` (the cron passes its own). */
+  scheduledFor?: Date
 }
 
 export interface PlanPreviewResult {
@@ -107,7 +109,7 @@ export async function buildPreviewPlan(params: Omit<PlanPreviewParams, 'pool'> &
     ;(seedsByCell[`${seed.category}/${seed.subcategory}`] ??= []).push(seed.id)
   })
 
-  const scheduledFor = nextNightlyWindow(now, config.window)
+  const scheduledFor = params.scheduledFor ?? nextNightlyWindow(now, config.window)
   const runDate = scheduledFor.toISOString().slice(0, 10)
   const notes: string[] = []
 

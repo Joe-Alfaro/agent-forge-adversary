@@ -3,8 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-import { runner } from 'node-pg-migrate'
-import pg from 'pg'
+import type pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { validateNightlyPlan, type AttackTranscript, type NightlyPlan, type Verdict } from '@agentforge/contracts'
@@ -12,6 +11,7 @@ import { importPlan, planRunImport, type RunArtifact } from '@agentforge/db'
 
 import { loadEvalSuite } from '../../evals/index.js'
 import { previewNightlyPlan, readPlanPreviewConfig } from '../planPreview.js'
+import { createMigratedSchema, type MigratedSchema } from './pgSchema.js'
 
 /*
  * Runs plan:preview's importable core against a real Postgres: a freshly
@@ -119,7 +119,7 @@ async function scheduledCronRows(pool: pg.Pool): Promise<{ id: number; plan: Nig
 }
 
 describe.skipIf(!url)('plan:preview against Postgres (dry run)', () => {
-  const schema = `af_test_${randomUUID().replaceAll('-', '').slice(0, 16)}`
+  let schema: MigratedSchema
   let pool: pg.Pool
   let exploitId: string
   // Envelope $1.00: reruns $0.30 + $0.15 and one $0.15 regression, then $0.20 coverage campaigns.
@@ -133,17 +133,8 @@ describe.skipIf(!url)('plan:preview against Postgres (dry run)', () => {
   const now = new Date('2026-09-30T02:00:00Z')
 
   beforeAll(async () => {
-    await runner({
-      databaseUrl: url!,
-      dir: fileURLToPath(new URL('../../../../../packages/db/migrations', import.meta.url)),
-      direction: 'up',
-      migrationsTable: 'pgmigrations',
-      schema,
-      createSchema: true,
-      noLock: true,
-      log: () => {},
-    })
-    pool = new pg.Pool({ connectionString: url, options: `-c search_path=${schema}`, max: 4 })
+    schema = await createMigratedSchema(url!)
+    pool = schema.pool
 
     const imported = await importPlan(pool, planRunImport(importedRun()))
     expect(imported.status).toBe('imported')
@@ -167,15 +158,7 @@ describe.skipIf(!url)('plan:preview against Postgres (dry run)', () => {
   })
 
   afterAll(async () => {
-    await pool?.end()
-    if (!url) return
-    const admin = new pg.Client({ connectionString: url })
-    await admin.connect()
-    try {
-      await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
-    } finally {
-      await admin.end()
-    }
+    await schema?.drop()
   })
 
   it('writes one scheduled cron row whose plan follows 7.0 order with OWASP ids and run/cut vs the envelope', async () => {
@@ -287,5 +270,12 @@ describe.skipIf(!url)('plan:preview against Postgres (dry run)', () => {
     expect(Number(read.rows[0]?.id)).toBe(result.nightlyRunId)
     expect((read.rows[0]?.plan as NightlyPlan).message_id).toBe(result.plan.message_id)
     expect(result.created).toBe(false)
+  })
+
+  it('plans for an explicit window (the cron firing) instead of the next one', async () => {
+    const window = new Date('2026-09-30T06:00:00Z')
+    const result = await previewNightlyPlan({ pool, seeds, config, now: new Date('2026-09-30T06:00:07Z'), scheduledFor: window })
+    expect(result.scheduledFor).toBe('2026-09-30T06:00:00.000Z')
+    expect(result.plan.notes?.[0]).toContain('2026-09-30T06:00:00.000Z')
   })
 })

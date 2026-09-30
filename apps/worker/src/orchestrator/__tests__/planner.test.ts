@@ -195,4 +195,26 @@ describe('buildNightlyPlan', () => {
     expect(plan.cut_count).toBe(2)
     expect(plan.estimated_cost_usd).toBeCloseTo(0.6, 6)
   })
+
+  it('prices a regression by its family size: R replays per stored sequence', () => {
+    const plan = buildNightlyPlan(
+      baseInputs({
+        budgetUsd: 100,
+        costPerAttemptUsd: 0.05,
+        regressions: [{ exploitId: 'AF-2026-0002', category: 'data_exfiltration', subcategory: 'phi_leakage', cause: 'ticket_fixed', familySize: 2 }],
+      }),
+    )
+    expect(plan.items[0]).toMatchObject({ kind: 'regression', max_attempts: 6 })
+    expect(plan.items[0]?.estimated_cost_usd).toBeCloseTo(0.3, 6)
+  })
+
+  it('gives a category-only rerun every seed in that category', () => {
+    const plan = buildNightlyPlan(
+      baseInputs({
+        operatorRequests: [{ id: '22222222-2222-4222-8222-222222222222', kind: 'rerun', category: 'data_exfiltration' }],
+        seedsByCell: { 'data_exfiltration/cross_patient': ['de-002'], 'data_exfiltration/phi_leakage': ['de-001'], 'prompt_injection/direct': ['pi-001'] },
+      }),
+    )
+    expect(plan.items[0]?.seed_case_ids).toEqual(['de-002', 'de-001'])
+  })
 })
