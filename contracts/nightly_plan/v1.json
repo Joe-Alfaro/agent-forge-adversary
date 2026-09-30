@@ -50,12 +50,26 @@
       ],
       "properties": {
         "item_id": { "type": "string", "minLength": 1 },
-        "kind": { "enum": ["operator_request", "coverage_campaign"] },
+        "kind": {
+          "description": "ARCHITECTURE 7.0 order: operator_request, then regression (owed to a changed target or a ticket moved to fixed), then coverage_campaign.",
+          "enum": ["operator_request", "regression", "coverage_campaign"]
+        },
+        "regression_cause": {
+          "description": "Why a regression item is owed (kind = regression only).",
+          "enum": ["target_changed", "ticket_fixed"]
+        },
         "request_id": { "type": "string", "format": "uuid" },
         "request_kind": { "enum": ["rerun", "focus", "skip", "note"] },
         "exploit_id": { "type": "string" },
         "category": { "type": "string", "minLength": 1 },
         "subcategory": { "type": "string", "minLength": 1 },
+        "owasp_ids": {
+          "description": "OWASP LLM Top 10 (LLMnn) and/or OWASP Top 10 (Ann) ids the item's cell maps to. Optional for backward compatibility; the planner sets it on every coverage_campaign item.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^(LLM[0-9]{2}|A[0-9]{2})$" }
+        },
         "priority": { "type": "number" },
         "score": { "$ref": "#/$defs/scoreTerms" },
         "seed_case_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } },

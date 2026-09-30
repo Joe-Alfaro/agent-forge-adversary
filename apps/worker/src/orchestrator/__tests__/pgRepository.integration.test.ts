@@ -133,6 +133,17 @@ describe.skipIf(!url)('PgOrchestratorRepository', () => {
     ])
   })
 
+  it('drain carries the queue row estimated_cost_usd so reruns consume the envelope', async () => {
+    await pool.query(
+      `INSERT INTO operator_requests (id, kind, category, requested_by, source, status, position, estimated_cost_usd) VALUES
+       ('11111111-1111-4111-8111-111111111111', 'rerun', 'prompt_injection', 'op', 'ui', 'queued', 1, 0.45),
+       ('22222222-2222-4222-8222-222222222222', 'rerun', 'data_exfiltration', 'op', 'ui', 'queued', 2, NULL)`,
+    )
+    const drained = await repo.drainOperatorRequests(new Date().toISOString().slice(0, 10))
+    expect(drained[0]?.estimatedCostUsd).toBeCloseTo(0.45, 6)
+    expect(drained[1]).not.toHaveProperty('estimatedCostUsd')
+  })
+
   it('materializes a coverage snapshot and upserts it in place', async () => {
     const tvId = await repo.ensureTargetVersion('https://copilot/', 'copilot@abc')
     const row = {

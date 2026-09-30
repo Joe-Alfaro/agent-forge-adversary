@@ -225,9 +225,12 @@ only (ARCHITECTURE 4.2).
   open-severity, regression, signal-per-dollar, staleness, minus cost) with
   config weights logged on every plan.
 - `planner.ts` — `buildNightlyPlan` composes a schema-valid `NightlyPlan v1`:
-  operator reruns first, then coverage campaigns ranked by priority, each marked
-  `run` or `cut` against the budget envelope. `skip`/`focus`/`note` directives
-  reshape the plan.
+  operator reruns first, then regressions owed to a changed target or to tickets
+  moved to `fixed`, then coverage campaigns ranked by priority, each marked `run`
+  or `cut` against the budget envelope. `skip`/`focus`/`note` directives reshape
+  the plan. Given a cell → OWASP map (`owasp.ts`, derived from the seed suite),
+  every coverage campaign carries `owasp_ids`.
+- `planPreview.ts` — the DRY-RUN nightly plan preview (see below).
 - `run.ts` — `runPlan`, the RUN executor: red team → target → detectors → judge →
   persist attempts/verdicts, dedupe confirmed exploits by fingerprint,
   materialize `coverage_snapshots` (asserts `isTaxonomyCell`, fills
@@ -248,3 +251,17 @@ is a hard cap (required); other knobs: `RUN_CATEGORIES` (csv), `RUN_PER_FAMILY`,
 `RUN_MAX_ATTEMPTS`, `RUN_TOP_K`, `RUN_TRIGGER`. Secrets load from
 `AGENTFORGE_ENV_FILE`; minted tokens and API keys are redacted from stored
 transcripts and trace spans.
+
+### Plan preview (dry run)
+
+`npm run build && DATABASE_URL=postgres://… npm run plan:preview -w apps/worker`
+builds tonight's `NightlyPlan v1` from the database (queued `operator_requests`,
+owed regressions, coverage matrix + 7.2 score) and upserts it into the **one**
+`nightly_runs` row with `trigger = 'cron'` and `status = 'scheduled'`
+(`scheduled_for` = the next window). Nothing executes and nothing is spent: no
+target or model call, and the queue is not drained. Re-running refreshes that
+row in place. Knobs: `NIGHTLY_BUDGET_USD` (envelope, default 25),
+`NIGHTLY_HOUR`/`NIGHTLY_TZ` (default 01:00 `America/Chicago`), `PLAN_TOP_K`,
+`PLAN_MAX_ATTEMPTS`, `PLAN_COST_PER_ATTEMPT_USD`, `PLAN_TARGET_VERSION`. The
+importable core is `previewNightlyPlan` (`buildPreviewPlan` builds without
+persisting).
