@@ -1,9 +1,11 @@
 // @vitest-environment node
 import { listTaxonomyCells } from '@agentforge/contracts'
-import pg from 'pg'
+import type pg from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { createPgRepository } from '../pg-repository.js'
+import type { DashboardRepository } from '../repository.js'
+import { createIsolatedSchema, type IsolatedSchema } from './pg-schema.js'
 import { resetDatabase, seedEvents, seedQueue, seedReports, seedReviews, seedTickets } from './pg-seed.js'
 import {
   contractNow,
@@ -18,18 +20,25 @@ import {
 } from './repository-contract.js'
 
 /*
- * Runs against a disposable Postgres migrated with packages/db. Skipped unless
- * DASHBOARD_TEST_DATABASE_URL is set; never point it at a shared database, the
- * suite truncates every platform table.
+ * Runs against Postgres, skipped unless DASHBOARD_TEST_DATABASE_URL is set. The
+ * suite migrates its own throwaway af_test_* schema with packages/db's
+ * migrations and drops it afterwards, so it never alters or truncates `public`
+ * and can share a database with the other suites.
  */
 const url = process.env.DASHBOARD_TEST_DATABASE_URL
 const config = { envelopeUsd: 25, timeZone: 'America/Chicago', runHour: 1 }
 
 describe.skipIf(!url)('Postgres repository', () => {
-  const pool = new pg.Pool({ connectionString: url, max: 4 })
+  let isolated: IsolatedSchema
+  let pool: pg.Pool
+
+  beforeAll(async () => {
+    isolated = await createIsolatedSchema(url ?? '')
+    pool = isolated.pool
+  }, 60_000)
 
   afterAll(async () => {
-    await pool.end()
+    await isolated?.drop()
   })
 
   async function seededRepo() {
@@ -147,9 +156,10 @@ describe.skipIf(!url)('Postgres repository', () => {
   })
 
   describe('aggregates', () => {
-    const repo = createPgRepository({ pool, config, now: () => contractNow })
+    let repo: DashboardRepository
 
     beforeEach(async () => {
+      repo = createPgRepository({ pool, config, now: () => contractNow })
       const versions = await resetDatabase(pool, ['copilot@9.0.0', 'copilot@9.1.0'])
       const v1 = versions.get('copilot@9.0.0')
       const v2 = versions.get('copilot@9.1.0')
@@ -325,18 +335,13 @@ describe.skipIf(!url)('Postgres repository', () => {
       expect(cells.find((cell) => cell.subcategory === 'indirect')).toMatchObject({ attempts: 1, familiesExercised: 0 })
     })
 
-    it('uses coverage_snapshots.families_exercised automatically once the column exists', async () => {
-      await pool.query('ALTER TABLE coverage_snapshots ADD COLUMN IF NOT EXISTS families_exercised integer')
-      try {
-        await pool.query(
-          `INSERT INTO coverage_snapshots (target_version_id, category, subcategory, attempts, confirmed, last_run_at, families_exercised)
-           SELECT id, 'prompt_injection', 'direct', 40, 2, '2026-09-29T07:00:00Z', 4 FROM target_versions WHERE version = 'copilot@9.1.0'`,
-        )
-        const direct = (await repo.getCoverage()).cells.find((cell) => cell.subcategory === 'direct')
-        expect(direct).toMatchObject({ attempts: 40, familiesExercised: 4 })
-      } finally {
-        await pool.query('ALTER TABLE coverage_snapshots DROP COLUMN IF EXISTS families_exercised')
-      }
+    it('reads families_exercised from coverage_snapshots when the Orchestrator wrote one', async () => {
+      await pool.query(
+        `INSERT INTO coverage_snapshots (target_version_id, category, subcategory, attempts, confirmed, last_run_at, families_exercised)
+         SELECT id, 'prompt_injection', 'direct', 40, 2, '2026-09-29T07:00:00Z', 4 FROM target_versions WHERE version = 'copilot@9.1.0'`,
+      )
+      const direct = (await repo.getCoverage()).cells.find((cell) => cell.subcategory === 'direct')
+      expect(direct).toMatchObject({ attempts: 40, familiesExercised: 4 })
     })
 
     it('reads coverage from coverage_snapshots once the Orchestrator has materialized them', async () => {

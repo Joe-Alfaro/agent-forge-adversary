@@ -78,8 +78,10 @@ over `src/lib/data-source.ts`, which calls TanStack Start server functions
   `src/lib/fixtures.ts`, in memory until the server restarts.
 
 Both run the same contract suite (`src/server/__tests__/repository-contract.ts`).
-The Postgres run needs a disposable, migrated database and truncates every
-platform table, so never point it at a shared one:
+The Postgres run migrates its own throwaway `af_test_*` schema with
+packages/db's migrations, works only inside it, and drops it afterwards, so it
+never alters or truncates `public` and can share a database with the other
+suites:
 
 ```bash
 DASHBOARD_TEST_DATABASE_URL=postgres://af:af@127.0.0.1:54339/af_dashboard_test npm test -w apps/dashboard
