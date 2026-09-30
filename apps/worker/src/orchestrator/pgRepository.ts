@@ -9,6 +9,8 @@ import type {
   CoverageSnapshotRow,
   ExploitRow,
   OrchestratorRepository,
+  RegressionFamily,
+  RegressionResultRow,
   VerdictRow,
 } from './repository.js'
 
@@ -184,6 +186,95 @@ export class PgOrchestratorRepository implements OrchestratorRepository {
     }
   }
 
+  async claimScheduledCron(id?: number): Promise<{ nightlyRunId: number; plan: unknown } | null> {
+    // Same row the dashboard's Tonight's queue reads: latest by scheduled_for DESC, id DESC.
+    const result = await this.pool.query(
+      `UPDATE nightly_runs SET status = 'running', started_at = now()
+       WHERE id = (
+         SELECT id FROM nightly_runs
+         WHERE trigger = 'cron' AND status = 'scheduled'${id === undefined ? '' : ' AND id = $1'}
+         ORDER BY scheduled_for DESC, id DESC
+         FOR UPDATE SKIP LOCKED
+         LIMIT 1
+       )
+       RETURNING id, plan`,
+      id === undefined ? [] : [id],
+    )
+    const row = result.rows[0]
+    if (!row) return null
+    return { nightlyRunId: Number(row.id), plan: row.plan }
+  }
+
+  /**
+   * The exploit's minimal reproduction, then each stored family attempt whose
+   * latest verdict was `success` (the successful variants, ARCHITECTURE 9.1),
+   * deduplicated by turn sequence. OWASP ids come from the exploit, falling back
+   * to those recorded on its family's attempts.
+   */
+  async getRegressionFamily(exploitId: string): Promise<RegressionFamily | null> {
+    const exploit = await this.pool.query(
+      'SELECT id, category, subcategory, status, owasp_ids, min_repro, family_ids, fingerprint FROM exploits WHERE id = $1',
+      [exploitId],
+    )
+    const row = exploit.rows[0]
+    if (!row) return null
+    const variants = await this.pool.query(
+      `SELECT a.transcript, a.owasp_ids
+       FROM attempts a
+       JOIN LATERAL (
+         SELECT v.outcome FROM verdicts v WHERE v.attempt_id = a.id ORDER BY v.created_at DESC LIMIT 1
+       ) lv ON true
+       WHERE (a.id = ANY($1::uuid[]) OR a.fingerprint = $2) AND lv.outcome = 'success'
+       ORDER BY a.created_at, a.id`,
+      [row.family_ids ?? [], row.fingerprint],
+    )
+    const repro = row.min_repro as { turns?: unknown } | null
+    const minTurns = Array.isArray(repro?.turns) ? repro.turns.filter((t): t is string => typeof t === 'string') : []
+    const variantTurns = variants.rows.map((v) => {
+      const turns = (v.transcript as { turns?: { attacker_message?: unknown }[] } | null)?.turns ?? []
+      return turns.map((t) => t.attacker_message).filter((m): m is string => typeof m === 'string')
+    })
+    const seen = new Set<string>()
+    const sequences = [
+      ...(minTurns.length > 0 ? [{ label: 'min_repro' as const, turns: minTurns }] : []),
+      ...variantTurns.filter((t) => t.length > 0).map((turns) => ({ label: 'variant' as const, turns })),
+    ].filter((seq) => {
+      const key = JSON.stringify(seq.turns)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    const exploitOwasp = Array.isArray(row.owasp_ids) ? row.owasp_ids.map(String) : []
+    const attemptOwasp = [...new Set(variants.rows.flatMap((v) => (Array.isArray(v.owasp_ids) ? v.owasp_ids.map(String) : [])))]
+    return {
+      exploitId: String(row.id),
+      category: String(row.category),
+      ...(row.subcategory ? { subcategory: String(row.subcategory) } : {}),
+      status: String(row.status),
+      owaspIds: exploitOwasp.length > 0 ? exploitOwasp : attemptOwasp,
+      sequences,
+    }
+  }
+
+  async createRegressionRun(row: { targetVersionId: number; scope: 'full' | 'targeted' }): Promise<string> {
+    const result = await this.pool.query(
+      `INSERT INTO regression_runs (target_version_id, scope, status) VALUES ($1, $2, 'running') RETURNING id`,
+      [row.targetVersionId, row.scope],
+    )
+    return String(result.rows[0]?.id)
+  }
+
+  async insertRegressionResult(row: RegressionResultRow): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO regression_results (run_id, exploit_id, outcome, replay_count, majority) VALUES ($1, $2, $3, $4, $5)`,
+      [row.runId, row.exploitId, row.outcome, row.replayCount, row.majority],
+    )
+  }
+
+  async finishRegressionRun(id: string, status: string): Promise<void> {
+    await this.pool.query('UPDATE regression_runs SET status = $2, finished_at = now() WHERE id = $1', [id, status])
+  }
+
   // ---- Read side, used by the Run-now entrypoint to build a plan ----
 
   /**
@@ -281,17 +372,18 @@ export class PgOrchestratorRepository implements OrchestratorRepository {
       ...(r.subcategory ? { subcategory: String(r.subcategory) } : {}),
       cause,
       ...(Array.isArray(r.owasp_ids) && r.owasp_ids.length > 0 ? { owaspIds: r.owasp_ids.map(String) } : {}),
+      familySize: Number(r.family_size ?? 1),
     })
     if (args.targetChanged) {
       const suite = await this.pool.query(
-        `SELECT id, category, subcategory, owasp_ids FROM exploits
+        `SELECT id, category, subcategory, owasp_ids, GREATEST(cardinality(family_ids), 1) AS family_size FROM exploits
          WHERE status NOT IN ('false_positive', 'accepted_risk')
          ORDER BY created_at, id`,
       )
       owed.push(...suite.rows.map(toOwed('target_changed')))
     }
     const fixed = await this.pool.query(
-      `SELECT id, category, subcategory, owasp_ids FROM exploits
+      `SELECT id, category, subcategory, owasp_ids, GREATEST(cardinality(family_ids), 1) AS family_size FROM exploits
        WHERE status = 'fixed'${args.since === null ? '' : ' AND updated_at > $1'}
        ORDER BY updated_at, id`,
       args.since === null ? [] : [args.since],

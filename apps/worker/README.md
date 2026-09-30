@@ -231,6 +231,15 @@ only (ARCHITECTURE 4.2).
   the plan. Given a cell → OWASP map (`owasp.ts`, derived from the seed suite),
   every coverage campaign carries `owasp_ids`.
 - `planPreview.ts` — the DRY-RUN nightly plan preview (see below).
+- `run.ts` `runScheduledNightly` — the scheduled-run consumer: claims the
+  scheduled cron row (SKIP LOCKED) and executes its plan in order within the
+  lower of the envelope and the hard cap. `regression` items are the Regression
+  Harness: min_repro then each stored successful variant, replayed R = 3 times
+  unchanged, majority verdict; results go to `regression_results` and the
+  summary's `regressions` / `verified_fixes` (ticket status stays
+  operator-owned).
+- `nightlyJob.ts` — the pg-boss cron: poll target version → plan:preview for
+  this window → consumer. Registered only when `NIGHTLY_ENABLED=true`.
 - `run.ts` — `runPlan`, the RUN executor: red team → target → detectors → judge →
   persist attempts/verdicts, dedupe confirmed exploits by fingerprint,
   materialize `coverage_snapshots` (asserts `isTaxonomyCell`, fills
@@ -265,6 +274,18 @@ row in place. Knobs: `NIGHTLY_BUDGET_USD` (envelope, default 25),
 `PLAN_MAX_ATTEMPTS`, `PLAN_COST_PER_ATTEMPT_USD`, `PLAN_TARGET_VERSION`. The
 importable core is `previewNightlyPlan` (`buildPreviewPlan` builds without
 persisting).
+
+### Nightly run (spends)
+
+- Manual: `RUN_SPEND_CAP_USD=3 DATABASE_URL=… npm run run:nightly -w apps/worker`
+  consumes the scheduled cron row (run `plan:preview` first). `RUN_NIGHTLY_ID`
+  claims a specific row.
+- Cron: `NIGHTLY_ENABLED=true NIGHTLY_SPEND_CAP_USD=5 NIGHTLY_BUDGET_USD=5
+  DATABASE_URL=… npm run nightly:worker -w apps/worker` (long-running).
+  `NIGHTLY_CRON` (default `0 1 * * *`) and `NIGHTLY_TZ` (default
+  `America/Chicago`) set the schedule; no retries, missed firings are skipped,
+  and a job expires after three hours. Without `NIGHTLY_ENABLED=true` the worker
+  removes the schedule and exits.
 
 ## Documentation Agent (`src/docs/`)
 

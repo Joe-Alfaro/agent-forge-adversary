@@ -69,6 +69,31 @@ export interface ExploitReproduction {
   turns: string[]
 }
 
+/**
+ * A stored exploit as the Regression Harness replays it (ARCHITECTURE 9.1):
+ * the minimal reproduction first, then the stored successful variants.
+ */
+export interface RegressionFamily {
+  exploitId: string
+  category: string
+  subcategory?: string
+  /** The ticket status, used to tell a regression from a still-open finding. */
+  status: string
+  owaspIds: string[]
+  sequences: { label: 'min_repro' | 'variant'; turns: string[] }[]
+}
+
+/** One `regression_results` row: R replays per sequence, majority verdict (9.2, 9.5). */
+export interface RegressionResultRow {
+  runId: string
+  exploitId: string
+  /** `pass` = every sequence was blocked by majority; `fail` = the exploit still reproduces. */
+  outcome: 'pass' | 'fail'
+  replayCount: number
+  /** The majority verdict of the first sequence that was not blocked, else `fail`. */
+  majority: 'success' | 'partial' | 'fail'
+}
+
 export interface OrchestratorRepository {
   /** Upserts the target and version rows; returns the target_version id. */
   ensureTargetVersion(baseUrl: string, version: string): Promise<number>
@@ -95,4 +120,16 @@ export interface OrchestratorRepository {
   updateCampaign(id: string, args: { spendUsd: number; status: string }): Promise<void>
   finishNightlyRun(id: number, args: { summary: NightlyRunSummary; spendUsd: number; status: string }): Promise<void>
   setRequestStatus(id: string, status: 'ran' | 'cut', nightlyRunId: number): Promise<void>
+  /**
+   * Atomically claims the scheduled nightly (`trigger = 'cron'`,
+   * `status = 'scheduled'`) row the dashboard reads — latest by
+   * `scheduled_for DESC, id DESC`, or a specific id — moving it to `running`
+   * with FOR UPDATE SKIP LOCKED. Returns its stored NightlyPlan jsonb, or null.
+   */
+  claimScheduledCron(id?: number): Promise<{ nightlyRunId: number; plan: unknown } | null>
+  /** Loads an exploit's replayable family for a regression; null if it does not exist. */
+  getRegressionFamily(exploitId: string): Promise<RegressionFamily | null>
+  createRegressionRun(row: { targetVersionId: number; scope: 'full' | 'targeted' }): Promise<string>
+  insertRegressionResult(row: RegressionResultRow): Promise<void>
+  finishRegressionRun(id: string, status: string): Promise<void>
 }

@@ -1,10 +1,12 @@
 import {
   isTaxonomyCell,
+  validateNightlyPlan,
   validateNightlyRunSummary,
   type CampaignPlan,
   type NightlyPlan,
   type NightlyPlanItem,
   type NightlyRunSummary,
+  type Verdict,
 } from '@agentforge/contracts'
 import type {
   RunArtifact,
@@ -18,9 +20,9 @@ import type {
 import { runDetectors, type DetectorContext, type RunDetectorsClock } from '../detectors/index.js'
 import { judgeAttempt, type JudgeModel } from '../judge/index.js'
 import type { PlatformTracer, TraceScope } from '../observability/index.js'
-import { runCampaign, type CampaignAdapter, type CampaignSeed, type AttemptDetail } from '../redteam/index.js'
-import { buildNightlyPlan, type QueuedRequest } from './planner.js'
-import type { AgentEventRow, CoverageSnapshotRow, OrchestratorRepository } from './repository.js'
+import { fingerprintTurns, runCampaign, type CampaignAdapter, type CampaignSeed, type AttemptDetail } from '../redteam/index.js'
+import { buildNightlyPlan, REGRESSION_REPLAYS, type QueuedRequest } from './planner.js'
+import type { AgentEventRow, CoverageSnapshotRow, OrchestratorRepository, RegressionFamily } from './repository.js'
 
 /**
  * The Orchestrator RUN executor (ARCHITECTURE 7.0). It runs a NightlyPlan end to
@@ -70,6 +72,8 @@ export interface RunPlanParams {
   costModel?: CostModel
   perFamily?: number
   scheduledFor?: string
+  /** Replays per regression sequence (R, ARCHITECTURE 9.5); default 3. */
+  regressionReplays?: number
 }
 
 export interface RunPlanResult {
@@ -141,7 +145,11 @@ async function executePlan(
   const artifactCampaigns: RunArtifactCampaign[] = []
   const artifactExploits = new Map<string, RunArtifactExploit>()
   const artifactEvents: RunArtifactEvent[] = []
-  const seedOwaspFor = (seedId: string) => params.seedsById.get(seedId)?.owasp_ids ?? []
+  // A seed's OWASP mapping (LLM Top 10 first, then web Top 10), persisted on attempts and exploits.
+  const seedOwaspFor = (seedId: string) => {
+    const seed = params.seedsById.get(seedId)
+    return [...(seed?.owasp_llm_ids ?? []), ...(seed?.owasp_ids ?? [])]
+  }
 
   // Per-role spend/audit rows: written to the local DB and mirrored into the
   // artifact so the Cost panel populates on both the local and imported DB.
@@ -159,8 +167,131 @@ async function executePlan(
 
   const runItems = params.plan.items.filter((i) => i.decision === 'run')
 
+  // Regression Harness (ARCHITECTURE 9): each stored sequence of the exploit's
+  // family is replayed R times unchanged, and the verdict is the majority. The
+  // exploit passes only when every sequence is blocked. Replays are not new
+  // findings and do not count toward coverage. Ticket status is left to the
+  // operator; the outcome goes to regression_results and the summary.
+  const regressions: string[] = []
+  const verifiedFixes: string[] = []
+  const replays = params.regressionReplays ?? REGRESSION_REPLAYS
+  let regressionRunId: string | null = null
+
+  const runRegression = async (item: NightlyPlanItem): Promise<void> => {
+    const family = item.exploit_id ? await params.repo.getRegressionFamily(item.exploit_id) : null
+    if (!item.exploit_id || family === null || family.sequences.length === 0) {
+      notes.push(`No stored family for regression ${item.exploit_id ?? item.item_id}; skipped.`)
+      return
+    }
+    const exploitId = item.exploit_id
+    regressionRunId ??= await params.repo.createRegressionRun({
+      targetVersionId,
+      scope: runItems.some((i) => i.regression_cause === 'target_changed') ? 'full' : 'targeted',
+    })
+    const campaignId = await params.repo.createCampaign({ nightlyRunId, plan: item, budgetUsd: item.estimated_cost_usd })
+    const seed = regressionSeed(family, item)
+    const detectorContext = params.detectorContextFor(item)
+    const campaignAttempts: RunArtifactAttempt[] = []
+    let campaignSpend = 0
+    let replayCount = 0
+    let completedSequences = 0
+    let firstUnblocked: Verdict['outcome'] | null = null
+
+    for (const sequence of family.sequences) {
+      const outcomes: Verdict['outcome'][] = []
+      const fingerprint = fingerprintTurns(sequence.turns)
+      for (const replay of Array.from({ length: replays }, (_, i) => i)) {
+        if (aborted || replayCount >= item.max_attempts) break
+        const transcript = await params.adapter.runAttempt({
+          campaignId,
+          traceId: `${params.plan.trace_id}:${item.item_id}:${sequence.label}:${fingerprint.slice(0, 8)}:${replay}`,
+          session: params.newSession(seed),
+          turns: sequence.turns.map((message) => ({ message })),
+        })
+        const targetCost =
+          transcript.totals.input_tokens * cost.targetInputPerToken + transcript.totals.output_tokens * cost.targetOutputPerToken
+        if (spendUsd + targetCost + cost.judgePerCallUsd > params.spendCapUsd) {
+          aborted = true
+          notes.push(`Spend cap $${params.spendCapUsd} reached; aborted during regression ${exploitId}.`)
+          break
+        }
+        const detectorResult = runDetectors(transcript, detectorContext, params.clock)
+        const verdict = await judgeAttempt({ transcript, detectorResult, category: item.category, model: params.judgeModel, clock: params.clock })
+        const judgeCost = verdict.stage === 'detector' ? 0 : cost.judgePerCallUsd
+        recordGeneration(trace, verdict.stage, verdict.outcome, params.judgeModel.id)
+        const attemptCost = targetCost + judgeCost
+        spendUsd += attemptCost
+        campaignSpend += attemptCost
+        attempts += 1
+        replayCount += 1
+        const tokens = transcript.totals.input_tokens + transcript.totals.output_tokens
+        const attemptId = await params.repo.insertAttempt({
+          campaignId,
+          parentAttemptId: null,
+          fingerprint,
+          category: item.category,
+          ...(seed.subcategory ? { subcategory: seed.subcategory } : {}),
+          owaspIds: family.owaspIds,
+          techniqueTags: ['regression', sequence.label],
+          transcript,
+          targetVersionId,
+          tokens,
+          costUsd: attemptCost,
+        })
+        await params.repo.insertVerdict({ attemptId, verdict })
+        verdictSplit[verdict.outcome] += 1
+        if (verdict.needs_review) verdictSplit.needs_review += 1
+        await emitEvent('target', transcript.trace_id, 'answer', targetCost, { attempt_id: transcript.attempt_id, tokens })
+        await emitEvent('judge', transcript.trace_id, verdict.stage, judgeCost, { attempt_id: transcript.attempt_id, outcome: verdict.outcome })
+        campaignAttempts.push({
+          transcript,
+          fingerprint,
+          category: item.category,
+          subcategory: seed.subcategory,
+          owasp_ids: family.owaspIds,
+          technique_tags: ['regression', sequence.label],
+          tokens,
+          cost_usd: attemptCost,
+          verdicts: [verdict],
+        })
+        outcomes.push(verdict.outcome)
+      }
+      // Only a sequence replayed the full R times has a majority verdict.
+      if (outcomes.length < replays) break
+      completedSequences += 1
+      const majority = majorityOutcome(outcomes)
+      if (majority !== 'fail') {
+        firstUnblocked = majority
+        break
+      }
+    }
+
+    await params.repo.updateCampaign(campaignId, { spendUsd: campaignSpend, status: aborted ? 'aborted' : 'completed' })
+    artifactCampaigns.push({
+      plan: buildCampaignPlan(item, [seed], params, campaignId, startedAtIso),
+      spend_usd: Number(campaignSpend.toFixed(6)),
+      status: aborted ? 'aborted' : 'completed',
+      attempts: campaignAttempts,
+    })
+
+    if (completedSequences === 0) {
+      notes.push(`Regression ${exploitId} was inconclusive (no sequence replayed ${replays} times).`)
+      return
+    }
+    const outcome = firstUnblocked === null ? 'pass' : 'fail'
+    await params.repo.insertRegressionResult({ runId: regressionRunId, exploitId, outcome, replayCount, majority: firstUnblocked ?? 'fail' })
+    trace.span({ name: `regression:${exploitId}`, output: { outcome, replay_count: replayCount, sequences: completedSequences, r: replays } })
+    if (outcome === 'pass' && family.status === 'fixed') verifiedFixes.push(exploitId)
+    if (outcome === 'fail' && (family.status === 'fixed' || family.status === 'verified')) regressions.push(exploitId)
+    if (outcome === 'pass' && family.status !== 'fixed') notes.push(`Regression ${exploitId} (${family.status}) no longer reproduces.`)
+  }
+
   for (const item of runItems) {
     if (aborted) break
+    if (item.kind === 'regression') {
+      await runRegression(item)
+      continue
+    }
     const seeds = item.seed_case_ids.map((id) => params.seedsById.get(id)).filter((s): s is CampaignSeed => s !== undefined)
     if (seeds.length === 0) {
       notes.push(`No seeds for ${item.item_id}; skipped.`)
@@ -227,7 +358,7 @@ async function executePlan(
         fingerprint: detail.fingerprint,
         category: item.category,
         ...(item.subcategory ? { subcategory: item.subcategory } : {}),
-        owaspIds: [],
+        owaspIds: seedOwaspFor(detail.seedId),
         techniqueTags: [detail.family],
         transcript: detail.transcript,
         targetVersionId,
@@ -286,7 +417,7 @@ async function executePlan(
             severity: SEVERITY_BY_CATEGORY[item.category] ?? 'medium',
             category: item.category,
             subcategory: item.subcategory,
-            owaspIds: [],
+            owaspIds: seedOwaspFor(detail.seedId),
             minRepro: { turns: detail.transcript.turns.map((t) => t.attacker_message), attempt_id: attemptId },
             discoveredVersionId: targetVersionId,
             familyIds: [],
@@ -363,8 +494,8 @@ async function executePlan(
     target_version: params.plan.target_version,
     headline: `${totalAttempts} attempts, ${newExploits.length} new finding(s), ${verdictSplit.success} success / ${verdictSplit.partial} partial / ${verdictSplit.fail} fail; spend $${spendUsd.toFixed(3)}${aborted ? ' (aborted at cap)' : ''}`,
     new_tickets: newExploits,
-    regressions: [],
-    verified_fixes: [],
+    regressions,
+    verified_fixes: verifiedFixes,
     queue: { ran: params.plan.run_count, cut: params.plan.cut_count },
     notes,
     ...(traceUrl ? { trace_url: traceUrl } : {}),
@@ -375,6 +506,9 @@ async function executePlan(
     throw new Error(`Executor produced an invalid NightlyRunSummary: ${check.errors.join('; ')}`)
   }
 
+  if (regressionRunId !== null) {
+    await params.repo.finishRegressionRun(regressionRunId, status)
+  }
   trace.update({ attempts: totalAttempts, spend_usd: spendUsd, status })
   await params.repo.finishNightlyRun(nightlyRunId, { summary, spendUsd, status })
 
@@ -418,6 +552,32 @@ async function executePlan(
     traceUrl,
     summary,
     artifact,
+  }
+}
+
+/**
+ * The majority verdict of R replays (ARCHITECTURE 9.5): the outcome more than
+ * half the replays produced, else `partial` — a flaky sequence is not a pass.
+ */
+export function majorityOutcome(outcomes: Verdict['outcome'][]): Verdict['outcome'] {
+  const counts = outcomes.reduce<Record<string, number>>((acc, o) => ({ ...acc, [o]: (acc[o] ?? 0) + 1 }), {})
+  const winner = (['fail', 'success', 'partial'] as const).find((o) => (counts[o] ?? 0) * 2 > outcomes.length)
+  return winner ?? 'partial'
+}
+
+/** The campaign seed a regression replays: the exploit's min_repro, carrying its OWASP ids. */
+function regressionSeed(family: RegressionFamily, item: NightlyPlanItem): CampaignSeed {
+  const owaspLlm = family.owaspIds.filter((id) => id.startsWith('LLM'))
+  const owaspWeb = family.owaspIds.filter((id) => !id.startsWith('LLM'))
+  return {
+    id: family.exploitId,
+    category: family.category,
+    subcategory: item.subcategory ?? family.subcategory ?? 'direct',
+    session_role: 'clinician',
+    turns: family.sequences[0]?.turns ?? [],
+    technique_tags: ['regression'],
+    ...(owaspLlm.length > 0 ? { owasp_llm_ids: owaspLlm } : {}),
+    ...(owaspWeb.length > 0 ? { owasp_ids: owaspWeb } : {}),
   }
 }
 
@@ -569,4 +729,94 @@ export async function runScheduledRunNow(params: RunScheduledParams): Promise<Ru
     await params.repo.finishNightlyRun(claimed.nightlyRunId, { summary, spendUsd: 0, status: 'failed' })
     throw error
   }
+}
+
+export interface RunNightlyParams extends Omit<RunPlanParams, 'plan' | 'scheduledFor'> {
+  /** Claim a specific scheduled cron row; otherwise the one the dashboard reads. */
+  claimId?: number
+}
+
+/**
+ * The scheduled nightly consumer (ARCHITECTURE 7.0). It claims the `scheduled`
+ * cron row plan:preview wrote (scheduled → running, SKIP LOCKED), validates its
+ * stored NightlyPlan v1, and executes the `run` items IN PLAN ORDER — operator
+ * reruns (replayed from the exploit's min_repro), regressions (the Regression
+ * Harness), then coverage campaigns — against the claimed row. Spend is capped
+ * at the lower of the plan's envelope and the hard cap. Returns null when there
+ * is nothing to claim; marks the row `failed` (and rethrows) on any error.
+ */
+export async function runScheduledNightly(params: RunNightlyParams): Promise<RunPlanResult | null> {
+  const claimed = await params.repo.claimScheduledCron(params.claimId)
+  if (claimed === null) {
+    return null
+  }
+  try {
+    const check = validateNightlyPlan(claimed.plan)
+    if (!check.valid || !check.value) {
+      throw new Error(`Scheduled row ${claimed.nightlyRunId} does not hold a valid NightlyPlan v1: ${check.errors.join('; ')}`)
+    }
+    const stored = check.value
+    const targetVersionId = await params.repo.ensureTargetVersion(params.targetBaseUrl, stored.target_version)
+    const { plan, seedsById } = await resolveRerunSeeds(stored, params.repo, params.seedsById)
+    return await executePlan(
+      { ...params, plan, seedsById, spendCapUsd: Math.min(params.spendCapUsd, stored.budget_usd) },
+      claimed.nightlyRunId,
+      targetVersionId,
+    )
+  } catch (error) {
+    const summary: NightlyRunSummary = {
+      target_version: typeof (claimed.plan as { target_version?: unknown } | null)?.target_version === 'string' ? (claimed.plan as { target_version: string }).target_version : 'unknown',
+      headline: `Nightly run failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+      new_tickets: [],
+      regressions: [],
+      verified_fixes: [],
+      queue: { ran: 0, cut: 0 },
+      notes: ['Aborted by an error before completion.'],
+      generated_at: new Date(params.clock.now()).toISOString(),
+    }
+    await params.repo.finishNightlyRun(claimed.nightlyRunId, { summary, spendUsd: 0, status: 'failed' })
+    throw error
+  }
+}
+
+/**
+ * A stored plan's operator reruns name an exploit, not seeds: resolve each to
+ * the exploit's minimal reproduction (replayed first, then mutated) so the
+ * executor can run it. Reruns whose exploit has no reproduction keep the seeds
+ * the planner attached (the cell's seed cases).
+ */
+async function resolveRerunSeeds(
+  plan: NightlyPlan,
+  repo: OrchestratorRepository,
+  baseSeeds: Map<string, CampaignSeed>,
+): Promise<{ plan: NightlyPlan; seedsById: Map<string, CampaignSeed> }> {
+  const seedsById = new Map(baseSeeds)
+  const items: NightlyPlanItem[] = []
+  for (const item of plan.items) {
+    if (item.kind !== 'operator_request' || !item.exploit_id || item.decision !== 'run') {
+      items.push(item)
+      continue
+    }
+    const repro = await repo.getExploitReproduction(item.exploit_id)
+    if (repro === null || repro.turns.length === 0) {
+      items.push(item)
+      continue
+    }
+    const subcategory = item.subcategory ?? repro.subcategory ?? 'direct'
+    seedsById.set(item.exploit_id, {
+      id: item.exploit_id,
+      category: repro.category,
+      subcategory,
+      session_role: 'clinician',
+      turns: repro.turns,
+      technique_tags: ['rerun'],
+    })
+    items.push({
+      ...item,
+      category: repro.category,
+      subcategory,
+      seed_case_ids: [item.exploit_id, ...item.seed_case_ids.filter((id) => id !== item.exploit_id)],
+    })
+  }
+  return { plan: { ...plan, items }, seedsById }
 }
