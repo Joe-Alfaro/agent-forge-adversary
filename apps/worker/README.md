@@ -316,3 +316,29 @@ runs one pass and is safe to re-run. Knobs: `DOCS_MODE` (`llm` default, or
 (required for `llm`), `DOCS_MAX_REPORTS` (new drafts per pass, default 10). The
 Postgres test (`src/docs/__tests__/pgRepository.integration.test.ts`) runs when
 `DOCS_TEST_DATABASE_URL` is set.
+
+## Deployed nightly worker (Railway)
+
+`nightly-worker` is a second service in the `agentforge-platform` Railway
+project. It runs `npm run nightly:worker -w apps/worker` inside Railway's
+private network, so it reaches the platform Postgres. It uses the same image as
+the dashboard, because `apps/dashboard/Dockerfile` also builds `apps/worker`.
+The service settings are in `railway.nightly-worker.json`. They have no
+pre-deploy migration (the dashboard service owns migrations) and no healthcheck
+(the worker serves no HTTP). The Railway CLI does not read that file for the
+service, so apply changes with `railway environment edit`.
+
+Without `NIGHTLY_ENABLED=true` the worker starts pg-boss, which creates its own
+`pgboss` schema on first start. It then removes any nightly schedule, logs
+that nothing will run, and exits 0. It makes no model calls and spends nothing.
+
+| Variable | Set by | Needed |
+|----------|--------|--------|
+| `DATABASE_URL` | reference `${{Postgres.DATABASE_URL}}` | always |
+| `COPILOT_BASE_URL`, `NIGHTLY_CRON`, `NIGHTLY_TZ`, `NODE_ENV` | deploy | defaults exist |
+| `NIGHTLY_ENABLED` | operator | `true` to schedule runs |
+| `NIGHTLY_SPEND_CAP_USD` | operator | required when enabled (hard cap) |
+| `COPILOT_TOKEN_SECRET` | operator (secret) | required when enabled |
+| `ANTHROPIC_API_KEY_JUDGE` | operator (secret) | required when enabled |
+| `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` | operator (secret) | optional; tracing is off without them |
+| `NIGHTLY_BUDGET_USD` | operator | optional envelope fallback; the dashboard's `platform_settings` value wins |
