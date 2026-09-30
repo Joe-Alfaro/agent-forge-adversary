@@ -16,6 +16,10 @@ RUN npm ci --no-audit --no-fund
 
 COPY . .
 RUN npm run build -w apps/dashboard
+# The worker's dist lets operators run its scripts inside Railway's private
+# network over `railway ssh` (e.g. `npm run plan:preview -w apps/worker`, a dry
+# run). Its `tsc -b` builds the packages/contracts and packages/db references first.
+RUN npm run build -w apps/worker
 
 ENV NODE_ENV=production
 EXPOSE 3000
