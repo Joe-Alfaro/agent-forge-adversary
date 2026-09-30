@@ -2,8 +2,9 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { validateNightlyRunSummary } from '@agentforge/contracts'
-import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+
+import { createIsolatedSchema, type IsolatedSchema } from './isolated-schema.js'
 
 import { planEvalImport, type EvalResultsFile, type SeedCase } from '../eval-import.js'
 import { importPlan } from '../import-writer.js'
@@ -58,20 +59,20 @@ describe('planEvalImport', () => {
   })
 })
 
-// Needs a disposable, migrated database; it truncates the platform tables. Run with
-// --no-file-parallelism so the two importer suites do not truncate under each other.
+// Needs a Postgres it may create schemas in. Each run migrates its own throwaway
+// schema and drops it afterwards, so it never touches `public` or other suites.
 const testDbUrl = process.env.DB_TEST_DATABASE_URL
 
 describe.skipIf(!testDbUrl)('importEvalResults (Postgres)', () => {
-  const pool = new pg.Pool({ connectionString: testDbUrl })
+  let isolated: IsolatedSchema
+  let pool: IsolatedSchema['pool']
 
   beforeAll(async () => {
-    await pool.query(
-      'TRUNCATE agent_events, verdicts, attempts, campaigns, nightly_runs, target_versions, targets RESTART IDENTITY CASCADE',
-    )
+    isolated = await createIsolatedSchema(testDbUrl!)
+    pool = isolated.pool
   })
 
-  afterAll(() => pool.end())
+  afterAll(() => isolated?.drop())
 
   it('imports once and is a no-op the second time', async () => {
     const plan = planEvalImport(results, seeds, RESULTS_FILE)

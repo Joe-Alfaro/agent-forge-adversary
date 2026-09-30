@@ -29,6 +29,14 @@ npm test                  # runs the Vitest suite across workspaces
 npm run typecheck         # composite tsc -b build
 ```
 
+The Postgres integration suites are skipped unless their variable is set.
+Never point either variable at a database you care about:
+
+| Variable | Suite | What it does to the database |
+|----------|-------|------------------------------|
+| `DASHBOARD_TEST_DATABASE_URL` | dashboard repository contract | Truncates every platform table in `public`. Give it its own disposable, migrated database. |
+| `DB_TEST_DATABASE_URL` | `packages/db` importers | Migrates a throwaway `af_test_*` schema per suite and drops it afterwards. It never touches `public`, so it may share a database with the dashboard suite. |
+
 Use `npm ci` (install from the lockfile). npm 10.9 has an arborist bug that
 crashes with `Cannot read properties of null (reading 'edgesOut')` when it
 regenerates this dependency tree from scratch. Installing from the committed

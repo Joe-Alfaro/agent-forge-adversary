@@ -2,8 +2,9 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import type { AttackTranscript, CampaignPlan, Verdict } from '@agentforge/contracts'
-import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+
+import { createIsolatedSchema, type IsolatedSchema } from './isolated-schema.js'
 
 import { importPlan } from '../import-writer.js'
 import { planRunImport, type RunArtifact } from '../run-import.js'
@@ -160,21 +161,20 @@ describe('planRunImport', () => {
   })
 })
 
-// Needs a disposable, migrated database; it truncates the platform tables. Run with
-// --no-file-parallelism so the two importer suites do not truncate under each other.
+// Needs a Postgres it may create schemas in. Each run migrates its own throwaway
+// schema and drops it afterwards, so it never touches `public` or other suites.
 const testDbUrl = process.env.DB_TEST_DATABASE_URL
 
 describe.skipIf(!testDbUrl)('importPlan for a run artifact (Postgres)', () => {
-  const pool = new pg.Pool({ connectionString: testDbUrl })
+  let isolated: IsolatedSchema
+  let pool: IsolatedSchema['pool']
 
   beforeAll(async () => {
-    await pool.query(
-      `TRUNCATE agent_events, reports, verdicts, attempts, campaigns, exploits, operator_requests,
-                coverage_snapshots, nightly_runs, target_versions, targets RESTART IDENTITY CASCADE`,
-    )
+    isolated = await createIsolatedSchema(testDbUrl!)
+    pool = isolated.pool
   })
 
-  afterAll(() => pool.end())
+  afterAll(() => isolated?.drop())
 
   it('imports once, is a no-op on re-import, and keeps operator ticket state on a later run', async () => {
     const queued = await pool.query<{ id: string }>(
