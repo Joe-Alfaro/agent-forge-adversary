@@ -130,7 +130,7 @@ describe('fixture repository defaults', () => {
   it('demos a preview plan: OWASP-tagged coverage campaigns, some cut by the envelope', async () => {
     const repo = createFixtureRepository({ config, now: () => contractNow })
     const queue = await repo.getQueue()
-    const campaigns = queue.plan?.campaigns ?? []
+    const campaigns = queue.plan?.items ?? []
     expect(campaigns.length).toBeGreaterThan(3)
     expect(campaigns.every((campaign) => campaign.owaspIds.length > 0)).toBe(true)
     const rows = planTonightRows(queue.items, campaigns, queue.plan?.budgetUsd ?? queue.envelopeUsd)

@@ -1,16 +1,24 @@
 import type { QueueItem, QueueItemKind } from './models.js'
 
 /*
- * Tonight's queue as the Orchestrator will run it (ARCHITECTURE.md 7.0, 7.2):
- * operator requests first, in queue order, then the coverage campaigns from
- * the scheduled run's NightlyPlan in plan (priority) order. Run or cut follows
- * planner.ts: in order, an item runs if it still fits the envelope, else it is
- * cut, so a cheaper item further down can still run.
+ * Tonight's queue as the Orchestrator will run it (ARCHITECTURE.md 7.0, 7.2,
+ * 7.4): operator requests first, in queue order, then the scheduled run's
+ * NightlyPlan items in plan order: regressions owed, then coverage campaigns
+ * by priority. Run or cut follows planner.ts: in order, an item runs if it
+ * still fits the envelope, else it is cut, so a cheaper item further down can
+ * still run.
  */
 
-/** One `coverage_campaign` item of the scheduled NightlyPlan. Read-only in the queue. */
-export interface PlanCampaign {
+/** The NightlyPlan item kinds the Orchestrator generates; operator items come from the live queue. */
+export type PlanItemKind = 'regression' | 'coverage_campaign'
+
+/** Why a regression is owed tonight (NightlyPlan `regression_cause`). */
+export type RegressionCause = 'target_changed' | 'ticket_fixed'
+
+/** One Orchestrator-generated item of the scheduled NightlyPlan. Read-only in the queue. */
+export interface PlanItem {
   itemId: string
+  kind: PlanItemKind
   category: string
   subcategory?: string
   owaspIds: string[]
@@ -18,6 +26,9 @@ export interface PlanCampaign {
   estimatedCostUsd: number
   maxAttempts: number
   reason: string
+  /** Regressions only: the ticket being re-checked. */
+  exploitId?: string
+  regressionCause?: RegressionCause
 }
 
 /** The scheduled cron run's plan preview, as the queue page shows it. */
@@ -27,7 +38,7 @@ export interface TonightPlan {
   producedAt: string
   targetVersion: string
   budgetUsd: number
-  campaigns: PlanCampaign[]
+  items: PlanItem[]
   notes: string[]
 }
 
@@ -46,26 +57,24 @@ export interface OperatorRow extends RowBase {
   item: QueueItem
 }
 
-export interface CampaignRow extends RowBase, Omit<PlanCampaign, 'itemId' | 'estimatedCostUsd'> {
+export interface OrchestratorRow extends RowBase, Omit<PlanItem, 'itemId' | 'estimatedCostUsd'> {
   source: 'orchestrator'
-  kind: 'coverage_campaign'
 }
 
-export type TonightRow = OperatorRow | CampaignRow
+export type TonightRow = OperatorRow | OrchestratorRow
 
-type Unplanned = Omit<OperatorRow, keyof RowBase> | Omit<CampaignRow, keyof RowBase>
+type Unplanned = Omit<OperatorRow, keyof RowBase> | Omit<OrchestratorRow, keyof RowBase>
 
 export function planTonightRows(
   items: readonly QueueItem[],
-  campaigns: readonly PlanCampaign[],
+  planItems: readonly PlanItem[],
   envelopeUsd: number,
 ): TonightRow[] {
   const ordered: (Unplanned & { key: string; costUsd: number })[] = [
     ...items.map((item) => ({ source: 'operator' as const, kind: item.kind, item, key: item.id, costUsd: item.estimatedCostUsd })),
-    ...campaigns.map(({ itemId, estimatedCostUsd, ...rest }) => ({
+    ...planItems.map(({ itemId, estimatedCostUsd, ...rest }) => ({
       ...rest,
       source: 'orchestrator' as const,
-      kind: 'coverage_campaign' as const,
       key: itemId,
       costUsd: estimatedCostUsd,
     })),
@@ -87,47 +96,59 @@ function stringList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : []
 }
 
-function campaignFrom(
+const PLAN_ITEM_KINDS: readonly PlanItemKind[] = ['regression', 'coverage_campaign']
+const REGRESSION_CAUSES: readonly RegressionCause[] = ['target_changed', 'ticket_fixed']
+
+function planItemFrom(
   value: unknown,
   owaspFor: (category: string, subcategory: string | undefined) => string[],
-): PlanCampaign | undefined {
-  if (!isRecord(value) || value.kind !== 'coverage_campaign') {
+): PlanItem | undefined {
+  if (!isRecord(value)) {
     return undefined
   }
+  const kind = PLAN_ITEM_KINDS.find((candidate) => candidate === value.kind)
   const { item_id: itemId, category, estimated_cost_usd: cost } = value
-  if (typeof itemId !== 'string' || typeof category !== 'string' || typeof cost !== 'number' || cost < 0) {
+  if (!kind || typeof itemId !== 'string' || typeof category !== 'string' || typeof cost !== 'number' || cost < 0) {
     return undefined
   }
   const subcategory = typeof value.subcategory === 'string' ? value.subcategory : undefined
   const owaspIds = stringList(value.owasp_ids)
-  const base: PlanCampaign = {
+  const base: PlanItem = {
     itemId,
+    kind,
     category,
-    owaspIds: owaspIds.length > 0 ? owaspIds : owaspFor(category, subcategory),
+    owaspIds: owaspIds.length > 0 || kind === 'regression' ? owaspIds : owaspFor(category, subcategory),
     estimatedCostUsd: cost,
     maxAttempts: typeof value.max_attempts === 'number' ? value.max_attempts : 0,
     reason: typeof value.reason === 'string' ? value.reason : '',
   }
-  const withSub = subcategory === undefined ? base : { ...base, subcategory }
-  return typeof value.priority === 'number' ? { ...withSub, priority: value.priority } : withSub
+  const regressionCause = REGRESSION_CAUSES.find((cause) => cause === value.regression_cause)
+  const optional: Partial<PlanItem> = {
+    ...(subcategory === undefined ? {} : { subcategory }),
+    ...(typeof value.priority === 'number' ? { priority: value.priority } : {}),
+    ...(typeof value.exploit_id === 'string' ? { exploitId: value.exploit_id } : {}),
+    ...(regressionCause === undefined ? {} : { regressionCause }),
+  }
+  return { ...base, ...optional }
 }
 
 /**
- * The coverage campaigns of a NightlyPlan, read leniently: malformed items are
- * skipped and `owasp_ids` (not yet in NightlyPlan v1) falls back to `owaspFor`.
+ * The Orchestrator's items of a NightlyPlan (regressions and coverage
+ * campaigns) in plan order, read leniently: malformed or unknown items are
+ * skipped, and a campaign without `owasp_ids` falls back to `owaspFor`.
  * Operator items are ignored; the live queue is their source of truth.
  */
-export function parsePlanCampaigns(
+export function parsePlanItems(
   plan: unknown,
   owaspFor: (category: string, subcategory: string | undefined) => string[],
-): PlanCampaign[] {
+): PlanItem[] {
   const items = isRecord(plan) ? plan.items : undefined
   if (!Array.isArray(items)) {
     return []
   }
   return items
-    .map((item) => campaignFrom(item, owaspFor))
-    .filter((entry): entry is PlanCampaign => entry !== undefined)
+    .map((item) => planItemFrom(item, owaspFor))
+    .filter((entry): entry is PlanItem => entry !== undefined)
 }
 
 export interface ScheduledRunRow {
@@ -151,7 +172,7 @@ export function parseTonightPlan(
     producedAt: typeof plan.produced_at === 'string' ? plan.produced_at : row.scheduledFor,
     targetVersion: typeof plan.target_version === 'string' ? plan.target_version : 'unknown',
     budgetUsd: plan.budget_usd,
-    campaigns: parsePlanCampaigns(plan, owaspFor),
+    items: parsePlanItems(plan, owaspFor),
     notes: stringList(plan.notes),
   }
 }

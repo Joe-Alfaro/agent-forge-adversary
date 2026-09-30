@@ -91,7 +91,8 @@ describe.skipIf(!url)('Postgres repository', () => {
          ('2026-09-30T07:00:00Z', 'run_now', 'scheduled', '{"scope": {"kind": "queue"}}')`,
       )
       const { plan } = await repo.getQueue()
-      expect(plan?.campaigns.map((campaign) => campaign.itemId)).toEqual([
+      expect(plan?.items.map((campaign) => campaign.itemId)).toEqual([
+        'reg-AF-T-0002',
         'cell-tool_misuse/parameter_tampering',
         'cell-prompt_injection/multi_turn',
       ])
@@ -111,10 +112,24 @@ describe.skipIf(!url)('Postgres repository', () => {
          VALUES ('fp-owasp', 'prompt_injection', 'multi_turn', '{LLM01,LLM05}', '{}')`,
       )
       await pool.query(
-        `UPDATE nightly_runs SET plan = jsonb_set(plan, '{items,2}', (plan->'items'->2) - 'owasp_ids') WHERE trigger = 'cron'`,
+        `UPDATE nightly_runs SET plan = jsonb_set(plan, '{items,3}', (plan->'items'->3) - 'owasp_ids') WHERE trigger = 'cron'`,
       )
       const { plan } = await repo.getQueue()
-      expect(plan?.campaigns[1]?.owaspIds).toEqual(['LLM01', 'LLM05'])
+      expect(plan?.items[2]?.owaspIds).toEqual(['LLM01', 'LLM05'])
+    })
+  })
+
+  describe('run history and cost', () => {
+    it('leave out every scheduled run: the cron preview and a run-now not yet started', async () => {
+      const repo = await seededRepo()
+      await pool.query(
+        `INSERT INTO nightly_runs (scheduled_for, started_at, finished_at, trigger, status, spend_usd) VALUES
+         ('2026-09-28T06:00:00Z', '2026-09-28T06:00:00Z', '2026-09-28T08:00:00Z', 'cron', 'completed', 12),
+         ('2026-09-30T07:00:00Z', NULL, NULL, 'run_now', 'scheduled', 0)`,
+      )
+      const runs = await repo.listRuns()
+      expect(runs.map((run) => run.status)).toEqual(['completed'])
+      expect((await repo.getCost()).byRun.map((run) => run.spendUsd)).toEqual([12])
     })
   })
 

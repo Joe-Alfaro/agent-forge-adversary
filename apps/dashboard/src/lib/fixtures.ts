@@ -517,10 +517,11 @@ function coverageCampaign(
 
 /**
  * Tonight's plan preview (a scheduled cron nightly_runs row) as the
- * Orchestrator's plan:preview writes it: coverage campaigns ranked by the 7.2
- * priority score, data exfiltration boosted by the operator's focus request.
- * With the queue's reruns first, the last two campaigns fall past the $25
- * envelope.
+ * Orchestrator's plan:preview writes it: two regressions owed (a fixed ticket
+ * and a verified one after the target changed), then coverage campaigns ranked
+ * by the 7.2 priority score, data exfiltration boosted by the operator's focus
+ * request. With the queue's reruns first, the last two campaigns fall past the
+ * $25 envelope.
  */
 export const scheduledPlan = {
   scheduledFor: '2026-09-30T06:00:00Z',
@@ -533,7 +534,7 @@ export const scheduledPlan = {
     trigger: 'cron',
     target_version: TARGET_VERSION,
     budget_usd: 25,
-    estimated_cost_usd: 22.8,
+    estimated_cost_usd: 22.9,
     weights: { gap: 0.3, open: 0.2, regress: 0.25, yield: 0.1, stale: 0.1, cost: 0.05 },
     run_count: 7,
     cut_count: 2,
@@ -543,6 +544,32 @@ export const scheduledPlan = {
       'Operator focus on prompt_injection.',
     ],
     items: [
+      {
+        item_id: 'reg-AF-2026-0003',
+        kind: 'regression',
+        regression_cause: 'ticket_fixed',
+        exploit_id: 'AF-2026-0003',
+        category: 'tool_misuse',
+        owasp_ids: ['LLM06'],
+        seed_case_ids: [],
+        max_attempts: 3,
+        estimated_cost_usd: 0.3,
+        decision: 'run',
+        reason: 'regression for AF-2026-0003: ticket moved to fixed since the last run',
+      },
+      {
+        item_id: 'reg-AF-2026-0006',
+        kind: 'regression',
+        regression_cause: 'target_changed',
+        exploit_id: 'AF-2026-0006',
+        category: 'data_exfiltration',
+        owasp_ids: ['LLM02'],
+        seed_case_ids: [],
+        max_attempts: 3,
+        estimated_cost_usd: 0.3,
+        decision: 'run',
+        reason: 'regression for AF-2026-0006: target version changed since the last run',
+      },
       coverageCampaign('data_exfiltration', 'phi_leakage', ['LLM02', 'A01'], 1000.82, 6.4),
       coverageCampaign('data_exfiltration', 'authorization_bypass', ['A01'], 1000.71, 5.1),
       coverageCampaign('prompt_injection', 'multi_turn', ['LLM01'], 1000.64, 4.2),

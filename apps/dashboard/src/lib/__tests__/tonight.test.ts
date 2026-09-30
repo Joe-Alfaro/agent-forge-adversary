@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { QueueItem } from '../models.js'
-import { type PlanCampaign, parsePlanCampaigns, parseTonightPlan, planTonightRows } from '../tonight.js'
+import { type PlanItem, parsePlanItems, parseTonightPlan, planTonightRows } from '../tonight.js'
 
 function request(id: string, estimatedCostUsd: number, kind: QueueItem['kind'] = 'rerun'): QueueItem {
   return {
@@ -15,9 +15,10 @@ function request(id: string, estimatedCostUsd: number, kind: QueueItem['kind'] =
   }
 }
 
-function campaign(itemId: string, estimatedCostUsd: number, priority: number): PlanCampaign {
+function campaign(itemId: string, estimatedCostUsd: number, priority: number): PlanItem {
   return {
     itemId,
+    kind: 'coverage_campaign',
     category: 'prompt_injection',
     subcategory: 'direct',
     owaspIds: ['LLM01'],
@@ -64,7 +65,7 @@ describe('planTonightRows', () => {
   })
 })
 
-describe('parsePlanCampaigns', () => {
+describe('parsePlanItems', () => {
   const planItems = [
     {
       item_id: 'req-1',
@@ -105,13 +106,14 @@ describe('parsePlanCampaigns', () => {
   ]
 
   it('keeps coverage campaigns in plan order; operator items come from the live queue instead', () => {
-    const campaigns = parsePlanCampaigns({ items: planItems }, () => [])
+    const campaigns = parsePlanItems({ items: planItems }, () => [])
     expect(campaigns.map((entry) => entry.itemId)).toEqual([
       'cell-data_exfiltration/phi_leakage',
       'cell-tool_misuse/parameter_tampering',
     ])
     expect(campaigns[0]).toEqual({
       itemId: 'cell-data_exfiltration/phi_leakage',
+      kind: 'coverage_campaign',
       category: 'data_exfiltration',
       subcategory: 'phi_leakage',
       owaspIds: ['LLM02', 'A01'],
@@ -123,15 +125,54 @@ describe('parsePlanCampaigns', () => {
   })
 
   it('falls back to OWASP ids observed for the cell when the item has none', () => {
-    const campaigns = parsePlanCampaigns({ items: planItems }, (category, subcategory) =>
+    const campaigns = parsePlanItems({ items: planItems }, (category, subcategory) =>
       category === 'tool_misuse' && subcategory === 'parameter_tampering' ? ['LLM06'] : [],
     )
     expect(campaigns[1]?.owaspIds).toEqual(['LLM06'])
   })
 
+  it('keeps regressions with their cause and ticket, and skips kinds it does not know', () => {
+    const items = parsePlanItems(
+      {
+        items: [
+          {
+            item_id: 'reg-AF-2026-0004',
+            kind: 'regression',
+            regression_cause: 'ticket_fixed',
+            exploit_id: 'AF-2026-0004',
+            category: 'data_exfiltration',
+            subcategory: 'cross_patient',
+            owasp_ids: ['LLM02', 'A01'],
+            seed_case_ids: [],
+            max_attempts: 3,
+            estimated_cost_usd: 0.15,
+            decision: 'run',
+            reason: 'regression for AF-2026-0004: ticket moved to fixed since the last run',
+          },
+          { item_id: 'x', kind: 'mystery', category: 'x', estimated_cost_usd: 1 },
+        ],
+      },
+      () => ['LLM99'],
+    )
+    expect(items).toEqual([
+      {
+        itemId: 'reg-AF-2026-0004',
+        kind: 'regression',
+        regressionCause: 'ticket_fixed',
+        exploitId: 'AF-2026-0004',
+        category: 'data_exfiltration',
+        subcategory: 'cross_patient',
+        owaspIds: ['LLM02', 'A01'],
+        estimatedCostUsd: 0.15,
+        maxAttempts: 3,
+        reason: 'regression for AF-2026-0004: ticket moved to fixed since the last run',
+      },
+    ])
+  })
+
   it('returns nothing for a plan without items', () => {
-    expect(parsePlanCampaigns(null, () => [])).toEqual([])
-    expect(parsePlanCampaigns({ items: 'nope' }, () => [])).toEqual([])
+    expect(parsePlanItems(null, () => [])).toEqual([])
+    expect(parsePlanItems({ items: 'nope' }, () => [])).toEqual([])
   })
 })
 
@@ -157,7 +198,7 @@ describe('parseTonightPlan', () => {
       producedAt: '2026-09-29T21:00:00.000Z',
       targetVersion: 'copilot@c1f011e',
       budgetUsd: 25,
-      campaigns: [],
+      items: [],
       notes: ['Operator skipped category denial_of_service tonight.'],
     })
   })

@@ -2,7 +2,7 @@ import { createColumnHelper } from '@tanstack/react-table'
 
 import { formatDateTime, formatUsd, humanize } from '../lib/format.js'
 import type { MoveDirection } from '../lib/queue.js'
-import type { OperatorRow, TonightRow } from '../lib/tonight.js'
+import type { OperatorRow, RegressionCause, TonightRow } from '../lib/tonight.js'
 import { DataTable } from './DataTable.js'
 import { TicketLink } from './TicketLink.js'
 
@@ -29,7 +29,15 @@ function formatPriority(priority: number | undefined): string {
   return priority >= FOCUS_BOOST ? `${(priority - FOCUS_BOOST).toFixed(2)} + focus` : priority.toFixed(2)
 }
 
+const REGRESSION_CAUSE: Record<RegressionCause, string> = {
+  target_changed: 'Target version changed',
+  ticket_fixed: 'Ticket moved to fixed',
+}
+
 function Target({ row }: { row: TonightRow }) {
+  if (row.source === 'orchestrator' && row.exploitId) {
+    return <TicketLink id={row.exploitId} />
+  }
   if (row.source === 'orchestrator') {
     return <>{row.subcategory ? `${humanize(row.category)} / ${humanize(row.subcategory)}` : humanize(row.category)}</>
   }
@@ -74,9 +82,19 @@ function Requested({ row }: { row: TonightRow }) {
   )
 }
 
-/** Campaign reasons only restate the priority, so campaigns show their attempt budget instead. */
+/**
+ * Campaign reasons only restate the priority, so campaigns show their attempt
+ * budget; regressions show why they are owed and how many replays.
+ */
 function reason(row: TonightRow): string | undefined {
-  return row.source === 'operator' ? row.item.reason : `${row.maxAttempts} attempts`
+  if (row.source === 'operator') {
+    return row.item.reason
+  }
+  if (row.kind === 'regression') {
+    const cause = row.regressionCause ? REGRESSION_CAUSE[row.regressionCause] : 'Regression owed'
+    return `${cause} · ${row.maxAttempts} replays`
+  }
+  return `${row.maxAttempts} attempts`
 }
 
 const column = createColumnHelper<TonightRow>()

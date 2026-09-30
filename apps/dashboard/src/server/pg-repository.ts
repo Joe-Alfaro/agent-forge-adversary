@@ -366,8 +366,9 @@ export function createPgRepository({
 
     async listRuns() {
       const result = await pool.query(
-        // A scheduled cron run is tonight's plan preview; the queue page shows it, run history does not.
-        `${RUNS_SQL} WHERE NOT (r.trigger = 'cron' AND r.status = 'scheduled')
+        // Only started runs: a scheduled cron run is tonight's plan preview (the queue page shows it),
+        // and a scheduled run-now is followed by id until it starts.
+        `${RUNS_SQL} WHERE r.status <> 'scheduled'
          ORDER BY COALESCE(r.started_at, r.scheduled_for) DESC, r.id DESC LIMIT 60`,
         [now()],
       )
@@ -452,7 +453,7 @@ export function createPgRepository({
     async getCost(): Promise<CostSummary> {
       const runs = await pool.query(
         `SELECT id, COALESCE(started_at, scheduled_for) AS started_at, spend_usd, status
-         FROM nightly_runs ORDER BY COALESCE(started_at, scheduled_for) DESC, id DESC LIMIT $1`,
+         FROM nightly_runs WHERE status <> 'scheduled' ORDER BY COALESCE(started_at, scheduled_for) DESC, id DESC LIMIT $1`,
         [COST_RUN_WINDOW],
       )
       const roles = await pool.query(

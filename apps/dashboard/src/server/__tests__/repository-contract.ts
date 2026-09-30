@@ -223,6 +223,19 @@ export const contractScheduledPlan = {
         reason: 'operator rerun for AF-T-0003',
       },
       {
+        item_id: 'reg-AF-T-0002',
+        kind: 'regression',
+        regression_cause: 'target_changed',
+        exploit_id: 'AF-T-0002',
+        category: 'data_exfiltration',
+        owasp_ids: ['LLM02'],
+        seed_case_ids: [],
+        max_attempts: 3,
+        estimated_cost_usd: 0.15,
+        decision: 'run',
+        reason: 'regression for AF-T-0002: target version changed since the last run',
+      },
+      {
         item_id: 'cell-tool_misuse/parameter_tampering',
         kind: 'coverage_campaign',
         category: 'tool_misuse',
@@ -313,7 +326,7 @@ export function describeRepositoryContract(name: string, options: ContractOption
     })
 
     describe('run now', () => {
-      it('schedules one run_now run for the whole queue and lists it in run history', async () => {
+      it('schedules one run_now run for the whole queue, outside run history until it starts', async () => {
         const run = await repo.runNow({ kind: 'queue' }, 'operator')
         expect(run).toMatchObject({
           trigger: 'run_now',
@@ -323,7 +336,9 @@ export function describeRepositoryContract(name: string, options: ContractOption
           hasMorningReport: false,
         })
         expect(await repo.getRun(run.id)).toEqual(run)
-        expect((await repo.listRuns())[0]?.id).toBe(run.id)
+        // Only started runs belong in run history and cost; the page follows a scheduled one by id.
+        expect((await repo.listRuns()).map((entry) => entry.id)).not.toContain(run.id)
+        expect((await repo.getCost()).byRun.map((entry) => entry.runId)).not.toContain(run.id)
       })
 
       it('schedules a single queued request', async () => {
@@ -525,7 +540,7 @@ export function describeRepositoryContract(name: string, options: ContractOption
         expect(queue.items[1]).toMatchObject({ kind: 'rerun', exploitId: 'AF-T-0003', estimatedCostUsd: 0.3 })
       })
 
-      it('includes the scheduled run’s coverage campaigns, in plan order, with OWASP ids', async () => {
+      it('includes the scheduled run’s regressions and coverage campaigns, in plan order, with OWASP ids', async () => {
         const { plan } = await repo.getQueue()
         expect(plan).toMatchObject({
           scheduledFor: contractScheduledPlan.scheduledFor,
@@ -534,9 +549,21 @@ export function describeRepositoryContract(name: string, options: ContractOption
           budgetUsd: 25,
           notes: ['Operator focus on tool_misuse.'],
         })
-        expect(plan?.campaigns).toEqual([
+        expect(plan?.items).toEqual([
+          {
+            itemId: 'reg-AF-T-0002',
+            kind: 'regression',
+            regressionCause: 'target_changed',
+            exploitId: 'AF-T-0002',
+            category: 'data_exfiltration',
+            owaspIds: ['LLM02'],
+            estimatedCostUsd: 0.15,
+            maxAttempts: 3,
+            reason: 'regression for AF-T-0002: target version changed since the last run',
+          },
           {
             itemId: 'cell-tool_misuse/parameter_tampering',
+            kind: 'coverage_campaign',
             category: 'tool_misuse',
             subcategory: 'parameter_tampering',
             owaspIds: ['LLM06'],
@@ -547,6 +574,7 @@ export function describeRepositoryContract(name: string, options: ContractOption
           },
           {
             itemId: 'cell-prompt_injection/multi_turn',
+            kind: 'coverage_campaign',
             category: 'prompt_injection',
             subcategory: 'multi_turn',
             owaspIds: ['LLM01'],

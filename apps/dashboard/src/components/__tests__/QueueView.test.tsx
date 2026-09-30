@@ -6,7 +6,6 @@ import {
   advanceTestClock,
   fetchQueue,
   fetchRun,
-  fetchRuns,
   removeQueueItem,
   resetTestData,
   setRunNowEnabled,
@@ -25,8 +24,10 @@ async function renderQueue(onRunScheduled = vi.fn()) {
   return onRunScheduled
 }
 
+/** Scheduled run-nows are not in run history until they start, so look the first one up by id. */
 async function scheduledRunNows() {
-  return (await fetchRuns()).filter((run) => run.id.startsWith('run-now-'))
+  const run = await fetchRun('run-now-1')
+  return run ? [run.id] : []
 }
 
 beforeEach(resetTestData)
@@ -35,12 +36,12 @@ afterEach(cleanup)
 describe('QueueView plan', () => {
   it('summarizes the whole plan against the envelope and says who planned it', async () => {
     await renderQueue()
-    expect(screen.getByText(/10 of 12 items will run for \$23\.80 of the \$25\.00 envelope; 2 cut\./)).toBeTruthy()
+    expect(screen.getByText(/12 of 14 items will run for \$24\.40 of the \$25\.00 envelope; 2 cut\./)).toBeTruthy()
     expect(screen.getByText(/Planned by the Orchestrator at .* for copilot@1\.4\.0/)).toBeTruthy()
     expect(screen.getByText('Operator skipped category denial_of_service tonight.')).toBeTruthy()
   })
 
-  it('renders operator requests first, then the coverage campaigns in plan order', async () => {
+  it('renders operator requests first, then the plan’s regressions and coverage campaigns in plan order', async () => {
     await renderQueue()
     const [, body] = screen.getAllByRole('rowgroup')
     const kinds = within(body as HTMLElement)
@@ -52,6 +53,8 @@ describe('QueueView plan', () => {
       'rerun',
       'skip',
       'focus',
+      'regression',
+      'regression',
       ...Array.from({ length: 7 }, () => 'coverage campaign'),
     ])
   })
@@ -68,11 +71,11 @@ describe('QueueView run now', () => {
     await renderQueue()
     fireEvent.click(screen.getByRole('button', { name: 'Run queue now' }))
     const dialog = screen.getByRole('dialog', { name: 'Run the whole queue now?' })
-    // 5 operator requests ($1.50) + 7 coverage campaigns ($29.70).
-    expect(dialog.textContent).toContain('12 items')
-    expect(dialog.textContent).toContain('$31.20')
+    // 5 operator requests ($1.50) + 2 regressions ($0.60) + 7 coverage campaigns ($29.70).
+    expect(dialog.textContent).toContain('14 items')
+    expect(dialog.textContent).toContain('$31.80')
     expect(dialog.textContent).toContain('$25.00')
-    expect(within(dialog).getByText(/exceeds tonight’s \$25\.00 envelope by \$6\.20/)).toBeTruthy()
+    expect(within(dialog).getByText(/exceeds tonight’s \$25\.00 envelope by \$6\.80/)).toBeTruthy()
     expect(await scheduledRunNows()).toEqual([])
   })
 
@@ -127,7 +130,7 @@ describe('QueueView run now', () => {
   it('shows the server’s refusal, e.g. a second run while one is scheduled', async () => {
     await renderQueue()
     fireEvent.click(screen.getByRole('button', { name: 'Run queue now' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm: run now for $31.20' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm: run now for $31.80' }))
     await screen.findByText('Run run-now-1 is scheduled.')
     fireEvent.click(screen.getByRole('button', { name: 'Run request 2 now' }))
     fireEvent.click(screen.getByRole('button', { name: /^Confirm: run now/ }))

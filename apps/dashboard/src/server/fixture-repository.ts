@@ -296,7 +296,8 @@ export function createFixtureRepository({
     },
 
     async listRuns() {
-      return allRuns()
+      // Only started runs; a scheduled run-now is followed by id until it starts.
+      return allRuns().filter((run) => run.status !== 'scheduled')
     },
 
     async getRun(runId) {

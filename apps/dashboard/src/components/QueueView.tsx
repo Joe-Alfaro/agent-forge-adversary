@@ -31,7 +31,7 @@ export function QueueView({ runId, onRunScheduled, onDismissRun, pollMs = 3_000 
 
   // The Orchestrator applies the plan's budget; before it has planned, the configured envelope.
   const envelopeUsd = queue.plan?.budgetUsd ?? queue.envelopeUsd
-  const rows = planTonightRows(queue.items, queue.plan?.campaigns ?? [], envelopeUsd)
+  const rows = planTonightRows(queue.items, queue.plan?.items ?? [], envelopeUsd)
   const running = rows.filter((row) => row.decision === 'run')
   const spent = running.at(-1)?.cumulativeUsd ?? 0
   const cutCount = rows.length - running.length
