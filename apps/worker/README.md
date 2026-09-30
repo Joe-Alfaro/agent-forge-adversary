@@ -284,6 +284,13 @@ persisting).
   claims a specific row. Spend is capped at the lowest of the plan's envelope,
   the current envelope (re-read from `platform_settings`, so lowering the budget
   after planning is honoured), and the hard cap.
+- Model-backed Red Team variants: `RUN_MODEL_VARIANTS=true` (needs
+  `ANTHROPIC_API_KEY_REDTEAM`; Haiku 4.5 variants + Sonnet 5.5 strategy,
+  `RUN_MODEL_VARIANTS_PER_SEED`, default 3). Each generation is charged to spend
+  as it happens and skipped once it could cross the cap.
+- Modeled spend is conservative: Sonnet-class rates everywhere, the Judge's
+  reported usage (floor $0.008/call), a $0.05/turn charge when the target reports
+  zero tokens, and no item starts if its estimate would cross the hard cap.
 - Cron: `NIGHTLY_ENABLED=true NIGHTLY_SPEND_CAP_USD=5 NIGHTLY_BUDGET_USD=5
   DATABASE_URL=… npm run nightly:worker -w apps/worker` (long-running).
   `NIGHTLY_CRON` (default `0 1 * * *`) and `NIGHTLY_TZ` (default
