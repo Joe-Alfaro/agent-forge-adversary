@@ -5,6 +5,7 @@ import { listTaxonomyCells } from '@agentforge/contracts'
 
 import { createFixtureRepository } from '../fixture-repository.js'
 import {
+  contractEvents,
   contractNow,
   contractQueue,
   contractReports,
@@ -19,7 +20,7 @@ describeRepositoryContract('fixture', {
     createFixtureRepository({
       config,
       now: () => contractNow,
-      seed: { tickets: contractTickets, queueItems: contractQueue, reports: contractReports },
+      seed: { tickets: contractTickets, queueItems: contractQueue, reports: contractReports, events: contractEvents },
     }),
 })
 

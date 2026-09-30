@@ -1,5 +1,6 @@
 import type pg from 'pg'
 
+import type { AgentEvent } from '../../lib/activity.js'
 import type { ReportRecord } from '../../lib/approvals.js'
 import type { QueueItem } from '../../lib/models.js'
 import type { TicketRow } from '../../lib/tickets.js'
@@ -102,5 +103,19 @@ export async function seedReports(pool: pg.Pool, reports: ReportRecord[]): Promi
         ],
       ),
     ),
+  )
+}
+
+/** Writes events with the given ids; trace URL and summary go in the payload, as agents write them. */
+export async function seedEvents(pool: pg.Pool, events: AgentEvent[]): Promise<void> {
+  await Promise.all(
+    events.map((event) => {
+      const payload = { ...(event.traceUrl ? { trace_url: event.traceUrl } : {}), ...(event.summary ? { summary: event.summary } : {}) }
+      return pool.query(
+        `INSERT INTO agent_events (id, trace_id, agent, event_type, payload, source, cost_usd, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [event.id, event.traceId, event.agent, event.eventType, payload, event.source ?? null, event.costUsd, event.createdAt],
+      )
+    }),
   )
 }

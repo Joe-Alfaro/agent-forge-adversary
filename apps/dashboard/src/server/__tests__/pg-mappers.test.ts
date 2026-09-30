@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { mapApprovalRow, mapMorningReport, mapQueueItem, mapRunSummary, mapTicket } from '../pg-mappers.js'
+import { mapAgentEvent, mapApprovalRow, mapMorningReport, mapQueueItem, mapRunSummary, mapTicket } from '../pg-mappers.js'
 
 describe('mapTicket', () => {
   const row = {
@@ -204,5 +204,39 @@ describe('mapApprovalRow', () => {
 
   it('rejects statuses outside the report workflow', () => {
     expect(() => mapApprovalRow({ ...row, status: 'approved' })).toThrow('unknown status "approved"')
+  })
+})
+
+describe('mapAgentEvent', () => {
+  const row = {
+    id: '42',
+    trace_id: 'trace-1',
+    agent: 'judge',
+    event_type: 'verdict',
+    payload: { trace_url: 'https://langfuse.test/trace/trace-1', summary: 'Judged attempt' },
+    source: null,
+    cost_usd: '0.012000',
+    created_at: new Date('2026-09-29T06:00:00Z'),
+  }
+
+  it('maps the row, the payload trace link, and the summary', () => {
+    expect(mapAgentEvent(row)).toEqual({
+      id: '42',
+      traceId: 'trace-1',
+      agent: 'judge',
+      eventType: 'verdict',
+      costUsd: 0.012,
+      createdAt: '2026-09-29T06:00:00.000Z',
+      traceUrl: 'https://langfuse.test/trace/trace-1',
+      summary: 'Judged attempt',
+    })
+  })
+
+  it('drops a trace link that is not http(s)', () => {
+    expect(mapAgentEvent({ ...row, payload: { trace_url: 'javascript:alert(1)' } })).not.toHaveProperty('traceUrl')
+  })
+
+  it('tolerates an empty payload', () => {
+    expect(mapAgentEvent({ ...row, payload: null })).not.toHaveProperty('summary')
   })
 })

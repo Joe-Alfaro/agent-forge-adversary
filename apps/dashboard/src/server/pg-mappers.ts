@@ -8,6 +8,7 @@ import {
   type VerdictOutcome,
 } from '@agentforge/contracts'
 
+import { type AgentEvent, eventSummary, payloadTraceUrl } from '../lib/activity.js'
 import { type ApprovalItem, buildApprovalItem, isReportStatus } from '../lib/approvals.js'
 import type {
   CoverageCell,
@@ -316,4 +317,20 @@ export function mapApprovalRow(row: unknown): ApprovalItem {
   }
   const withApprover = withOptional(base, 'approvedBy', optionalText(row, 'approved_by'))
   return buildApprovalItem(withOptional(withApprover, 'publishedAt', optionalIso(row, 'published_at')))
+}
+
+/** One `agent_events` row; the trace link and summary are read defensively from the free-form payload. */
+export function mapAgentEvent(row: unknown): AgentEvent {
+  const payload = field(row, 'payload')
+  const base: AgentEvent = {
+    id: text(row, 'id'),
+    traceId: text(row, 'trace_id'),
+    agent: text(row, 'agent'),
+    eventType: text(row, 'event_type'),
+    costUsd: num(row, 'cost_usd'),
+    createdAt: iso(row, 'created_at'),
+  }
+  const withSource = withOptional(base, 'source', optionalText(row, 'source'))
+  const withTrace = withOptional(withSource, 'traceUrl', payloadTraceUrl(payload))
+  return withOptional(withTrace, 'summary', eventSummary(payload))
 }

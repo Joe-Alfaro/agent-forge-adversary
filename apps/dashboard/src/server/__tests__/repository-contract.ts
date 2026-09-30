@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import type { AgentEvent } from '../../lib/activity.js'
 import type { ReportRecord } from '../../lib/approvals.js'
 import type { QueueItem } from '../../lib/models.js'
 import { buildRerunRequest } from '../../lib/queue.js'
@@ -107,6 +108,37 @@ export const contractReports: ReportRecord[] = [
   },
 ]
 
+/** Out of order on purpose: the feed sorts newest first. */
+export const contractEvents: AgentEvent[] = [
+  {
+    id: '1',
+    traceId: 'trace-a',
+    agent: 'orchestrator',
+    eventType: 'plan_created',
+    costUsd: 0.02,
+    createdAt: '2026-09-29T06:00:00.000Z',
+    traceUrl: 'https://langfuse.test/trace/trace-a',
+    summary: 'Planned 2 campaigns',
+  },
+  {
+    id: '3',
+    traceId: 'trace-a',
+    agent: 'judge',
+    eventType: 'verdict',
+    costUsd: 0.11,
+    createdAt: '2026-09-29T06:20:00.000Z',
+  },
+  {
+    id: '2',
+    traceId: 'trace-a',
+    agent: 'redteam',
+    eventType: 'attempt',
+    costUsd: 0.05,
+    createdAt: '2026-09-29T06:10:00.000Z',
+    source: 'run_import',
+  },
+]
+
 /** Clock for the suite: 2026-09-29 15:00 CDT, so tonight's run date is 2026-09-30. */
 export const contractNow = new Date('2026-09-29T20:00:00Z')
 export const contractRunDate = '2026-09-30'
@@ -164,6 +196,20 @@ export function describeRepositoryContract(name: string, options: ContractOption
 
       it('rejects unknown tickets', async () => {
         await expect(repo.updateTicket('AF-NOPE', { status: 'open', assignee: '' })).rejects.toThrow('AF-NOPE')
+      })
+    })
+
+    describe('agent activity', () => {
+      it('lists events newest first with trace linkage', async () => {
+        const events = await repo.listAgentEvents(10)
+        expect(events.map((event) => event.id)).toEqual(['3', '2', '1'])
+        expect(events[2]).toEqual(contractEvents[0])
+        expect(events[1]).toMatchObject({ agent: 'redteam', source: 'run_import', costUsd: 0.05 })
+        expect(events[0]?.traceUrl).toBeUndefined()
+      })
+
+      it('returns at most `limit` events', async () => {
+        expect((await repo.listAgentEvents(2)).map((event) => event.id)).toEqual(['3', '2'])
       })
     })
 

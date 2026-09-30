@@ -4,9 +4,10 @@ import pg from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { createPgRepository } from '../pg-repository.js'
-import { resetDatabase, seedQueue, seedReports, seedTickets } from './pg-seed.js'
+import { resetDatabase, seedEvents, seedQueue, seedReports, seedTickets } from './pg-seed.js'
 import {
   contractNow,
+  contractEvents,
   contractQueue,
   contractReports,
   contractRunDate,
@@ -34,6 +35,7 @@ describe.skipIf(!url)('Postgres repository', () => {
     await seedTickets(pool, contractTickets, versions)
     await seedQueue(pool, contractQueue, contractRunDate)
     await seedReports(pool, contractReports)
+    await seedEvents(pool, contractEvents)
     return createPgRepository({ pool, config, now: () => contractNow })
   }
 

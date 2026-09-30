@@ -1,6 +1,8 @@
 import { queryOptions, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 
+import { ACTIVITY_REFRESH_MS } from './activity.js'
 import {
+  fetchAgentEvents,
   fetchApprovals,
   fetchCost,
   fetchCoverage,
@@ -64,6 +66,12 @@ export const approvalsQuery = queryOptions({
   queryFn: fetchApprovals,
 })
 
+export const agentEventsQuery = queryOptions({
+  queryKey: ['agent-events'],
+  queryFn: fetchAgentEvents,
+  refetchInterval: ACTIVITY_REFRESH_MS,
+})
+
 export const resilienceQuery = queryOptions({
   queryKey: ['resilience'],
   queryFn: fetchResilienceTrend,
@@ -108,4 +116,8 @@ export function useApprovals() {
 
 export function useResilienceTrend() {
   return useSuspenseQuery(resilienceQuery)
+}
+
+export function useAgentEvents() {
+  return useSuspenseQuery(agentEventsQuery)
 }

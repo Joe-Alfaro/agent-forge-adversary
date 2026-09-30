@@ -8,6 +8,7 @@ const PANELS = [
   { to: '/coverage', label: 'Coverage' },
   { to: '/resilience', label: 'Resilience trend' },
   { to: '/cost', label: 'Cost' },
+  { to: '/activity', label: 'Agent activity' },
 ] as const
 
 export function AppNav() {

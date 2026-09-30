@@ -1,3 +1,4 @@
+import type { AgentEvent } from './activity.js'
 import type { ReportRecord } from './approvals.js'
 import type { ResilienceTrend } from './resilience.js'
 import type { CostSummary, CoverageMatrix, MorningReport, QueueItem, RunSummary } from './models.js'
@@ -360,3 +361,23 @@ export const resilience: ResilienceTrend = {
     { targetVersion: TARGET_VERSION, rubricVersion: 'sha256:9c07e3b51d44', novelAttempts: 1010, confirmed: 19 },
   ],
 }
+
+const LAST_NIGHT_TRACE = 'https://langfuse.example/trace/run-2026-09-28'
+
+/**
+ * Agent activity for last night's run (traced in Langfuse) and today's run-now,
+ * which is still going and whose events carry no trace link yet.
+ */
+export const agentEvents: AgentEvent[] = [
+  { id: '1001', traceId: 'run-2026-09-28', agent: 'orchestrator', eventType: 'plan_created', costUsd: 0.04, createdAt: '2026-09-28T07:00:40Z', traceUrl: LAST_NIGHT_TRACE, summary: 'Planned 6 campaigns; 2 operator requests, 1 cut at the envelope' },
+  { id: '1002', traceId: 'run-2026-09-28', agent: 'redteam', eventType: 'campaign_started', costUsd: 0.12, createdAt: '2026-09-28T07:02:10Z', traceUrl: LAST_NIGHT_TRACE, summary: 'Cross-patient data exfiltration, 180 attempts' },
+  { id: '1003', traceId: 'run-2026-09-28', agent: 'target', eventType: 'calls', costUsd: 18.4, createdAt: '2026-09-28T08:10:00Z', traceUrl: LAST_NIGHT_TRACE, summary: 'Co-Pilot model calls for the campaign' },
+  { id: '1004', traceId: 'run-2026-09-28', agent: 'judge', eventType: 'verdict_batch', costUsd: 6.3, createdAt: '2026-09-28T08:40:00Z', traceUrl: LAST_NIGHT_TRACE, summary: '19 success, 41 partial; 3 sent to needs_review' },
+  { id: '1005', traceId: 'run-2026-09-28', agent: 'harness', eventType: 'regression_run', costUsd: 1.9, createdAt: '2026-09-28T09:05:00Z', traceUrl: LAST_NIGHT_TRACE, summary: 'AF-2026-0004 regressed on copilot@1.4.0' },
+  { id: '1006', traceId: 'run-2026-09-28', agent: 'documentation', eventType: 'report_drafted', costUsd: 0.8, createdAt: '2026-09-28T09:40:00Z', traceUrl: LAST_NIGHT_TRACE, summary: 'Drafted AF-2026-0002 v1 for G4 approval' },
+  { id: '1007', traceId: 'run-2026-09-28', agent: 'orchestrator', eventType: 'run_completed', costUsd: 0.02, createdAt: '2026-09-28T09:42:00Z', traceUrl: LAST_NIGHT_TRACE, summary: 'Morning report written' },
+  { id: '1101', traceId: 'run-2026-09-29', agent: 'orchestrator', eventType: 'plan_created', costUsd: 0.03, createdAt: '2026-09-29T14:05:20Z', summary: 'Run now: focus on data exfiltration' },
+  { id: '1102', traceId: 'run-2026-09-29', agent: 'redteam', eventType: 'campaign_started', costUsd: 0.09, createdAt: '2026-09-29T14:06:00Z', summary: 'PHI leakage, 120 attempts' },
+  { id: '1103', traceId: 'run-2026-09-29', agent: 'target', eventType: 'calls', costUsd: 4.1, createdAt: '2026-09-29T14:40:00Z' },
+  { id: '1104', traceId: 'run-2026-09-29', agent: 'judge', eventType: 'verdict_batch', costUsd: 2.2, createdAt: '2026-09-29T14:52:00Z', summary: '6 success, 14 partial; 1 sent to needs_review' },
+]

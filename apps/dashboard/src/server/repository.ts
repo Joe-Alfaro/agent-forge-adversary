@@ -1,3 +1,4 @@
+import type { AgentEvent } from '../lib/activity.js'
 import type { ApprovalDecision, ApprovalItem } from '../lib/approvals.js'
 import type { CostSummary, CoverageMatrix, MorningReport, RunSummary, TonightQueue } from '../lib/models.js'
 import type { MoveDirection } from '../lib/queue.js'
@@ -22,6 +23,8 @@ export interface DashboardRepository {
   enqueueRerun(request: unknown): Promise<TonightQueue>
   removeQueueItem(id: string): Promise<TonightQueue>
   moveQueueItem(id: string, direction: MoveDirection): Promise<TonightQueue>
+  /** The newest `limit` agent_events, newest first. */
+  listAgentEvents(limit: number): Promise<AgentEvent[]>
   /** KEY_METRICS M4 inputs per target version and rubric, for the resilience trend. */
   getResilienceTrend(): Promise<ResilienceTrend>
   /** Latest report draft per exploit, waiting at gate G4 or G5 (Section 10). */

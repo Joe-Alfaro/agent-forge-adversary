@@ -1,5 +1,6 @@
 import type { RerunRequest } from '@agentforge/contracts'
 
+import type { AgentEvent } from './activity.js'
 import type { ApprovalDecision, ApprovalItem } from './approvals.js'
 import type { ResilienceTrend } from './resilience.js'
 import type { CostSummary, CoverageMatrix, MorningReport, RunSummary, TonightQueue } from './models.js'
@@ -14,6 +15,7 @@ import {
   getQueueFn,
   getResilienceTrendFn,
   getTicketFn,
+  listAgentEventsFn,
   listApprovalsFn,
   listRunsFn,
   listTicketsFn,
@@ -91,4 +93,8 @@ export function decideApproval(reportId: string, decision: ApprovalDecision): Pr
 
 export function fetchResilienceTrend(): Promise<ResilienceTrend> {
   return getResilienceTrendFn()
+}
+
+export function fetchAgentEvents(): Promise<AgentEvent[]> {
+  return listAgentEventsFn()
 }

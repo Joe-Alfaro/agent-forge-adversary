@@ -1,5 +1,6 @@
 import { listTaxonomyCells, PRD_CATEGORIES, type TaxonomyCell } from '@agentforge/contracts'
 
+import type { AgentEvent } from '../lib/activity.js'
 import { type ApprovalItem, buildApprovalItem, type ReportRecord, sortApprovals } from '../lib/approvals.js'
 import { mergeCoverage } from '../lib/coverage.js'
 import * as fixtures from '../lib/fixtures.js'
@@ -41,6 +42,7 @@ export interface FixtureSeed {
   tickets: TicketRow[]
   queueItems: QueueItem[]
   reports?: ReportRecord[]
+  events?: AgentEvent[]
 }
 
 export interface FixtureRepositoryOptions {
@@ -59,7 +61,7 @@ export interface FixtureRepositoryOptions {
 export function createFixtureRepository({
   config,
   now = () => new Date(),
-  seed = { tickets: fixtures.tickets, queueItems: fixtures.queueItems, reports: fixtures.reports },
+  seed = { tickets: fixtures.tickets, queueItems: fixtures.queueItems, reports: fixtures.reports, events: fixtures.agentEvents },
   taxonomy = listTaxonomyCells(),
 }: FixtureRepositoryOptions): DashboardRepository {
   // Seeded queue items move once, at creation; items enqueued later already use now().
@@ -67,6 +69,7 @@ export function createFixtureRepository({
   const store = {
     tickets: structuredClone(seed.tickets),
     queueItems: seed.queueItems.map((item) => ({ ...item, requestedAt: shift(item.requestedAt, createdOffset) })),
+    events: seed.events ?? [],
     reports: (seed.reports ?? []).map((report) =>
       shiftOptional({ ...report, createdAt: shift(report.createdAt, createdOffset) }, 'publishedAt', createdOffset),
     ),
@@ -188,6 +191,15 @@ export function createFixtureRepository({
     async moveQueueItem(id, direction) {
       store.queueItems = moveItem(store.queueItems, id, direction)
       return queue()
+    },
+
+    async listAgentEvents(limit) {
+      // Shifted at read time, like run history, so a long-running demo server stays current.
+      const offset = dayOffsetMs(now())
+      return [...store.events]
+        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+        .slice(0, limit)
+        .map((event) => ({ ...event, createdAt: shift(event.createdAt, offset) }))
     },
 
     async getResilienceTrend() {

@@ -11,6 +11,7 @@ import { isExploitStatus } from '../lib/tickets.js'
 import { m5Options, type QueueConfig } from './config.js'
 import { computeM5 } from './m5.js'
 import {
+  mapAgentEvent,
   mapApprovalRow,
   mapCoverageRow,
   mapMorningReport,
@@ -428,6 +429,17 @@ export function createPgRepository({
         )
       })
       return readQueue(pool)
+    },
+
+    async listAgentEvents(limit) {
+      const result = await pool.query(
+        `SELECT id, trace_id, agent, event_type, payload, source, cost_usd, created_at
+         FROM agent_events
+         ORDER BY created_at DESC, id DESC
+         LIMIT $1`,
+        [limit],
+      )
+      return result.rows.map(mapAgentEvent)
     },
 
     async getResilienceTrend() {

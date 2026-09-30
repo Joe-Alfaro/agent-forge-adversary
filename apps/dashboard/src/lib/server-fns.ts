@@ -2,6 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 
 import { operatorName } from '../server/config.js'
 import { getRepository, getRuntime } from '../server/runtime.js'
+import { ACTIVITY_LIMIT } from './activity.js'
 import { isApprovalDecision } from './approvals.js'
 import type { MoveDirection } from './queue.js'
 import { isExploitStatus } from './tickets.js'
@@ -76,6 +77,10 @@ export const moveQueueItemFn = createServerFn({ method: 'POST' })
     return { id: requireString(input.id, 'Request id'), direction }
   })
   .handler(({ data }) => getRepository().moveQueueItem(data.id, data.direction))
+
+export const listAgentEventsFn = createServerFn({ method: 'GET' }).handler(() =>
+  getRepository().listAgentEvents(ACTIVITY_LIMIT),
+)
 
 export const getResilienceTrendFn = createServerFn({ method: 'GET' }).handler(() =>
   getRepository().getResilienceTrend(),
