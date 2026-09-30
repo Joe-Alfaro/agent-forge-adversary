@@ -9,3 +9,6 @@ export function resolveDbConfig(env: NodeJS.ProcessEnv = process.env): DbConfig 
   }
   return { connectionString }
 }
+
+export * from './run-import.js'
+export * from './import-writer.js'

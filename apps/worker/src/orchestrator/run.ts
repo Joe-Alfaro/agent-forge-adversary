@@ -1,10 +1,18 @@
 import {
   isTaxonomyCell,
   validateNightlyRunSummary,
+  type CampaignPlan,
   type NightlyPlan,
   type NightlyPlanItem,
   type NightlyRunSummary,
 } from '@agentforge/contracts'
+import type {
+  RunArtifact,
+  RunArtifactAttempt,
+  RunArtifactCampaign,
+  RunArtifactCoverage,
+  RunArtifactExploit,
+} from '@agentforge/db'
 
 import { runDetectors, type DetectorContext, type RunDetectorsClock } from '../detectors/index.js'
 import { judgeAttempt, type JudgeModel } from '../judge/index.js'
@@ -73,6 +81,13 @@ export interface RunPlanResult {
   spendUsd: number
   traceUrl: string | null
   summary: NightlyRunSummary
+  /**
+   * The importable RunArtifact v1 (packages/db run-import.ts) for this run. It
+   * lets a run against a reachable (local) Postgres also refresh a deployed
+   * database it cannot reach directly: `agentforge-6` imports this JSON via
+   * `db:import-run`.
+   */
+  artifact: RunArtifact
 }
 
 const SEVERITY_BY_CATEGORY: Record<string, string> = {
@@ -121,6 +136,11 @@ async function executePlan(
   let refusals = 0
   let aborted = false
 
+  const startedAtIso = new Date(params.clock.now()).toISOString()
+  const artifactCampaigns: RunArtifactCampaign[] = []
+  const artifactExploits = new Map<string, RunArtifactExploit>()
+  const seedOwaspFor = (seedId: string) => params.seedsById.get(seedId)?.owasp_ids ?? []
+
   const runItems = params.plan.items.filter((i) => i.decision === 'run')
 
   for (const item of runItems) {
@@ -145,6 +165,10 @@ async function executePlan(
 
     const detectorContext = params.detectorContextFor(item)
     const rootAttemptBySeed = new Map<string, string>()
+    // Artifact accumulation for this campaign (transcript.attempt_id id-space).
+    const campaignAttempts: RunArtifactAttempt[] = []
+    const rootTranscriptIdBySeed = new Map<string, string>()
+    const campaignPlan: CampaignPlan = buildCampaignPlan(item, seeds, params, campaignId, startedAtIso)
     let campaignSpend = 0
 
     for (const detail of campaign.attemptsDetail) {
@@ -200,6 +224,24 @@ async function executePlan(
       verdictSplit[verdict.outcome] += 1
       if (verdict.needs_review) verdictSplit.needs_review += 1
 
+      // Mirror the attempt into the run artifact (id-space: transcript.attempt_id).
+      if (item.subcategory) {
+        const parentTranscriptId = detail.isSeed ? undefined : rootTranscriptIdBySeed.get(detail.seedId)
+        campaignAttempts.push({
+          transcript: detail.transcript,
+          ...(parentTranscriptId ? { parent_attempt_id: parentTranscriptId } : {}),
+          fingerprint: detail.fingerprint,
+          category: item.category,
+          subcategory: item.subcategory,
+          owasp_ids: seedOwaspFor(detail.seedId),
+          technique_tags: [detail.family],
+          tokens: detail.transcript.totals.input_tokens + detail.transcript.totals.output_tokens,
+          cost_usd: attemptCost,
+          verdicts: [verdict],
+        })
+        if (detail.isSeed) rootTranscriptIdBySeed.set(detail.seedId, detail.transcript.attempt_id)
+      }
+
       // Coverage bookkeeping for this cell.
       if (item.subcategory) {
         const key = `${item.category}/${item.subcategory}`
@@ -223,15 +265,34 @@ async function executePlan(
             familyIds: [],
           })
           if (upserted.isNew) newExploits.push(upserted.id)
+          if (!artifactExploits.has(detail.fingerprint)) {
+            artifactExploits.set(detail.fingerprint, {
+              id: `AF-${new Date(params.clock.now()).getFullYear()}-${detail.fingerprint.slice(0, 8)}`,
+              fingerprint: detail.fingerprint,
+              severity: (SEVERITY_BY_CATEGORY[item.category] ?? 'medium') as RunArtifactExploit['severity'],
+              category: item.category,
+              subcategory: item.subcategory,
+              owasp_ids: seedOwaspFor(detail.seedId),
+              min_repro: { turns: detail.transcript.turns.map((t) => t.attacker_message), attempt_id: detail.transcript.attempt_id },
+              family_ids: [],
+            })
+          }
         }
         coverage.set(key, entry)
       }
     }
 
     await params.repo.updateCampaign(campaignId, { spendUsd: campaignSpend, status: aborted ? 'aborted' : 'completed' })
+    artifactCampaigns.push({
+      plan: campaignPlan,
+      spend_usd: Number(campaignSpend.toFixed(6)),
+      status: aborted ? 'aborted' : 'completed',
+      attempts: campaignAttempts,
+    })
   }
 
   // Materialize coverage_snapshots (assert the cell before insert; ARCHITECTURE 7.5).
+  const artifactCoverage: RunArtifactCoverage[] = []
   for (const [key, entry] of coverage) {
     const [category, subcategory] = key.split('/') as [string, string]
     if (!isTaxonomyCell(category, subcategory)) {
@@ -248,6 +309,14 @@ async function executePlan(
       lastRunAt: entry.lastRunAt,
     }
     await params.repo.upsertCoverageSnapshot(row)
+    artifactCoverage.push({
+      category,
+      subcategory,
+      attempts: entry.attempts,
+      confirmed: entry.confirmed,
+      families_exercised: entry.roots.size,
+      last_run_at: entry.lastRunAt,
+    })
   }
 
   const totalAttempts = attempts
@@ -274,6 +343,24 @@ async function executePlan(
   trace.update({ attempts: totalAttempts, spend_usd: spendUsd, status })
   await params.repo.finishNightlyRun(nightlyRunId, { summary, spendUsd, status })
 
+  const artifact: RunArtifact = {
+    schema_version: '1',
+    run_key: params.plan.trace_id,
+    trigger: params.plan.trigger,
+    status,
+    started_at: startedAtIso,
+    finished_at: summary.generated_at,
+    target: { name: 'copilot', base_url: params.targetBaseUrl, version: params.plan.target_version },
+    spend_usd: Number(spendUsd.toFixed(6)),
+    summary,
+    campaigns: artifactCampaigns,
+    exploits: [...artifactExploits.values()],
+    coverage: artifactCoverage,
+    queue_request_ids: params.plan.items
+      .filter((i) => i.kind === 'operator_request' && i.request_id && i.decision === 'run' && !aborted)
+      .map((i) => i.request_id!),
+  }
+
   // Resolve operator requests: reruns that ran -> ran, cut items -> cut.
   for (const item of params.plan.items) {
     if (item.kind === 'operator_request' && item.request_id) {
@@ -294,6 +381,37 @@ async function executePlan(
     spendUsd,
     traceUrl,
     summary,
+    artifact,
+  }
+}
+
+/** Builds a valid CampaignPlan v1 for the run artifact from a plan item + seeds. */
+function buildCampaignPlan(
+  item: NightlyPlanItem,
+  seeds: CampaignSeed[],
+  params: RunPlanParams,
+  campaignId: string,
+  producedAt: string,
+): CampaignPlan {
+  const uniq = (xs: string[]) => [...new Set(xs)]
+  const owaspLlm = uniq(seeds.flatMap((s) => s.owasp_llm_ids ?? []))
+  const owaspWeb = uniq(seeds.flatMap((s) => s.owasp_ids ?? []))
+  return {
+    schema_version: '1',
+    message_id: params.clock.randomUUID(),
+    campaign_id: campaignId,
+    trace_id: `${params.plan.trace_id}:${item.item_id}`,
+    produced_by: 'orchestrator',
+    produced_at: producedAt,
+    category: item.category,
+    ...(item.subcategory ? { subcategory: item.subcategory } : {}),
+    owasp_llm_ids: owaspLlm.length > 0 ? owaspLlm : ['LLM01'],
+    owasp_ids: owaspWeb.length > 0 ? owaspWeb : ['A01'],
+    seed_case_ids: item.seed_case_ids,
+    max_attempts: item.max_attempts,
+    max_turns: Math.max(1, ...seeds.map((s) => s.turns.length)),
+    budget: { tokens: 0, usd: item.estimated_cost_usd },
+    target_version: params.plan.target_version,
   }
 }
 

@@ -10,7 +10,8 @@
     "auth:preflight": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/authPreflight.js",
     "eval:live": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/liveEvalRun.js",
     "trace:dryrun": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/tracingDryRun.js",
-    "run:now": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/runNow.js"
+    "run:now": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/runNow.js",
+    "run:consume": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/consumeRunNow.js"
   },
   "dependencies": {
     "@agentforge/contracts": "*",

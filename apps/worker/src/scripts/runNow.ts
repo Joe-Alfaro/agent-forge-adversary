@@ -43,6 +43,7 @@ import {
 import type { CampaignSeed } from '../redteam/index.js'
 import { loadAgentforgeEnv } from './loadEnv.js'
 import { seedDir } from './paths.js'
+import { writeRunArtifact } from './artifact.js'
 
 const ROLE_USER_IDS: Readonly<Record<string, number>> = { clinician: 1, nurse: 2 }
 const COST_PER_ATTEMPT_ESTIMATE = 0.05
@@ -210,6 +211,9 @@ async function main(): Promise<void> {
     console.log(`spend: $${result.spendUsd.toFixed(3)} (cap $${spendCapUsd})`)
     console.log(`trace: ${result.traceUrl ?? '(tracing disabled)'}`)
     console.log(`headline: ${result.summary.headline}`)
+
+    const artifactPath = writeRunArtifact(result.artifact)
+    console.log(`importable artifact: ${artifactPath} (import into the deployed DB with 'npm run db:import-run -- <file>')`)
   } finally {
     await tracer.flush().catch(() => {})
     await tracer.shutdown().catch(() => {})
