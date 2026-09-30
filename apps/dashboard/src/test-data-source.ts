@@ -41,3 +41,12 @@ export const enqueueRerun: typeof DataSource.enqueueRerun = (request) => state.r
 export const removeQueueItem: typeof DataSource.removeQueueItem = (id) => state.repository.removeQueueItem(id)
 export const moveQueueItem: typeof DataSource.moveQueueItem = (id, direction) =>
   state.repository.moveQueueItem(id, direction)
+export const fetchApprovals: typeof DataSource.fetchApprovals = () => state.repository.listApprovals()
+export const decideApproval: typeof DataSource.decideApproval = (reportId, decision) =>
+  state.repository.decideApproval(reportId, decision, 'operator')
+export const fetchResilienceTrend: typeof DataSource.fetchResilienceTrend = () => state.repository.getResilienceTrend()
+export const fetchAgentEvents: typeof DataSource.fetchAgentEvents = () => state.repository.listAgentEvents(100)
+export const fetchNeedsReview: typeof DataSource.fetchNeedsReview = () => state.repository.listNeedsReview()
+export const fetchJudgeHealth: typeof DataSource.fetchJudgeHealth = () => state.repository.getJudgeHealth()
+export const resolveReview: typeof DataSource.resolveReview = (verdictId, review) =>
+  state.repository.resolveReview(verdictId, review, 'operator')

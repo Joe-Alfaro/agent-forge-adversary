@@ -4,13 +4,31 @@ import { describe, expect, it } from 'vitest'
 import { listTaxonomyCells } from '@agentforge/contracts'
 
 import { createFixtureRepository } from '../fixture-repository.js'
-import { contractNow, contractQueue, contractTickets, describeRepositoryContract } from './repository-contract.js'
+import {
+  contractEvents,
+  contractNow,
+  contractQueue,
+  contractReports,
+  contractReviews,
+  contractTickets,
+  describeRepositoryContract,
+} from './repository-contract.js'
 
 const config = { envelopeUsd: 25, timeZone: 'America/Chicago', runHour: 1 }
 
 describeRepositoryContract('fixture', {
   setup: async () =>
-    createFixtureRepository({ config, now: () => contractNow, seed: { tickets: contractTickets, queueItems: contractQueue } }),
+    createFixtureRepository({
+      config,
+      now: () => contractNow,
+      seed: {
+        tickets: contractTickets,
+        queueItems: contractQueue,
+        reports: contractReports,
+        events: contractEvents,
+        reviews: contractReviews,
+      },
+    }),
 })
 
 describe('fixture repository defaults', () => {
@@ -63,5 +81,12 @@ describe('fixture repository defaults', () => {
     expect(prdCategories).toHaveLength(6)
     expect(prdCategories).not.toContain('misinformation')
     expect(cells.some((cell) => cell.category === 'misinformation')).toBe(true)
+  })
+
+  it('serves an M4 demo trend with a rubric change', async () => {
+    const repo = createFixtureRepository({ config, now: () => contractNow })
+    const trend = await repo.getResilienceTrend()
+    expect(trend.versions.length).toBeGreaterThan(2)
+    expect(new Set(trend.points.map((point) => point.rubricVersion)).size).toBe(2)
   })
 })

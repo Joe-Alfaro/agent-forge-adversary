@@ -1,11 +1,17 @@
 import { queryOptions, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 
+import { ACTIVITY_REFRESH_MS } from './activity.js'
 import {
+  fetchAgentEvents,
+  fetchApprovals,
   fetchCost,
   fetchCoverage,
   fetchDataSourceMode,
+  fetchJudgeHealth,
   fetchMorningReport,
+  fetchNeedsReview,
   fetchQueue,
+  fetchResilienceTrend,
   fetchRuns,
   fetchTicket,
   fetchTickets,
@@ -57,6 +63,33 @@ export const costQuery = queryOptions({
   queryFn: fetchCost,
 })
 
+export const approvalsQuery = queryOptions({
+  queryKey: ['approvals'],
+  queryFn: fetchApprovals,
+})
+
+export const agentEventsQuery = queryOptions({
+  queryKey: ['agent-events'],
+  queryFn: fetchAgentEvents,
+  refetchInterval: ACTIVITY_REFRESH_MS,
+})
+
+// Both Judge keys nest under ['judge'] so a resolution refreshes the queue and the health numbers together.
+export const needsReviewQuery = queryOptions({
+  queryKey: ['judge', 'needs-review'],
+  queryFn: fetchNeedsReview,
+})
+
+export const judgeHealthQuery = queryOptions({
+  queryKey: ['judge', 'health'],
+  queryFn: fetchJudgeHealth,
+})
+
+export const resilienceQuery = queryOptions({
+  queryKey: ['resilience'],
+  queryFn: fetchResilienceTrend,
+})
+
 export function useTickets() {
   return useSuspenseQuery(ticketsQuery)
 }
@@ -88,4 +121,24 @@ export function useCoverage() {
 
 export function useCost() {
   return useSuspenseQuery(costQuery)
+}
+
+export function useApprovals() {
+  return useSuspenseQuery(approvalsQuery)
+}
+
+export function useResilienceTrend() {
+  return useSuspenseQuery(resilienceQuery)
+}
+
+export function useAgentEvents() {
+  return useSuspenseQuery(agentEventsQuery)
+}
+
+export function useNeedsReview() {
+  return useSuspenseQuery(needsReviewQuery)
+}
+
+export function useJudgeHealth() {
+  return useSuspenseQuery(judgeHealthQuery)
 }

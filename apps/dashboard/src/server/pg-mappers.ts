@@ -1,5 +1,6 @@
 import {
   ATTACK_TAXONOMY,
+  type Evidence,
   type AttackCategory,
   type AttackSubcategory,
   isAttackCategory,
@@ -8,6 +9,9 @@ import {
   type VerdictOutcome,
 } from '@agentforge/contracts'
 
+import { type AgentEvent, eventSummary, payloadTraceUrl } from '../lib/activity.js'
+import { type ApprovalItem, buildApprovalItem, isReportStatus } from '../lib/approvals.js'
+import { type ReviewItem, transcriptExcerpt } from '../lib/judge.js'
 import type {
   CoverageCell,
   MorningReport,
@@ -284,4 +288,93 @@ export function mapQueueItem(row: unknown): QueueItem {
   }
   const withCategory = withOptional(withExploit, 'category', category)
   return withOptional(withCategory, 'reason', optionalText(row, 'reason'))
+}
+
+/** One `reports` row joined to its exploit; the title comes from the VulnReport body when it has one. */
+export function mapApprovalRow(row: unknown): ApprovalItem {
+  const reportId = text(row, 'id')
+  const status = field(row, 'status')
+  const severity = field(row, 'severity')
+  if (!isReportStatus(status)) {
+    throw new Error(`Report ${reportId} has an unknown status "${String(status)}"`)
+  }
+  if (!isSeverity(severity)) {
+    throw new Error(`Report ${reportId} has an unknown severity "${String(severity)}"`)
+  }
+  const category = attackCategory(field(row, 'category'))
+  if (!category) {
+    throw new Error(`Report ${reportId} has category "${String(field(row, 'category'))}", which is not in AttackTaxonomy v1`)
+  }
+  const exploitId = text(row, 'exploit_id')
+  const version = num(row, 'version')
+  const base = {
+    reportId,
+    exploitId,
+    version,
+    severity,
+    category,
+    title: optionalText(row, 'title') || `${exploitId} report v${version}`,
+    status,
+    draftedAt: iso(row, 'created_at'),
+  }
+  const withApprover = withOptional(base, 'approvedBy', optionalText(row, 'approved_by'))
+  return buildApprovalItem(withOptional(withApprover, 'publishedAt', optionalIso(row, 'published_at')))
+}
+
+/** One `agent_events` row; the trace link and summary are read defensively from the free-form payload. */
+export function mapAgentEvent(row: unknown): AgentEvent {
+  const payload = field(row, 'payload')
+  const base: AgentEvent = {
+    id: text(row, 'id'),
+    traceId: text(row, 'trace_id'),
+    agent: text(row, 'agent'),
+    eventType: text(row, 'event_type'),
+    costUsd: num(row, 'cost_usd'),
+    createdAt: iso(row, 'created_at'),
+  }
+  const withSource = withOptional(base, 'source', optionalText(row, 'source'))
+  const withTrace = withOptional(withSource, 'traceUrl', payloadTraceUrl(payload))
+  return withOptional(withTrace, 'summary', eventSummary(payload))
+}
+
+const EVIDENCE_KINDS: readonly string[] = ['detector_hit', 'quoted_span', 'tool_call']
+
+function evidenceItem(value: unknown): Evidence | undefined {
+  if (!isRecord(value) || typeof value.ref !== 'string') {
+    return undefined
+  }
+  const kind = EVIDENCE_KINDS.find((candidate) => candidate === value.kind)
+  if (kind !== 'detector_hit' && kind !== 'quoted_span' && kind !== 'tool_call') {
+    return undefined
+  }
+  const item: Evidence = { kind, ref: value.ref }
+  return typeof value.note === 'string' ? { ...item, note: value.note } : item
+}
+
+/** A flagged verdict with its attempt; malformed evidence entries are skipped rather than failing the queue. */
+export function mapReviewItem(row: unknown): ReviewItem {
+  const verdictId = text(row, 'id')
+  const outcome = field(row, 'outcome')
+  if (!isVerdictOutcome(outcome)) {
+    throw new Error(`Verdict ${verdictId} has an unknown outcome "${String(outcome)}"`)
+  }
+  const evidenceValue = field(row, 'evidence')
+  const evidence = (Array.isArray(evidenceValue) ? evidenceValue : [])
+    .map(evidenceItem)
+    .filter((item): item is Evidence => item !== undefined)
+  const base: ReviewItem = {
+    verdictId,
+    attemptId: text(row, 'attempt_id'),
+    category: text(row, 'category'),
+    outcome,
+    confidence: num(row, 'confidence'),
+    stage: text(row, 'stage'),
+    rubricVersion: text(row, 'rubric_version'),
+    flaggedAt: iso(row, 'created_at'),
+    evidence,
+  }
+  const withSub = withOptional(base, 'subcategory', optionalText(row, 'subcategory'))
+  const withVersion = withOptional(withSub, 'targetVersion', optionalText(row, 'target_version'))
+  const withModel = withOptional(withVersion, 'judgeModel', optionalText(row, 'judge_model'))
+  return withOptional(withModel, 'excerpt', transcriptExcerpt(field(row, 'transcript')))
 }

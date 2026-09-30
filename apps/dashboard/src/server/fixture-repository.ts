@@ -1,5 +1,13 @@
 import { listTaxonomyCells, PRD_CATEGORIES, type TaxonomyCell } from '@agentforge/contracts'
 
+import type { AgentEvent } from '../lib/activity.js'
+import { type ApprovalItem, buildApprovalItem, type ReportRecord, sortApprovals } from '../lib/approvals.js'
+import {
+  type ReviewItem,
+  type ReviewRecord,
+  resolvedOutcome,
+  summarizeJudgeHealth,
+} from '../lib/judge.js'
 import { mergeCoverage } from '../lib/coverage.js'
 import * as fixtures from '../lib/fixtures.js'
 import type { QueueItem, TonightQueue } from '../lib/models.js'
@@ -9,7 +17,13 @@ import type { TicketRow } from '../lib/tickets.js'
 import { m5Options, type QueueConfig } from './config.js'
 import { computeM5 } from './m5.js'
 import type { DashboardRepository } from './repository.js'
-import { assertCanRecheck, assertRerunRequest, assertTransition, normalizeAssignee } from './rules.js'
+import {
+  assertCanRecheck,
+  assertReportDecision,
+  assertRerunRequest,
+  assertTransition,
+  normalizeAssignee,
+} from './rules.js'
 
 const DAY_MS = 86_400_000
 
@@ -33,6 +47,13 @@ function shiftOptional<T extends object, K extends keyof T & string>(value: T, k
 export interface FixtureSeed {
   tickets: TicketRow[]
   queueItems: QueueItem[]
+  reports?: ReportRecord[]
+  events?: AgentEvent[]
+  /** Verdicts waiting for a human. */
+  reviews?: ReviewItem[]
+  /** Reviews already settled before the store was created. */
+  reviewHistory?: ReviewRecord[]
+  groundTruthLabels?: number
 }
 
 export interface FixtureRepositoryOptions {
@@ -51,7 +72,12 @@ export interface FixtureRepositoryOptions {
 export function createFixtureRepository({
   config,
   now = () => new Date(),
-  seed = { tickets: fixtures.tickets, queueItems: fixtures.queueItems },
+  seed = { tickets: fixtures.tickets, queueItems: fixtures.queueItems, reports: fixtures.reports,
+    events: fixtures.agentEvents,
+    reviews: fixtures.reviewItems,
+    reviewHistory: fixtures.reviewHistory,
+    groundTruthLabels: fixtures.groundTruthLabels,
+  },
   taxonomy = listTaxonomyCells(),
 }: FixtureRepositoryOptions): DashboardRepository {
   // Seeded queue items move once, at creation; items enqueued later already use now().
@@ -59,6 +85,34 @@ export function createFixtureRepository({
   const store = {
     tickets: structuredClone(seed.tickets),
     queueItems: seed.queueItems.map((item) => ({ ...item, requestedAt: shift(item.requestedAt, createdOffset) })),
+    events: seed.events ?? [],
+    reviews: (seed.reviews ?? []).map((review) => ({ ...review, flaggedAt: shift(review.flaggedAt, createdOffset) })),
+    reviewHistory: seed.reviewHistory ?? [],
+    groundTruthLabels: seed.groundTruthLabels ?? 0,
+    resolved: new Set<string>(),
+    reports: (seed.reports ?? []).map((report) =>
+      shiftOptional({ ...report, createdAt: shift(report.createdAt, createdOffset) }, 'publishedAt', createdOffset),
+    ),
+  }
+
+  function approvalItem(report: ReportRecord): ApprovalItem {
+    const ticket = findTicket(report.exploitId)
+    const fields = {
+      reportId: report.id,
+      exploitId: report.exploitId,
+      version: report.version,
+      severity: ticket.severity,
+      category: ticket.category,
+      title: report.title,
+      status: report.status,
+      draftedAt: report.createdAt,
+    }
+    const withApprover = report.approvedBy ? { ...fields, approvedBy: report.approvedBy } : fields
+    return buildApprovalItem(report.publishedAt ? { ...withApprover, publishedAt: report.publishedAt } : withApprover)
+  }
+
+  function isLatestVersion(report: ReportRecord): boolean {
+    return store.reports.every((other) => other.exploitId !== report.exploitId || other.version <= report.version)
   }
 
   function findTicket(id: string): TicketRow {
@@ -157,6 +211,61 @@ export function createFixtureRepository({
     async moveQueueItem(id, direction) {
       store.queueItems = moveItem(store.queueItems, id, direction)
       return queue()
+    },
+
+    async listAgentEvents(limit) {
+      // Shifted at read time, like run history, so a long-running demo server stays current.
+      const offset = dayOffsetMs(now())
+      return [...store.events]
+        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+        .slice(0, limit)
+        .map((event) => ({ ...event, createdAt: shift(event.createdAt, offset) }))
+    },
+
+    async listNeedsReview() {
+      return structuredClone(store.reviews).sort((a, b) => Date.parse(a.flaggedAt) - Date.parse(b.flaggedAt))
+    },
+
+    async resolveReview(verdictId, input, reviewer) {
+      const review = store.reviews.find((item) => item.verdictId === verdictId)
+      if (!review) {
+        throw new Error(
+          store.resolved.has(verdictId) ? `Verdict ${verdictId} is already resolved` : `Unknown verdict ${verdictId}`,
+        )
+      }
+      const outcome = resolvedOutcome(review.outcome, input)
+      store.reviews = store.reviews.filter((item) => item.verdictId !== verdictId)
+      store.resolved.add(verdictId)
+      store.reviewHistory = [...store.reviewHistory, { category: review.category, judged: review.outcome, human: outcome }]
+      store.groundTruthLabels += 1
+      return { verdictId, decision: input.decision, outcome, reviewer, resolvedAt: now().toISOString() }
+    },
+
+    async getJudgeHealth() {
+      return summarizeJudgeHealth(store.reviews, store.reviewHistory, store.groundTruthLabels)
+    },
+
+    async getResilienceTrend() {
+      return structuredClone(fixtures.resilience)
+    },
+
+    async listApprovals() {
+      const drafts = store.reports.filter((report) => report.status === 'draft' && isLatestVersion(report))
+      return sortApprovals(drafts.map(approvalItem))
+    },
+
+    async decideApproval(reportId, decision, reviewer) {
+      const report = store.reports.find((row) => row.id === reportId)
+      if (!report) {
+        throw new Error(`Unknown report ${reportId}`)
+      }
+      const status = assertReportDecision(report.status, decision)
+      const decided: ReportRecord =
+        status === 'published'
+          ? { ...report, status, approvedBy: reviewer, publishedAt: now().toISOString() }
+          : { ...report, status, approvedBy: reviewer }
+      store.reports = store.reports.map((row) => (row.id === reportId ? decided : row))
+      return approvalItem(decided)
     },
   }
 }

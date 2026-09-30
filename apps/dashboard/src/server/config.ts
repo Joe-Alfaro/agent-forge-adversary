@@ -12,6 +12,14 @@ export interface QueueConfig {
   coverageTargetAttempts?: number
 }
 
+/**
+ * Single shared operator login for the sprint (Section 15.1): human decisions
+ * are recorded under the login's username, as `server/auth.ts` resolves it.
+ */
+export function operatorName(env: NodeJS.ProcessEnv): string {
+  return env.OPERATOR_USERNAME || 'operator'
+}
+
 /** M5 counts a cell as covered only with a run in this many days. */
 export const M5_WINDOW_DAYS = 7
 const DEFAULT_COVERAGE_TARGET_ATTEMPTS = 20
