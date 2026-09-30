@@ -134,7 +134,8 @@ export async function seedReviews(pool: pg.Pool, reviews: ReviewItem[], versionI
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         review.attemptId,
-        `fp-${review.attemptId}`,
+        // Sharing the exploit's fingerprint puts the attempt in that ticket's family.
+        review.exploitId ? `fp-${review.exploitId}` : `fp-${review.attemptId}`,
         review.category,
         review.subcategory ?? null,
         transcript,

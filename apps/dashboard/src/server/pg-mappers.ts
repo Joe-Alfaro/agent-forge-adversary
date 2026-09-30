@@ -9,7 +9,7 @@ import {
   type VerdictOutcome,
 } from '@agentforge/contracts'
 
-import { type AgentEvent, eventSummary, payloadTraceUrl } from '../lib/activity.js'
+import { type AgentEvent, eventSummary, payloadTraceUrl, safeTraceUrl } from '../lib/activity.js'
 import { type ApprovalItem, buildApprovalItem, isReportStatus } from '../lib/approvals.js'
 import { type ReviewItem, transcriptExcerpt } from '../lib/judge.js'
 import type {
@@ -232,7 +232,7 @@ export function mapMorningReport(row: unknown): MorningReport | null {
     return null
   }
   const run = mapRunSummary(row)
-  return {
+  const report: MorningReport = {
     runId: run.id,
     targetVersion: summary.target_version,
     generatedAt: summary.generated_at,
@@ -246,6 +246,7 @@ export function mapMorningReport(row: unknown): MorningReport | null {
     queue: { ran: summary.queue.ran, cut: summary.queue.cut },
     notes: summary.notes,
   }
+  return withOptional(report, 'traceUrl', safeTraceUrl(summary.trace_url))
 }
 
 const QUEUE_KINDS: readonly QueueItemKind[] = ['rerun', 'focus', 'skip', 'note']
@@ -376,5 +377,6 @@ export function mapReviewItem(row: unknown): ReviewItem {
   const withSub = withOptional(base, 'subcategory', optionalText(row, 'subcategory'))
   const withVersion = withOptional(withSub, 'targetVersion', optionalText(row, 'target_version'))
   const withModel = withOptional(withVersion, 'judgeModel', optionalText(row, 'judge_model'))
-  return withOptional(withModel, 'excerpt', transcriptExcerpt(field(row, 'transcript')))
+  const withExploit = withOptional(withModel, 'exploitId', optionalText(row, 'exploit_id'))
+  return withOptional(withExploit, 'excerpt', transcriptExcerpt(field(row, 'transcript')))
 }

@@ -404,6 +404,17 @@ export function createFixtureRepository({
       store.resolved.add(verdictId)
       store.reviewHistory = [...store.reviewHistory, { category: review.category, judged: review.outcome, human: outcome }]
       store.groundTruthLabels += 1
+      // The human verdict is now the family's latest, as the Postgres ticket read derives it.
+      const { exploitId } = review
+      if (exploitId) {
+        store.tickets = store.tickets.map((ticket) => {
+          if (ticket.id !== exploitId) {
+            return ticket
+          }
+          const confidence = outcome === 'success' ? 1 : ticket.confidence
+          return { ...ticket, lastVerdict: outcome, confidence }
+        })
+      }
       return { verdictId, decision: input.decision, outcome, reviewer, resolvedAt: now().toISOString() }
     },
 
