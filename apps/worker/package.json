@@ -9,7 +9,8 @@
     "judge:live": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/liveJudge.js",
     "auth:preflight": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/authPreflight.js",
     "eval:live": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/liveEvalRun.js",
-    "trace:dryrun": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/tracingDryRun.js"
+    "trace:dryrun": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/tracingDryRun.js",
+    "run:now": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/runNow.js"
   },
   "dependencies": {
     "@agentforge/contracts": "*",
@@ -17,6 +18,10 @@
     "@anthropic-ai/sdk": "^0.129.0",
     "langfuse": "^3.39.2",
     "pg-boss": "^12.35.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.5",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10"
   }
 }

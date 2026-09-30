@@ -198,3 +198,53 @@ Standard OpenEMR (`302` to login at `/`), OAuth2-protected REST at
 `/apis/default/api` and FHIR at `/apis/default/fhir`. Used to seed synthetic
 patients, plant canaries, and upload documents (uploads reach OpenEMR first, not
 the Co-Pilot — fact F3). Live seeding needs `OPENEMR_TOKEN`.
+
+## Red Team (`src/redteam/`)
+
+The Red Team Agent generates attacks and drives them through the Target Adapter
+only (ARCHITECTURE 4.2).
+
+- `mutation.ts` — the deterministic (Tier 1) mutation engine. From one seed it
+  builds variant **families**: `paraphrase`, `payload_splitting`, `encoding`
+  (base64 / rot13 / hex with a decode instruction), `role_play` (persona
+  framing), and `multi_turn` (benign lead-in turns before the payload). Every
+  operator is a pure function of the seed, so a campaign replays byte-for-byte.
+  Each variant is fingerprinted (normalized text) for novelty deduplication.
+- `variantModel.ts` — model-backed (Tier 2/3) generation through the shared model
+  router: a Sonnet **strategy** call once per campaign, batched Haiku **variant**
+  calls. Framed as authorized testing; a refusal is counted per category and
+  degrades to the deterministic families.
+- `campaign.ts` — `runCampaign` expands seeds → variants, dedupes by fingerprint,
+  drives each surviving attempt through the adapter, and reports the per-campaign
+  **refusal rate** (share of target responses that are refusals, via the refusal
+  detector) plus per-family and novelty stats.
+
+## Orchestrator (`src/orchestrator/`)
+
+- `priority.ts` — the ARCHITECTURE 7.2 priority score over coverage cells (gap,
+  open-severity, regression, signal-per-dollar, staleness, minus cost) with
+  config weights logged on every plan.
+- `planner.ts` — `buildNightlyPlan` composes a schema-valid `NightlyPlan v1`:
+  operator reruns first, then coverage campaigns ranked by priority, each marked
+  `run` or `cut` against the budget envelope. `skip`/`focus`/`note` directives
+  reshape the plan.
+- `run.ts` — `runPlan`, the RUN executor: red team → target → detectors → judge →
+  persist attempts/verdicts, dedupe confirmed exploits by fingerprint,
+  materialize `coverage_snapshots` (asserts `isTaxonomyCell`, fills
+  `families_exercised` = distinct variant-family roots), write one `nightly_runs`
+  row with a validated `NightlyRunSummary v1` and spend, and set
+  `operator_requests` to `ran`/`cut`. The whole run and each step are wrapped in
+  the PlatformTracer, with the trace URL in the summary. A **hard USD spend cap**
+  aborts the run before overspending.
+- `pgRepository.ts` — the Postgres implementation plus the read queries Run-now
+  uses (drain queue, derive coverage cells).
+
+### Run now
+
+`npm run build && RUN_SPEND_CAP_USD=3 RUN_CATEGORIES=prompt_injection,data_exfiltration DATABASE_URL=postgres://… npm run run:now -w apps/worker`
+runs one on-demand plan against the **deployed** Co-Pilot and writes the results
+to the configured Postgres so the dashboard reflects them. `RUN_SPEND_CAP_USD`
+is a hard cap (required); other knobs: `RUN_CATEGORIES` (csv), `RUN_PER_FAMILY`,
+`RUN_MAX_ATTEMPTS`, `RUN_TOP_K`, `RUN_TRIGGER`. Secrets load from
+`AGENTFORGE_ENV_FILE`; minted tokens and API keys are redacted from stored
+transcripts and trace spans.
