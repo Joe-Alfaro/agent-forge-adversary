@@ -53,10 +53,28 @@ export interface CoverageSnapshotRow {
   lastRunAt: string
 }
 
+/** A confirmed exploit's stored minimal reproduction, used to replay a rerun. */
+export interface ExploitReproduction {
+  category: string
+  subcategory?: string
+  turns: string[]
+}
+
 export interface OrchestratorRepository {
   /** Upserts the target and version rows; returns the target_version id. */
   ensureTargetVersion(baseUrl: string, version: string): Promise<number>
   createNightlyRun(row: { scheduledFor: string; trigger: 'cron' | 'run_now'; plan: NightlyPlan }): Promise<number>
+  /**
+   * Atomically claims a `scheduled` `run_now` row (scheduled → running), oldest
+   * first or a specific id, using FOR UPDATE SKIP LOCKED so two consumers never
+   * grab the same row. Returns the run id and its stored `plan` jsonb (the
+   * dashboard's `{ scope, requested_by, requested_at }`), or null if none.
+   */
+  claimRunNow(id?: number): Promise<{ nightlyRunId: number; plan: unknown } | null>
+  /** Drains queued operator_requests in position order, optionally a single id. */
+  drainOperatorRequests(runDate: string, singleId?: string): Promise<import('./planner.js').QueuedRequest[]>
+  /** Loads an exploit's category/subcategory and its min_repro turns, for a rerun. */
+  getExploitReproduction(exploitId: string): Promise<ExploitReproduction | null>
   createCampaign(row: { nightlyRunId: number; plan: NightlyPlanItem; budgetUsd: number }): Promise<string>
   insertAttempt(row: AttemptRow): Promise<string>
   insertVerdict(row: VerdictRow): Promise<void>

@@ -140,16 +140,47 @@ export class PgOrchestratorRepository implements OrchestratorRepository {
     await this.pool.query('UPDATE operator_requests SET status = $2, nightly_run_id = $3 WHERE id = $1', [id, status, nightlyRunId])
   }
 
+  async claimRunNow(id?: number): Promise<{ nightlyRunId: number; plan: unknown } | null> {
+    const result = await this.pool.query(
+      `UPDATE nightly_runs SET status = 'running', started_at = now()
+       WHERE id = (
+         SELECT id FROM nightly_runs
+         WHERE trigger = 'run_now' AND status = 'scheduled'${id === undefined ? '' : ' AND id = $1'}
+         ORDER BY scheduled_for, id
+         FOR UPDATE SKIP LOCKED
+         LIMIT 1
+       )
+       RETURNING id, plan`,
+      id === undefined ? [] : [id],
+    )
+    const row = result.rows[0]
+    if (!row) return null
+    return { nightlyRunId: Number(row.id), plan: row.plan }
+  }
+
+  async getExploitReproduction(exploitId: string): Promise<{ category: string; subcategory?: string; turns: string[] } | null> {
+    const result = await this.pool.query('SELECT category, subcategory, min_repro FROM exploits WHERE id = $1', [exploitId])
+    const row = result.rows[0]
+    if (!row) return null
+    const repro = row.min_repro as { turns?: unknown } | null
+    const turns = Array.isArray(repro?.turns) ? repro.turns.filter((t): t is string => typeof t === 'string') : []
+    return {
+      category: String(row.category),
+      ...(row.subcategory ? { subcategory: String(row.subcategory) } : {}),
+      turns,
+    }
+  }
+
   // ---- Read side, used by the Run-now entrypoint to build a plan ----
 
   /** Drains the operator queue in the documented order: position NULLS LAST, created_at. */
-  async drainQueue(runDate: string): Promise<QueuedRequest[]> {
+  async drainOperatorRequests(runDate: string, singleId?: string): Promise<QueuedRequest[]> {
     const result = await this.pool.query(
       `SELECT id, kind, exploit_id, category, reason
        FROM operator_requests
-       WHERE status = 'queued' AND (requested_for IS NULL OR requested_for <= $1)
+       WHERE status = 'queued' AND (requested_for IS NULL OR requested_for <= $1)${singleId === undefined ? '' : ' AND id = $2'}
        ORDER BY position NULLS LAST, created_at, id`,
-      [runDate],
+      singleId === undefined ? [runDate] : [runDate, singleId],
     )
     return result.rows.map((r) => ({
       id: String(r.id),

@@ -10,6 +10,7 @@ import { runDetectors, type DetectorContext, type RunDetectorsClock } from '../d
 import { judgeAttempt, type JudgeModel } from '../judge/index.js'
 import type { PlatformTracer, TraceScope } from '../observability/index.js'
 import { runCampaign, type CampaignAdapter, type CampaignSeed, type AttemptDetail } from '../redteam/index.js'
+import { buildNightlyPlan, type QueuedRequest } from './planner.js'
 import type { CoverageSnapshotRow, OrchestratorRepository } from './repository.js'
 
 /**
@@ -84,19 +85,31 @@ const SEVERITY_BY_CATEGORY: Record<string, string> = {
   misinformation: 'medium',
 }
 
+/**
+ * Runs a plan by first creating its own `nightly_runs` row (the CLI Run-now and
+ * cron path). The dashboard-button path uses {@link runScheduledRunNow}, which
+ * claims a pre-inserted row instead; both share the {@link executePlan} core.
+ */
 export async function runPlan(params: RunPlanParams): Promise<RunPlanResult> {
-  const cost = params.costModel ?? DEFAULT_COST_MODEL
-  const trace = params.tracer.startTrace({
-    name: `nightly ${params.plan.target_version}`,
-    ...(params.buildCommit ? { buildCommit: params.buildCommit } : {}),
-    metadata: { trigger: params.plan.trigger, budget_usd: params.plan.budget_usd },
-  })
-
   const targetVersionId = await params.repo.ensureTargetVersion(params.targetBaseUrl, params.plan.target_version)
   const nightlyRunId = await params.repo.createNightlyRun({
     scheduledFor: params.scheduledFor ?? new Date(params.clock.now()).toISOString(),
     trigger: params.plan.trigger,
     plan: params.plan,
+  })
+  return executePlan(params, nightlyRunId, targetVersionId)
+}
+
+async function executePlan(
+  params: RunPlanParams,
+  nightlyRunId: number,
+  targetVersionId: number,
+): Promise<RunPlanResult> {
+  const cost = params.costModel ?? DEFAULT_COST_MODEL
+  const trace = params.tracer.startTrace({
+    name: `nightly ${params.plan.target_version}`,
+    ...(params.buildCommit ? { buildCommit: params.buildCommit } : {}),
+    metadata: { trigger: params.plan.trigger, budget_usd: params.plan.budget_usd },
   })
 
   const verdictSplit = { success: 0, partial: 0, fail: 0, needs_review: 0 }
@@ -290,4 +303,113 @@ function recordGeneration(trace: TraceScope, stage: string, outcome: string, mod
     model: stage === 'detector' ? 'detectors' : modelId,
     output: { outcome, stage },
   })
+}
+
+/** The dashboard's stored run_now plan jsonb shape (agentforge-8 seam). */
+export interface RunNowScope {
+  kind: 'queue' | 'single'
+  operatorRequestId?: string
+}
+interface StoredRunNowPlan {
+  scope?: RunNowScope
+  requested_by?: string
+  requested_at?: string
+}
+
+export interface RunScheduledParams extends Omit<RunPlanParams, 'plan' | 'scheduledFor'> {
+  /** Priority weights for any coverage campaigns the scope allows. */
+  weights: import('@agentforge/contracts').PriorityTerms
+  costPerAttemptUsd: number
+  maxAttemptsPerCampaign: number
+  topK: number
+  /** Coverage inputs (optional; the button scope is operator-request-driven). */
+  coverageCells?: import('./priority.js').CoverageCellInput[]
+  seedsByCell?: Record<string, string[]>
+  runDate: string
+  targetVersion: string
+  /** Claim a specific scheduled row; otherwise the oldest is claimed. */
+  claimId?: number
+}
+
+/**
+ * Consumes a `scheduled` `run_now` row the dashboard inserted (agentforge-8's
+ * "Run now" button). It claims the row, reads its `plan.scope`, drains the
+ * matching operator_requests (all queued, or a single id), resolves each rerun
+ * to the exploit's stored minimal reproduction so it can be replayed, builds a
+ * NightlyPlan, and executes it against the already-claimed row. Returns null when
+ * there is no scheduled row to claim. This shares the {@link executePlan} core
+ * with the CLI Run-now, so button and CLI take one path.
+ */
+export async function runScheduledRunNow(params: RunScheduledParams): Promise<RunPlanResult | null> {
+  const claimed = await params.repo.claimRunNow(params.claimId)
+  if (claimed === null) {
+    return null
+  }
+  const stored = (typeof claimed.plan === 'object' && claimed.plan !== null ? claimed.plan : {}) as StoredRunNowPlan
+  const scope: RunNowScope = stored.scope ?? { kind: 'queue' }
+
+  try {
+    const targetVersionId = await params.repo.ensureTargetVersion(params.targetBaseUrl, params.targetVersion)
+    const requests = await params.repo.drainOperatorRequests(
+      params.runDate,
+      scope.kind === 'single' ? scope.operatorRequestId : undefined,
+    )
+
+    // Resolve reruns to their exploit reproduction so they can be replayed.
+    const seedsById = new Map(params.seedsById)
+    const seedsByCell: Record<string, string[]> = { ...(params.seedsByCell ?? {}) }
+    const enrichedRequests: QueuedRequest[] = []
+    for (const req of requests) {
+      if (req.kind === 'rerun' && req.exploit_id) {
+        const repro = await params.repo.getExploitReproduction(req.exploit_id)
+        if (repro && repro.turns.length > 0) {
+          const sub = repro.subcategory ?? 'direct'
+          const key = `${repro.category}/${sub}`
+          seedsById.set(req.exploit_id, {
+            id: req.exploit_id,
+            category: repro.category,
+            subcategory: sub,
+            session_role: 'clinician',
+            turns: repro.turns,
+            technique_tags: ['rerun'],
+          })
+          seedsByCell[key] = [...(seedsByCell[key] ?? []), req.exploit_id]
+          enrichedRequests.push({ ...req, category: repro.category, subcategory: sub })
+          continue
+        }
+      }
+      enrichedRequests.push(req)
+    }
+
+    const plan = buildNightlyPlan({
+      trigger: 'run_now',
+      targetVersion: params.targetVersion,
+      budgetUsd: params.spendCapUsd,
+      weights: params.weights,
+      operatorRequests: enrichedRequests,
+      coverageCells: params.coverageCells ?? [],
+      seedsByCell,
+      costPerAttemptUsd: params.costPerAttemptUsd,
+      maxAttemptsPerCampaign: params.maxAttemptsPerCampaign,
+      topK: params.topK,
+      traceId: `runnow-${claimed.nightlyRunId}`,
+      now: new Date(params.clock.now()),
+    })
+
+    return await executePlan({ ...params, plan, seedsById }, claimed.nightlyRunId, targetVersionId)
+  } catch (error) {
+    // Mark the claimed row failed so it does not sit stuck in `running`.
+    const summary: NightlyRunSummary = {
+      target_version: params.targetVersion,
+      headline: `Run failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+      new_tickets: [],
+      regressions: [],
+      verified_fixes: [],
+      queue: { ran: 0, cut: 0 },
+      notes: ['Aborted by an error before completion.'],
+      generated_at: new Date(params.clock.now()).toISOString(),
+    }
+    await params.repo.finishNightlyRun(claimed.nightlyRunId, { summary, spendUsd: 0, status: 'failed' })
+    throw error
+  }
 }
