@@ -59,10 +59,17 @@ export function QueueView({ runId, onRunScheduled, onDismissRun, pollMs = 3_000 
             {cutCount > 0 && `; ${cutCount} request${cutCount === 1 ? '' : 's'} will be cut`}.
           </p>
         </div>
-        <button type="button" disabled={queue.items.length === 0} onClick={() => openDialog({ kind: 'queue' })}>
+        <button
+          type="button"
+          disabled={!queue.runNowEnabled || queue.items.length === 0}
+          onClick={() => openDialog({ kind: 'queue' })}
+        >
           Run queue now
         </button>
       </header>
+      {!queue.runNowEnabled && (
+        <p className="muted">Run now executes in the local demo; it is turned off on this deployment.</p>
+      )}
       {followed && (
         <RunNowStatus
           runId={followed}
@@ -85,6 +92,7 @@ export function QueueView({ runId, onRunScheduled, onDismissRun, pollMs = 3_000 
           onRemove={(id) => remove.mutate(id)}
           onMove={(id, direction) => move.mutate({ id, direction })}
           onRunNow={(id) => openDialog({ kind: 'single', operatorRequestId: id })}
+          runNowDisabled={!queue.runNowEnabled}
         />
       </div>
       {scope && (

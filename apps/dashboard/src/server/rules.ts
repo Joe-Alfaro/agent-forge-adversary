@@ -60,3 +60,9 @@ export function assertRunNow(queuedIds: readonly { id: string }[], scope: RunNow
     throw new Error('Nothing is queued for tonight')
   }
 }
+
+export function assertRunNowEnabled(enabled: boolean): void {
+  if (!enabled) {
+    throw new Error('Run now is disabled on this deployment (RUN_NOW_ENABLED=false); it executes in the local demo')
+  }
+}

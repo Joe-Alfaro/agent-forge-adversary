@@ -14,11 +14,12 @@ import type { DashboardRepository } from './server/repository.js'
 export const TEST_NOW = new Date('2026-09-29T20:00:00Z')
 
 const clock = { now: TEST_NOW }
+const flags = { runNowEnabled: true }
 
 /** Simulated run-nows start after 1 s and complete after 10 s of test-clock time. */
 function freshRepository(): DashboardRepository {
   return createFixtureRepository({
-    config: { envelopeUsd: 25, timeZone: 'America/Chicago', runHour: 1 },
+    config: { envelopeUsd: 25, timeZone: 'America/Chicago', runHour: 1, runNowEnabled: flags.runNowEnabled },
     now: () => clock.now,
     runNowTimings: { startAfterMs: 1_000, finishAfterMs: 10_000 },
   })
@@ -29,6 +30,13 @@ const state = { repository: freshRepository() }
 /** Restores the fixtures and the clock between tests. */
 export function resetTestData(): void {
   clock.now = TEST_NOW
+  flags.runNowEnabled = true
+  state.repository = freshRepository()
+}
+
+/** Recreates the store as a deployment with RUN_NOW_ENABLED set to `enabled`. */
+export function setRunNowEnabled(enabled: boolean): void {
+  flags.runNowEnabled = enabled
   state.repository = freshRepository()
 }
 

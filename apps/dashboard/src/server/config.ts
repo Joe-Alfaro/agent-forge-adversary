@@ -10,6 +10,11 @@ export interface QueueConfig {
   runHour: number
   /** M5 attempt target per high-risk cell (COVERAGE_TARGET_ATTEMPTS; target_attempts in §7.2). */
   coverageTargetAttempts?: number
+  /**
+   * RUN_NOW_ENABLED: whether Run now may schedule runs. Off on deployments
+   * with no executor consuming run_now rows; defaults to on.
+   */
+  runNowEnabled?: boolean
 }
 
 /**
@@ -54,6 +59,29 @@ export function m5Options(config: QueueConfig, now: Date) {
   }
 }
 
+const TRUE_VALUES = ['true', '1', 'yes', 'on']
+const FALSE_VALUES = ['false', '0', 'no', 'off']
+
+function readRunNowEnabled(env: Env): boolean {
+  const raw = env.RUN_NOW_ENABLED
+  if (raw === undefined || raw.trim() === '') {
+    return true
+  }
+  const value = raw.trim().toLowerCase()
+  if (TRUE_VALUES.includes(value)) {
+    return true
+  }
+  if (FALSE_VALUES.includes(value)) {
+    return false
+  }
+  throw new Error(`RUN_NOW_ENABLED must be true or false, got "${raw}"`)
+}
+
+/** Unset means on, so local runs keep Run now without extra configuration. */
+export function isRunNowEnabled(config: QueueConfig): boolean {
+  return config.runNowEnabled ?? true
+}
+
 function readEnvelope(env: Env): number {
   const raw = env.NIGHTLY_BUDGET_USD
   if (raw === undefined || raw === '') {
@@ -77,6 +105,7 @@ export function resolveDashboardConfig(env: Env): DashboardConfig {
     timeZone: env.NIGHTLY_TIMEZONE || DEFAULT_TIME_ZONE,
     runHour: runHourFromCron(env.NIGHTLY_CRON),
     coverageTargetAttempts: readTargetAttempts(env),
+    runNowEnabled: readRunNowEnabled(env),
   }
   const mode = env.DASHBOARD_DATA_SOURCE || 'postgres'
   if (mode === 'fixtures') {

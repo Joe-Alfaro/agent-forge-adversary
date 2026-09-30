@@ -4,6 +4,7 @@ import type pg from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { createPgRepository } from '../pg-repository.js'
+import type { QueueConfig } from '../config.js'
 import type { DashboardRepository } from '../repository.js'
 import { createIsolatedSchema, type IsolatedSchema } from './pg-schema.js'
 import { resetDatabase, seedEvents, seedQueue, seedReports, seedReviews, seedTickets } from './pg-seed.js'
@@ -41,14 +42,14 @@ describe.skipIf(!url)('Postgres repository', () => {
     await isolated?.drop()
   })
 
-  async function seededRepo() {
+  async function seededRepo(overrides: Partial<QueueConfig> = {}) {
     const versions = await resetDatabase(pool, ['copilot@9.0.0'])
     await seedTickets(pool, contractTickets, versions)
     await seedQueue(pool, contractQueue, contractRunDate)
     await seedReports(pool, contractReports)
     await seedEvents(pool, contractEvents)
     await seedReviews(pool, contractReviews, versions)
-    return createPgRepository({ pool, config, now: () => contractNow })
+    return createPgRepository({ pool, config: { ...config, ...overrides }, now: () => contractNow })
   }
 
   describeRepositoryContract('Postgres', { setup: seededRepo })

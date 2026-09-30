@@ -17,9 +17,9 @@ import {
 const config = { envelopeUsd: 25, timeZone: 'America/Chicago', runHour: 1 }
 
 describeRepositoryContract('fixture', {
-  setup: async () =>
+  setup: async (overrides = {}) =>
     createFixtureRepository({
-      config,
+      config: { ...config, ...overrides },
       now: () => contractNow,
       seed: {
         tickets: contractTickets,

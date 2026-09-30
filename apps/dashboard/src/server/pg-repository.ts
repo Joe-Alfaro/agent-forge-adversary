@@ -10,7 +10,7 @@ import type { CostSummary, CoverageCell, RunSpend } from '../lib/models.js'
 import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
 import { nextRunDate } from '../lib/schedule.js'
 import { isExploitStatus } from '../lib/tickets.js'
-import { m5Options, type QueueConfig } from './config.js'
+import { isRunNowEnabled, m5Options, type QueueConfig } from './config.js'
 import { computeM5 } from './m5.js'
 import {
   mapAgentEvent,
@@ -27,6 +27,7 @@ import {
   assertCanRecheck,
   assertReportDecision,
   assertRunNow,
+  assertRunNowEnabled,
   assertRerunRequest,
   assertTransition,
   normalizeAssignee,
@@ -276,7 +277,12 @@ export function createPgRepository({
   async function readQueue(db: Queryable) {
     const runDate = nextRunDate(now(), config)
     const result = await db.query(queueSql(false), [runDate])
-    return { runDate, envelopeUsd: config.envelopeUsd, items: result.rows.map(mapQueueItem) }
+    return {
+      runDate,
+      envelopeUsd: config.envelopeUsd,
+      items: result.rows.map(mapQueueItem),
+      runNowEnabled: isRunNowEnabled(config),
+    }
   }
 
   async function getRun(runId: string) {
@@ -334,6 +340,7 @@ export function createPgRepository({
     getRun,
 
     async runNow(scope, requestedBy) {
+      assertRunNowEnabled(isRunNowEnabled(config))
       const runId = await transaction(async (client) => {
         // Serializes concurrent confirms, so two clicks cannot schedule two runs.
         await client.query(`SELECT pg_advisory_xact_lock(hashtext('agentforge:run_now'))`)

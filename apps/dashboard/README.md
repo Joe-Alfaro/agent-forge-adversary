@@ -30,6 +30,7 @@ npm run typecheck -w apps/dashboard
 | `DATABASE_URL` | Platform Postgres, migrated with `npm run migrate up` from the repo root. |
 | `NIGHTLY_BUDGET_USD` | Tonight's budget envelope for the queue view (default 25). |
 | `COVERAGE_TARGET_ATTEMPTS` | Attempts a high-risk cell needs to count toward M5 (`target_attempts`, ARCHITECTURE.md 7.2; default 20). |
+| `RUN_NOW_ENABLED` | `true` (default) or `false`. Set `false` on deployments where no executor consumes `run_now` rows (Railway): the Run-now buttons render disabled with a note, and the server function refuses. Any other value fails at startup. |
 | `NIGHTLY_CRON`, `NIGHTLY_TIMEZONE` | Used to work out tonight's run date for `requested_for` (defaults `0 1 * * *`, `America/Chicago`). |
 | `OPERATOR_USERNAME`, `OPERATOR_PASSWORD` | The single shared operator login (username defaults to `operator`). With `NODE_ENV=production` the server refuses to start without a password; in development with no password the login gate is off. |
 | `SESSION_SECRET` | HMAC key for the session cookie (optional; derived from the password when unset). Changing it, or the password, signs everyone out. |
