@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentforge/contracts/vuln_report/v1",
+  "title": "VulnReport",
+  "description": "A Documentation Agent report for one confirmed exploit (Architecture 4.4). Stored as reports.body; a re-discovery adds a new reports.version with the same id and an appended history entry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "id", "exploit_id", "fingerprint", "severity", "category", "subcategory", "owasp_ids",
+    "title", "summary", "reproduction_steps", "minimal_repro", "observed_behavior", "expected_behavior",
+    "clinical_impact", "remediation", "status", "target_version", "references", "history", "generated_by",
+    "generated_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "id": { "type": "string", "pattern": "^VR-AF-[0-9]{4}-[A-Za-z0-9]+$" },
+    "exploit_id": { "type": "string", "pattern": "^AF-[0-9]{4}-[A-Za-z0-9]+$" },
+    "fingerprint": { "type": "string", "minLength": 1 },
+    "severity": { "enum": ["critical", "high", "medium", "low"] },
+    "category": { "type": "string", "minLength": 1 },
+    "subcategory": { "type": "string", "minLength": 1 },
+    "owasp_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^(LLM|A)[0-9]{2}$" }
+    },
+    "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "summary": { "type": "string", "minLength": 1 },
+    "reproduction_steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "minimal_repro": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["turns"],
+      "properties": {
+        "turns": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "attempt_id": { "type": "string", "format": "uuid" }
+      }
+    },
+    "observed_behavior": { "type": "string", "minLength": 1 },
+    "expected_behavior": { "type": "string", "minLength": 1 },
+    "clinical_impact": { "type": "string", "minLength": 1 },
+    "remediation": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["draft", "published", "rejected", "false_positive"] },
+    "target_version": { "type": "string", "minLength": 1 },
+    "references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "ref"],
+        "properties": {
+          "kind": { "enum": ["attempt", "trace", "owasp", "exploit", "other"] },
+          "ref": { "type": "string", "minLength": 1 },
+          "note": { "type": "string" }
+        }
+      }
+    },
+    "history": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event", "at", "target_version"],
+        "properties": {
+          "event": { "enum": ["discovered", "rediscovered"] },
+          "at": { "type": "string", "format": "date-time" },
+          "target_version": { "type": "string", "minLength": 1 },
+          "attempt_id": { "type": "string", "format": "uuid" }
+        }
+      }
+    },
+    "generated_by": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent", "model", "mode"],
+      "properties": {
+        "agent": { "const": "documentation" },
+        "model": { "type": "string", "minLength": 1 },
+        "mode": { "enum": ["llm", "offline"] }
+      }
+    },
+    "generated_at": { "type": "string", "format": "date-time" }
+  }
+}

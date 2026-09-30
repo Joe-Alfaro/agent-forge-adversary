@@ -239,3 +239,46 @@ export interface NightlyPlan {
   cut_count: number
   notes?: string[]
 }
+
+export type VulnSeverity = 'critical' | 'high' | 'medium' | 'low'
+export type VulnReportStatus = 'draft' | 'published' | 'rejected' | 'false_positive'
+export type VulnReferenceKind = 'attempt' | 'trace' | 'owasp' | 'exploit' | 'other'
+
+export interface VulnReference {
+  kind: VulnReferenceKind
+  ref: string
+  note?: string
+}
+
+export interface VulnReportHistoryEntry {
+  event: 'discovered' | 'rediscovered'
+  at: string
+  target_version: string
+  attempt_id?: string
+}
+
+export interface VulnReport {
+  schema_version: '1'
+  /** Stable across `reports.version` rows for the same exploit: `VR-<exploit_id>`. */
+  id: string
+  exploit_id: string
+  fingerprint: string
+  severity: VulnSeverity
+  category: string
+  subcategory: string
+  owasp_ids: string[]
+  title: string
+  summary: string
+  reproduction_steps: string[]
+  minimal_repro: { turns: string[]; attempt_id?: string }
+  observed_behavior: string
+  expected_behavior: string
+  clinical_impact: string
+  remediation: string
+  status: VulnReportStatus
+  target_version: string
+  references: VulnReference[]
+  history: VulnReportHistoryEntry[]
+  generated_by: { agent: 'documentation'; model: string; mode: 'llm' | 'offline' }
+  generated_at: string
+}
