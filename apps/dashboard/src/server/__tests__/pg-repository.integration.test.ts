@@ -7,7 +7,15 @@ import { createPgRepository } from '../pg-repository.js'
 import type { QueueConfig } from '../config.js'
 import type { DashboardRepository } from '../repository.js'
 import { createIsolatedSchema, type IsolatedSchema } from './pg-schema.js'
-import { resetDatabase, seedEvents, seedQueue, seedReports, seedReviews, seedTickets } from './pg-seed.js'
+import {
+  resetDatabase,
+  seedEvents,
+  seedQueue,
+  seedReports,
+  seedReviews,
+  seedScheduledPlan,
+  seedTickets,
+} from './pg-seed.js'
 import {
   contractNow,
   contractEvents,
@@ -16,6 +24,7 @@ import {
   contractReviewIds,
   contractReviews,
   contractRunDate,
+  contractScheduledPlan,
   contractTickets,
   describeRepositoryContract,
 } from './repository-contract.js'
@@ -49,6 +58,7 @@ describe.skipIf(!url)('Postgres repository', () => {
     await seedReports(pool, contractReports)
     await seedEvents(pool, contractEvents)
     await seedReviews(pool, contractReviews, versions)
+    await seedScheduledPlan(pool, contractScheduledPlan)
     return createPgRepository({ pool, config: { ...config, ...overrides }, now: () => contractNow })
   }
 
@@ -72,12 +82,65 @@ describe.skipIf(!url)('Postgres repository', () => {
     })
   })
 
+  describe('tonight’s plan read path', () => {
+    it('reads the newest scheduled cron run, ignoring run-now rows and runs that already started', async () => {
+      const repo = await seededRepo()
+      await pool.query(
+        `INSERT INTO nightly_runs (scheduled_for, trigger, status, plan) VALUES
+         ('2026-09-30T06:00:00Z', 'cron', 'running', '{"items": [], "budget_usd": 1}'),
+         ('2026-09-30T07:00:00Z', 'run_now', 'scheduled', '{"scope": {"kind": "queue"}}')`,
+      )
+      const { plan } = await repo.getQueue()
+      expect(plan?.items.map((campaign) => campaign.itemId)).toEqual([
+        'reg-AF-T-0002',
+        'cell-tool_misuse/parameter_tampering',
+        'cell-prompt_injection/multi_turn',
+      ])
+      expect(plan?.runId).toMatch(/^\d+$/)
+    })
+
+    it('has no plan when no cron run is scheduled', async () => {
+      const repo = await seededRepo()
+      await pool.query(`UPDATE nightly_runs SET status = 'completed'`)
+      expect((await repo.getQueue()).plan).toBeNull()
+    })
+
+    it('fills OWASP ids from the cell’s attempts when a plan item has none', async () => {
+      const repo = await seededRepo()
+      await pool.query(
+        `INSERT INTO attempts (fingerprint, category, subcategory, owasp_ids, transcript)
+         VALUES ('fp-owasp', 'prompt_injection', 'multi_turn', '{LLM01,LLM05}', '{}')`,
+      )
+      await pool.query(
+        `UPDATE nightly_runs SET plan = jsonb_set(plan, '{items,3}', (plan->'items'->3) - 'owasp_ids') WHERE trigger = 'cron'`,
+      )
+      const { plan } = await repo.getQueue()
+      expect(plan?.items[2]?.owaspIds).toEqual(['LLM01', 'LLM05'])
+    })
+  })
+
+  describe('run history and cost', () => {
+    it('leave out every scheduled run: the cron preview and a run-now not yet started', async () => {
+      const repo = await seededRepo()
+      await pool.query(
+        `INSERT INTO nightly_runs (scheduled_for, started_at, finished_at, trigger, status, spend_usd) VALUES
+         ('2026-09-28T06:00:00Z', '2026-09-28T06:00:00Z', '2026-09-28T08:00:00Z', 'cron', 'completed', 12),
+         ('2026-09-30T07:00:00Z', NULL, NULL, 'run_now', 'scheduled', 0)`,
+      )
+      const runs = await repo.listRuns()
+      expect(runs.map((run) => run.status)).toEqual(['completed'])
+      expect((await repo.getCost()).byRun.map((run) => run.spendUsd)).toEqual([12])
+    })
+  })
+
   describe('run now seam with the executor', () => {
     it('writes one scheduled run_now row whose plan is exactly { scope, requested_by, requested_at }', async () => {
       const repo = await seededRepo()
       const [, second] = contractQueue
       const run = await repo.runNow({ kind: 'single', operatorRequestId: second?.id ?? '' }, 'priya')
-      const rows = await pool.query('SELECT id, trigger, status, plan, scheduled_for, started_at FROM nightly_runs')
+      const rows = await pool.query(
+        `SELECT id, trigger, status, plan, scheduled_for, started_at FROM nightly_runs WHERE trigger = 'run_now'`,
+      )
       expect(rows.rows).toEqual([
         {
           id: Number(run.id),

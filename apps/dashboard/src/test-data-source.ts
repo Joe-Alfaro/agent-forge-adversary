@@ -1,6 +1,6 @@
 import type * as DataSource from './lib/data-source.js'
 import type { DataSourceMode } from './lib/data-source.js'
-import { createFixtureRepository } from './server/fixture-repository.js'
+import { createFixtureRepository, demoSeed, type FixtureSeed } from './server/fixture-repository.js'
 import type { DashboardRepository } from './server/repository.js'
 
 /*
@@ -14,7 +14,7 @@ import type { DashboardRepository } from './server/repository.js'
 export const TEST_NOW = new Date('2026-09-29T20:00:00Z')
 
 const clock = { now: TEST_NOW }
-const flags = { runNowEnabled: true }
+const flags: { runNowEnabled: boolean; noPlan: boolean } = { runNowEnabled: true, noPlan: false }
 
 /** Simulated run-nows start after 1 s and complete after 10 s of test-clock time. */
 function freshRepository(): DashboardRepository {
@@ -22,7 +22,13 @@ function freshRepository(): DashboardRepository {
     config: { envelopeUsd: 25, timeZone: 'America/Chicago', runHour: 1, runNowEnabled: flags.runNowEnabled },
     now: () => clock.now,
     runNowTimings: { startAfterMs: 1_000, finishAfterMs: 10_000 },
+    ...(flags.noPlan ? { seed: withoutPlan() } : {}),
   })
+}
+
+function withoutPlan(): FixtureSeed {
+  const { scheduledPlan: _plan, ...seed } = demoSeed()
+  return seed
 }
 
 const state = { repository: freshRepository() }
@@ -31,12 +37,19 @@ const state = { repository: freshRepository() }
 export function resetTestData(): void {
   clock.now = TEST_NOW
   flags.runNowEnabled = true
+  flags.noPlan = false
   state.repository = freshRepository()
 }
 
 /** Recreates the store as a deployment with RUN_NOW_ENABLED set to `enabled`. */
 export function setRunNowEnabled(enabled: boolean): void {
   flags.runNowEnabled = enabled
+  state.repository = freshRepository()
+}
+
+/** Recreates the store with no scheduled plan (`null`), as before the Orchestrator has planned tonight. */
+export function setScheduledPlan(plan: null): void {
+  flags.noPlan = plan === null
   state.repository = freshRepository()
 }
 

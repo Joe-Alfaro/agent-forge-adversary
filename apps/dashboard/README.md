@@ -117,9 +117,29 @@ How the read models are derived:
   come from `coverage_snapshots.families_exercised` when that column exists,
   otherwise they are counted live: distinct lineage roots (via
   `parent_attempt_id`) among each cell's variant attempts.
-- **Tonight's queue** drains `ORDER BY position NULLS LAST, created_at`. Re-checks
-  are appended at the end with a stored `estimated_cost_usd`; requests without
-  a stored estimate show a family-size estimate (reruns) or $0 (campaigns).
+- **Tonight's queue** is what the Orchestrator will run (ARCHITECTURE.md 7.0,
+  7.2, 7.4): the live operator requests first, in drain order (`ORDER BY
+  position NULLS LAST, created_at`; reorder and remove still apply), then the
+  items of tonight's plan preview in plan order, read-only: regressions owed
+  (each with its ticket, `regression_cause` shown as "Target version changed"
+  or "Ticket moved to fixed", and replay count), then coverage campaigns by
+  priority. The plan is the newest `nightly_runs` row with `trigger = 'cron'`
+  and `status = 'scheduled'`, ordered by `scheduled_for DESC, id DESC` (written
+  by `plan:preview`); its `plan` is read as a NightlyPlan leniently, keeping
+  `regression` and `coverage_campaign` items and skipping unknown kinds
+  (operator items come from `operator_requests` so edits show at once). Each
+  campaign shows category and subcategory, OWASP ids (`owasp_ids` on the item,
+  or failing that the OWASP ids seen in that cell's attempts), priority
+  (planner.ts adds 1000 for a focused category, shown as "+ focus"), attempt
+  budget, and cost. Run or cut is recomputed with planner.ts's rule against the
+  plan's `budget_usd`: in order, an item runs if it still fits, otherwise it is
+  cut, so a cheaper item further down can still run. Re-checks carry a stored
+  `estimated_cost_usd`; requests without one show a family-size estimate
+  (reruns) or $0 (focus, skip, note, which reshape the plan rather than spend).
+  Without a scheduled plan the queue shows operator requests only.
+- **Run history and Cost** list only runs that have started: every
+  `status = 'scheduled'` row is left out (the cron plan preview belongs to the
+  queue page; a scheduled run-now is followed by id until it starts).
 - **Cost** is `nightly_runs.spend_usd` per run and `agent_events.cost_usd` per
   agent over 30 days; `agent = 'target'` is the Co-Pilot's own spend.
 - **Approvals** (`/approvals`, ARCHITECTURE.md Section 10) lists the newest

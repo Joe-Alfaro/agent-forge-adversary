@@ -13,6 +13,7 @@ import * as fixtures from '../lib/fixtures.js'
 import type { MorningReport, QueueItem, RunStatus, RunSummary, TonightQueue } from '../lib/models.js'
 import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
 import { isRunNowActive, type RunNowScope, scopedItems } from '../lib/run-now.js'
+import { parseTonightPlan } from '../lib/tonight.js'
 import { nextRunDate } from '../lib/schedule.js'
 import type { TicketRow } from '../lib/tickets.js'
 import { isRunNowEnabled, m5Options, type QueueConfig } from './config.js'
@@ -57,6 +58,8 @@ export interface FixtureSeed {
   /** Reviews already settled before the store was created. */
   reviewHistory?: ReviewRecord[]
   groundTruthLabels?: number
+  /** Tonight's scheduled cron run and its NightlyPlan, as plan:preview writes it. */
+  scheduledPlan?: { scheduledFor: string; plan: unknown }
 }
 
 /** How long a simulated run-now stays scheduled, and when it completes, after it is requested. */
@@ -77,6 +80,20 @@ interface SimulatedRun {
   items: QueueItem[]
 }
 
+/** The synthetic demo data served in fixtures mode. */
+export function demoSeed(): FixtureSeed {
+  return {
+    tickets: fixtures.tickets,
+    queueItems: fixtures.queueItems,
+    reports: fixtures.reports,
+    events: fixtures.agentEvents,
+    reviews: fixtures.reviewItems,
+    reviewHistory: fixtures.reviewHistory,
+    groundTruthLabels: fixtures.groundTruthLabels,
+    scheduledPlan: fixtures.scheduledPlan,
+  }
+}
+
 export interface FixtureRepositoryOptions {
   config: QueueConfig
   now?: () => Date
@@ -95,12 +112,7 @@ export interface FixtureRepositoryOptions {
 export function createFixtureRepository({
   config,
   now = () => new Date(),
-  seed = { tickets: fixtures.tickets, queueItems: fixtures.queueItems, reports: fixtures.reports,
-    events: fixtures.agentEvents,
-    reviews: fixtures.reviewItems,
-    reviewHistory: fixtures.reviewHistory,
-    groundTruthLabels: fixtures.groundTruthLabels,
-  },
+  seed = demoSeed(),
   taxonomy = listTaxonomyCells(),
   runNowTimings = DEFAULT_RUN_NOW_TIMINGS,
 }: FixtureRepositoryOptions): DashboardRepository {
@@ -236,12 +248,30 @@ export function createFixtureRepository({
     )
   }
 
+  /** OWASP ids the demo coverage shows for a cell, for plan items that carry none. */
+  function owaspFor(category: string, subcategory: string | undefined): string[] {
+    return fixtures.coverage.cells.find((cell) => cell.category === category && cell.subcategory === subcategory)?.owaspIds ?? []
+  }
+
+  function tonightPlan() {
+    const scheduled = seed.scheduledPlan
+    if (!scheduled) {
+      return null
+    }
+    const plan = parseTonightPlan(
+      { runId: `scheduled-${nextRunDate(now(), config)}`, scheduledFor: shift(scheduled.scheduledFor, createdOffset), plan: scheduled.plan },
+      owaspFor,
+    )
+    return plan && { ...plan, producedAt: shift(plan.producedAt, createdOffset) }
+  }
+
   function queue(): TonightQueue {
     return structuredClone({
       runDate: nextRunDate(now(), config),
       envelopeUsd: config.envelopeUsd,
       items: pendingItems(),
       runNowEnabled: isRunNowEnabled(config),
+      plan: tonightPlan(),
     })
   }
 
@@ -266,7 +296,8 @@ export function createFixtureRepository({
     },
 
     async listRuns() {
-      return allRuns()
+      // Only started runs; a scheduled run-now is followed by id until it starts.
+      return allRuns().filter((run) => run.status !== 'scheduled')
     },
 
     async getRun(runId) {

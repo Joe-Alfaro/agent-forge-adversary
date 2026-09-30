@@ -1,8 +1,9 @@
 import { cleanup, fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { approvalsQuery } from '../../lib/queries.js'
 import { decideApproval, fetchApprovals, resetTestData } from '../../test-data-source.js'
-import { renderWithProviders } from '../../test-utils.js'
+import { renderReady } from '../../test-utils.js'
 import { ApprovalsQueue } from '../ApprovalsQueue.js'
 
 vi.mock('../../lib/data-source.js', () => import('../../test-data-source.js'))
@@ -21,7 +22,7 @@ afterEach(cleanup)
 
 describe('ApprovalsQueue', () => {
   it('lists the drafts waiting at a gate, operator-gated first', async () => {
-    renderWithProviders(<ApprovalsQueue />)
+    await renderReady(<ApprovalsQueue />, (client) => client.ensureQueryData(approvalsQuery))
     const rows = await bodyRows()
     expect(rows.map((row) => within(row).getAllByRole('cell')[0]?.textContent)).toEqual([
       'AF-2026-0002',
@@ -33,7 +34,7 @@ describe('ApprovalsQueue', () => {
   })
 
   it('offers only approve and reject on a draft', async () => {
-    renderWithProviders(<ApprovalsQueue />)
+    await renderReady(<ApprovalsQueue />, (client) => client.ensureQueryData(approvalsQuery))
     const [first] = await bodyRows()
     const buttons = within(first as HTMLElement)
       .getAllByRole('button')
@@ -42,7 +43,7 @@ describe('ApprovalsQueue', () => {
   })
 
   it('approving publishes the report and takes it off the queue', async () => {
-    renderWithProviders(<ApprovalsQueue />)
+    await renderReady(<ApprovalsQueue />, (client) => client.ensureQueryData(approvalsQuery))
     await bodyRows()
     fireEvent.click(screen.getByRole('button', { name: 'Approve and publish AF-2026-0002 v1' }))
     expect(await screen.findByRole('status')).toHaveProperty('textContent', 'AF-2026-0002 v1 published.')
@@ -53,7 +54,7 @@ describe('ApprovalsQueue', () => {
   })
 
   it('rejecting records the decision', async () => {
-    renderWithProviders(<ApprovalsQueue />)
+    await renderReady(<ApprovalsQueue />, (client) => client.ensureQueryData(approvalsQuery))
     await bodyRows()
     fireEvent.click(screen.getByRole('button', { name: 'Reject AF-2026-0007 v1' }))
     expect(await screen.findByRole('status')).toHaveProperty('textContent', 'AF-2026-0007 v1 rejected.')
@@ -62,7 +63,7 @@ describe('ApprovalsQueue', () => {
 
   it('says so when nothing is waiting', async () => {
     await Promise.all((await fetchApprovals()).map((item) => decideApproval(item.reportId, 'reject')))
-    renderWithProviders(<ApprovalsQueue />)
+    await renderReady(<ApprovalsQueue />, (client) => client.ensureQueryData(approvalsQuery))
     expect(await screen.findByText('No reports are waiting for a decision.')).toBeTruthy()
   })
 })

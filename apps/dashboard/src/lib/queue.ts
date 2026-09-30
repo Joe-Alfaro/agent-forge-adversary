@@ -1,6 +1,6 @@
 import type { RerunRequest } from '@agentforge/contracts'
 
-import type { PlannedQueueItem, QueueItem } from './models.js'
+import type { QueueItem } from './models.js'
 
 /** Replays per exploit in a regression re-check (Section 9.2 majority vote). */
 const REPLAYS_PER_EXPLOIT = 3
@@ -10,20 +10,6 @@ const COST_PER_CASE_USD = 0.05
 /** Rough cost of re-checking an exploit and its whole variant family tonight. */
 export function estimateRerunCostUsd(familySize: number): number {
   return Math.round(familySize * REPLAYS_PER_EXPLOIT * COST_PER_CASE_USD * 100) / 100
-}
-
-/**
- * Walks the queue in order, keeping a running total. Once the total passes the
- * envelope, that item and everything after it is cut, matching how the
- * Orchestrator stops taking work.
- */
-export function planTonight(items: readonly QueueItem[], envelopeUsd: number): PlannedQueueItem[] {
-  return items.reduce<PlannedQueueItem[]>((planned, item, index) => {
-    const previous = planned.at(-1)
-    const cumulativeUsd = Math.round(((previous?.cumulativeUsd ?? 0) + item.estimatedCostUsd) * 100) / 100
-    const cut = (previous?.cut ?? false) || cumulativeUsd > envelopeUsd
-    return [...planned, { ...item, position: index + 1, cumulativeUsd, cut }]
-  }, [])
 }
 
 export type MoveDirection = 'up' | 'down'

@@ -1,10 +1,10 @@
 import { useState } from 'react'
 
-import { formatUsd } from '../lib/format.js'
+import { formatDateTime, formatUsd } from '../lib/format.js'
 import { useMoveQueueItem, useRemoveQueueItem, useRunNow } from '../lib/mutations.js'
 import { useQueue } from '../lib/queries.js'
-import { planTonight } from '../lib/queue.js'
 import { estimateRunNow, type RunNowScope } from '../lib/run-now.js'
+import { planTonightRows } from '../lib/tonight.js'
 import { QueueTable } from './QueueTable.js'
 import { RunNowDialog } from './RunNowDialog.js'
 import { RunNowStatus } from './RunNowStatus.js'
@@ -29,9 +29,13 @@ export function QueueView({ runId, onRunScheduled, onDismissRun, pollMs = 3_000 
   const [scheduledRunId, setScheduledRunId] = useState<string | undefined>(runId)
   const followed = scheduledRunId ?? runId
 
-  const plan = planTonight(queue.items, queue.envelopeUsd)
-  const planned = plan.at(-1)?.cumulativeUsd ?? 0
-  const cutCount = plan.filter((item) => item.cut).length
+  // The Orchestrator applies the plan's budget; before it has planned, the configured envelope.
+  const envelopeUsd = queue.plan?.budgetUsd ?? queue.envelopeUsd
+  const rows = planTonightRows(queue.items, queue.plan?.items ?? [], envelopeUsd)
+  const running = rows.filter((row) => row.decision === 'run')
+  const spent = running.at(-1)?.cumulativeUsd ?? 0
+  const cutCount = rows.length - running.length
+  const costs = rows.map((row) => ({ id: row.key, estimatedCostUsd: row.costUsd }))
   const error = remove.error ?? move.error
 
   function openDialog(next: RunNowScope) {
@@ -55,9 +59,17 @@ export function QueueView({ runId, onRunScheduled, onDismissRun, pollMs = 3_000 
         <div>
           <h1>Tonight's queue</h1>
           <p>
-            Run on {queue.runDate}. Requested {formatUsd(planned)} against a {formatUsd(queue.envelopeUsd)} envelope
-            {cutCount > 0 && `; ${cutCount} request${cutCount === 1 ? '' : 's'} will be cut`}.
+            Run on {queue.runDate}. {running.length} of {rows.length} items will run for {formatUsd(spent)} of the{' '}
+            {formatUsd(envelopeUsd)} envelope{cutCount > 0 ? `; ${cutCount} cut.` : '.'}
           </p>
+          {queue.plan ? (
+            <p className="muted">
+              Planned by the Orchestrator at {formatDateTime(queue.plan.producedAt)} for {queue.plan.targetVersion}.
+              Coverage campaigns are ranked by priority and read-only; reorder or remove operator requests.
+            </p>
+          ) : (
+            <p className="muted">The Orchestrator has not planned tonight yet; showing operator requests only.</p>
+          )}
         </div>
         <button
           type="button"
@@ -80,6 +92,13 @@ export function QueueView({ runId, onRunScheduled, onDismissRun, pollMs = 3_000 
           }}
         />
       )}
+      {queue.plan && queue.plan.notes.length > 0 && (
+        <ul className="plan-notes" aria-label="Orchestrator notes">
+          {queue.plan.notes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
+      )}
       {error && (
         <p role="alert" className="form-error">
           {error.message}
@@ -87,7 +106,7 @@ export function QueueView({ runId, onRunScheduled, onDismissRun, pollMs = 3_000 
       )}
       <div className="queue-table">
         <QueueTable
-          plan={plan}
+          rows={rows}
           busy={remove.isPending || move.isPending}
           onRemove={(id) => remove.mutate(id)}
           onMove={(id, direction) => move.mutate({ id, direction })}
@@ -98,7 +117,7 @@ export function QueueView({ runId, onRunScheduled, onDismissRun, pollMs = 3_000 
       {scope && (
         <RunNowDialog
           scope={scope}
-          estimate={estimateRunNow(queue.items, scope, queue.envelopeUsd)}
+          estimate={estimateRunNow(costs, scope, envelopeUsd)}
           pending={run.isPending}
           {...(run.error ? { error: run.error.message } : {})}
           onConfirm={() => confirm(scope)}

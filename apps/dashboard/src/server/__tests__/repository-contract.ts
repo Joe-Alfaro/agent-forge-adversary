@@ -191,6 +191,80 @@ export const contractReviews: ReviewItem[] = [
   },
 ]
 
+/** Tonight's scheduled cron run, as plan:preview writes it (NightlyPlan v1 plus owasp_ids). */
+export const contractScheduledPlan = {
+  scheduledFor: '2026-09-30T06:00:00.000Z',
+  plan: {
+    schema_version: '1',
+    message_id: '60000000-0000-4000-8000-000000000001',
+    trace_id: 'plan-preview',
+    produced_by: 'orchestrator',
+    produced_at: '2026-09-29T19:30:00.000Z',
+    trigger: 'cron',
+    target_version: 'copilot@9.0.0',
+    budget_usd: 25,
+    estimated_cost_usd: 10.6,
+    weights: { gap: 1, open: 1, regress: 1, yield: 1, stale: 1, cost: 1 },
+    run_count: 2,
+    cut_count: 0,
+    notes: ['Operator focus on tool_misuse.'],
+    items: [
+      {
+        item_id: 'req-00000000-0000-4000-8000-000000000002',
+        kind: 'operator_request',
+        request_id: '00000000-0000-4000-8000-000000000002',
+        request_kind: 'rerun',
+        exploit_id: 'AF-T-0003',
+        category: 'data_exfiltration',
+        seed_case_ids: [],
+        max_attempts: 20,
+        estimated_cost_usd: 0,
+        decision: 'run',
+        reason: 'operator rerun for AF-T-0003',
+      },
+      {
+        item_id: 'reg-AF-T-0002',
+        kind: 'regression',
+        regression_cause: 'target_changed',
+        exploit_id: 'AF-T-0002',
+        category: 'data_exfiltration',
+        owasp_ids: ['LLM02'],
+        seed_case_ids: [],
+        max_attempts: 3,
+        estimated_cost_usd: 0.15,
+        decision: 'run',
+        reason: 'regression for AF-T-0002: target version changed since the last run',
+      },
+      {
+        item_id: 'cell-tool_misuse/parameter_tampering',
+        kind: 'coverage_campaign',
+        category: 'tool_misuse',
+        subcategory: 'parameter_tampering',
+        owasp_ids: ['LLM06'],
+        priority: 1000.61,
+        seed_case_ids: ['tm-1'],
+        max_attempts: 20,
+        estimated_cost_usd: 6.4,
+        decision: 'run',
+        reason: 'coverage priority 1000.610',
+      },
+      {
+        item_id: 'cell-prompt_injection/multi_turn',
+        kind: 'coverage_campaign',
+        category: 'prompt_injection',
+        subcategory: 'multi_turn',
+        owasp_ids: ['LLM01'],
+        priority: 0.52,
+        seed_case_ids: [],
+        max_attempts: 20,
+        estimated_cost_usd: 4.2,
+        decision: 'run',
+        reason: 'coverage priority 0.520',
+      },
+    ],
+  },
+}
+
 /** Clock for the suite: 2026-09-29 15:00 CDT, so tonight's run date is 2026-09-30. */
 export const contractNow = new Date('2026-09-29T20:00:00Z')
 export const contractRunDate = '2026-09-30'
@@ -252,7 +326,7 @@ export function describeRepositoryContract(name: string, options: ContractOption
     })
 
     describe('run now', () => {
-      it('schedules one run_now run for the whole queue and lists it in run history', async () => {
+      it('schedules one run_now run for the whole queue, outside run history until it starts', async () => {
         const run = await repo.runNow({ kind: 'queue' }, 'operator')
         expect(run).toMatchObject({
           trigger: 'run_now',
@@ -262,7 +336,9 @@ export function describeRepositoryContract(name: string, options: ContractOption
           hasMorningReport: false,
         })
         expect(await repo.getRun(run.id)).toEqual(run)
-        expect((await repo.listRuns())[0]?.id).toBe(run.id)
+        // Only started runs belong in run history and cost; the page follows a scheduled one by id.
+        expect((await repo.listRuns()).map((entry) => entry.id)).not.toContain(run.id)
+        expect((await repo.getCost()).byRun.map((entry) => entry.runId)).not.toContain(run.id)
       })
 
       it('schedules a single queued request', async () => {
@@ -462,6 +538,52 @@ export function describeRepositoryContract(name: string, options: ContractOption
         expect(queue.runNowEnabled).toBe(true)
         expect(queue.items.map((item) => item.id)).toEqual(contractQueue.map((item) => item.id))
         expect(queue.items[1]).toMatchObject({ kind: 'rerun', exploitId: 'AF-T-0003', estimatedCostUsd: 0.3 })
+      })
+
+      it('includes the scheduled run’s regressions and coverage campaigns, in plan order, with OWASP ids', async () => {
+        const { plan } = await repo.getQueue()
+        expect(plan).toMatchObject({
+          scheduledFor: contractScheduledPlan.scheduledFor,
+          producedAt: '2026-09-29T19:30:00.000Z',
+          targetVersion: 'copilot@9.0.0',
+          budgetUsd: 25,
+          notes: ['Operator focus on tool_misuse.'],
+        })
+        expect(plan?.items).toEqual([
+          {
+            itemId: 'reg-AF-T-0002',
+            kind: 'regression',
+            regressionCause: 'target_changed',
+            exploitId: 'AF-T-0002',
+            category: 'data_exfiltration',
+            owaspIds: ['LLM02'],
+            estimatedCostUsd: 0.15,
+            maxAttempts: 3,
+            reason: 'regression for AF-T-0002: target version changed since the last run',
+          },
+          {
+            itemId: 'cell-tool_misuse/parameter_tampering',
+            kind: 'coverage_campaign',
+            category: 'tool_misuse',
+            subcategory: 'parameter_tampering',
+            owaspIds: ['LLM06'],
+            priority: 1000.61,
+            estimatedCostUsd: 6.4,
+            maxAttempts: 20,
+            reason: 'coverage priority 1000.610',
+          },
+          {
+            itemId: 'cell-prompt_injection/multi_turn',
+            kind: 'coverage_campaign',
+            category: 'prompt_injection',
+            subcategory: 'multi_turn',
+            owaspIds: ['LLM01'],
+            priority: 0.52,
+            estimatedCostUsd: 4.2,
+            maxAttempts: 20,
+            reason: 'coverage priority 0.520',
+          },
+        ])
       })
 
       it('appends a valid RerunRequest and keeps the operator’s reason', async () => {

@@ -159,3 +159,11 @@ export async function seedReviews(pool: pg.Pool, reviews: ReviewItem[], versionI
     )
   }, Promise.resolve())
 }
+
+/** Tonight's scheduled cron run with its NightlyPlan, as plan:preview writes it. */
+export async function seedScheduledPlan(pool: pg.Pool, scheduled: { scheduledFor: string; plan: unknown }): Promise<void> {
+  await pool.query(
+    `INSERT INTO nightly_runs (scheduled_for, trigger, status, plan) VALUES ($1, 'cron', 'scheduled', $2)`,
+    [scheduled.scheduledFor, scheduled.plan],
+  )
+}

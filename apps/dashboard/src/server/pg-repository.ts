@@ -5,6 +5,7 @@ import { listTaxonomyCells, PRD_CATEGORIES, type TaxonomyCell } from '@agentforg
 import { isReportStatus, sortApprovals } from '../lib/approvals.js'
 import { isVerdictOutcome, resolvedOutcome } from '../lib/judge.js'
 import { buildRunNowPlan } from '../lib/run-now.js'
+import { parseTonightPlan } from '../lib/tonight.js'
 import { cellKey, mergeCoverage } from '../lib/coverage.js'
 import type { CostSummary, CoverageCell, RunSpend } from '../lib/models.js'
 import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
@@ -21,6 +22,7 @@ import {
   mapReviewItem,
   mapRunSummary,
   mapTicket,
+  stringArray,
 } from './pg-mappers.js'
 import type { DashboardRepository } from './repository.js'
 import {
@@ -249,6 +251,19 @@ const PENDING_APPROVALS_SQL = `${REPORTS_SQL}
   WHERE r.status = 'draft'
     AND NOT EXISTS (SELECT 1 FROM reports newer WHERE newer.exploit_id = r.exploit_id AND newer.version > r.version)`
 
+/** Tonight's plan preview: the newest cron run that has not started (Section 7.0). */
+const SCHEDULED_PLAN_SQL = `
+  SELECT id, scheduled_for, plan FROM nightly_runs
+  WHERE trigger = 'cron' AND status = 'scheduled' AND plan IS NOT NULL
+  ORDER BY scheduled_for DESC, id DESC
+  LIMIT 1`
+
+/** OWASP ids seen per cell in attempts, for plan items that do not carry their own. */
+const CELL_OWASP_SQL = `
+  SELECT a.category, COALESCE(a.subcategory, '') AS subcategory, array_agg(DISTINCT o.owasp ORDER BY o.owasp) AS owasp_ids
+  FROM attempts a, unnest(a.owasp_ids) AS o(owasp)
+  GROUP BY a.category, COALESCE(a.subcategory, '')`
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const COST_RUN_WINDOW = 14
 const COST_DAYS = 30
@@ -274,6 +289,25 @@ export function createPgRepository({
     }
   }
 
+  /** The newest scheduled cron run's NightlyPlan (plan:preview), with OWASP ids per cell from attempts as a fallback. */
+  async function readTonightPlan(db: Queryable) {
+    const scheduled = await db.query(SCHEDULED_PLAN_SQL)
+    const [row] = scheduled.rows
+    if (!row) {
+      return null
+    }
+    const owasp = await db.query(CELL_OWASP_SQL)
+    const byCell = new Map(owasp.rows.map((cell) => [`${String(cell.category)}/${String(cell.subcategory)}`, stringArray(cell.owasp_ids)]))
+    const plan = parseTonightPlan(
+      { runId: String(row.id), scheduledFor: new Date(row.scheduled_for).toISOString(), plan: row.plan },
+      (category, subcategory) => byCell.get(`${category}/${subcategory ?? ''}`) ?? [],
+    )
+    if (!plan) {
+      console.warn(`nightly_runs ${String(row.id)}: scheduled plan is not a NightlyPlan; the queue shows operator requests only`)
+    }
+    return plan
+  }
+
   async function readQueue(db: Queryable) {
     const runDate = nextRunDate(now(), config)
     const result = await db.query(queueSql(false), [runDate])
@@ -282,6 +316,7 @@ export function createPgRepository({
       envelopeUsd: config.envelopeUsd,
       items: result.rows.map(mapQueueItem),
       runNowEnabled: isRunNowEnabled(config),
+      plan: await readTonightPlan(db),
     }
   }
 
@@ -331,7 +366,10 @@ export function createPgRepository({
 
     async listRuns() {
       const result = await pool.query(
-        `${RUNS_SQL} ORDER BY COALESCE(r.started_at, r.scheduled_for) DESC, r.id DESC LIMIT 60`,
+        // Only started runs: a scheduled cron run is tonight's plan preview (the queue page shows it),
+        // and a scheduled run-now is followed by id until it starts.
+        `${RUNS_SQL} WHERE r.status <> 'scheduled'
+         ORDER BY COALESCE(r.started_at, r.scheduled_for) DESC, r.id DESC LIMIT 60`,
         [now()],
       )
       return result.rows.map(mapRunSummary)
@@ -415,7 +453,7 @@ export function createPgRepository({
     async getCost(): Promise<CostSummary> {
       const runs = await pool.query(
         `SELECT id, COALESCE(started_at, scheduled_for) AS started_at, spend_usd, status
-         FROM nightly_runs ORDER BY COALESCE(started_at, scheduled_for) DESC, id DESC LIMIT $1`,
+         FROM nightly_runs WHERE status <> 'scheduled' ORDER BY COALESCE(started_at, scheduled_for) DESC, id DESC LIMIT $1`,
         [COST_RUN_WINDOW],
       )
       const roles = await pool.query(

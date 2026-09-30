@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { listTaxonomyCells } from '@agentforge/contracts'
 
 import { buildTrendSeries } from '../../lib/resilience.js'
+import { planTonightRows } from '../../lib/tonight.js'
 import { createFixtureRepository } from '../fixture-repository.js'
 import {
   contractEvents,
@@ -11,6 +12,7 @@ import {
   contractQueue,
   contractReports,
   contractReviews,
+  contractScheduledPlan,
   contractTickets,
   describeRepositoryContract,
 } from './repository-contract.js'
@@ -28,6 +30,7 @@ describeRepositoryContract('fixture', {
         reports: contractReports,
         events: contractEvents,
         reviews: contractReviews,
+        scheduledPlan: contractScheduledPlan,
       },
     }),
 })
@@ -113,5 +116,25 @@ describe('fixture repository defaults', () => {
     expect(await repo.getRun(run.id)).toMatchObject({ status: 'completed', hasMorningReport: true })
     expect((await repo.getMorningReport(run.id))?.queue).toEqual({ ran: 1, cut: 0 })
     await expect(repo.runNow({ kind: 'queue' }, 'operator')).resolves.toMatchObject({ status: 'scheduled' })
+  })
+
+  it('has no plan when nothing is scheduled', async () => {
+    const repo = createFixtureRepository({
+      config,
+      now: () => contractNow,
+      seed: { tickets: contractTickets, queueItems: contractQueue },
+    })
+    expect((await repo.getQueue()).plan).toBeNull()
+  })
+
+  it('demos a preview plan: OWASP-tagged coverage campaigns, some cut by the envelope', async () => {
+    const repo = createFixtureRepository({ config, now: () => contractNow })
+    const queue = await repo.getQueue()
+    const campaigns = queue.plan?.items ?? []
+    expect(campaigns.length).toBeGreaterThan(3)
+    expect(campaigns.every((campaign) => campaign.owaspIds.length > 0)).toBe(true)
+    const rows = planTonightRows(queue.items, campaigns, queue.plan?.budgetUsd ?? queue.envelopeUsd)
+    expect(rows.some((row) => row.source === 'orchestrator' && row.decision === 'cut')).toBe(true)
+    expect(rows.some((row) => row.source === 'orchestrator' && row.decision === 'run')).toBe(true)
   })
 })

@@ -54,9 +54,15 @@ export function scopedItems<T extends Pick<QueueItem, 'id'>>(items: readonly T[]
 
 /**
  * The cost shown before confirming. Queue items already carry the stored
- * `estimated_cost_usd`, or the family-size estimate when that is null.
+ * `estimated_cost_usd`, or the family-size estimate when that is null; for the
+ * whole queue, pass the plan's coverage campaigns too, since a run-now plans
+ * them alongside the operator requests.
  */
-export function estimateRunNow(items: readonly QueueItem[], scope: RunNowScope, envelopeUsd: number): RunNowEstimate {
+export function estimateRunNow(
+  items: readonly Pick<QueueItem, 'id' | 'estimatedCostUsd'>[],
+  scope: RunNowScope,
+  envelopeUsd: number,
+): RunNowEstimate {
   const scoped = scopedItems(items, scope)
   const estimatedUsd = Math.round(scoped.reduce((sum, entry) => sum + entry.estimatedCostUsd, 0) * 100) / 100
   return { itemCount: scoped.length, estimatedUsd, envelopeUsd, exceedsEnvelope: estimatedUsd > envelopeUsd }

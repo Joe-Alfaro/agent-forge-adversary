@@ -1,3 +1,4 @@
+import type { TonightPlan } from './tonight.js'
 import type { AttackCategory, AttackSubcategory, RerunSource, VerdictOutcome } from '@agentforge/contracts'
 
 /**
@@ -105,13 +106,8 @@ export interface TonightQueue {
   items: QueueItem[]
   /** False when the deployment has Run now turned off (RUN_NOW_ENABLED=false). */
   runNowEnabled: boolean
-}
-
-export interface PlannedQueueItem extends QueueItem {
-  position: number
-  cumulativeUsd: number
-  /** True when the item falls outside tonight's budget envelope and will be cut. */
-  cut: boolean
+  /** The scheduled cron run's NightlyPlan preview, or null before the Orchestrator has planned tonight. */
+  plan: TonightPlan | null
 }
 
 /** The Documentation Agent's summary of one finished run. */
