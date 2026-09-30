@@ -546,7 +546,10 @@ export async function runScheduledRunNow(params: RunScheduledParams): Promise<Ru
       costPerAttemptUsd: params.costPerAttemptUsd,
       maxAttemptsPerCampaign: params.maxAttemptsPerCampaign,
       topK: params.topK,
-      traceId: `runnow-${claimed.nightlyRunId}`,
+      // A random suffix keeps run_key globally unique even if the local
+      // nightly_runs serial is recycled by a DB reset, so the importer never
+      // skips a distinct run as already-imported.
+      traceId: `runnow-${claimed.nightlyRunId}-${params.clock.randomUUID()}`,
       now: new Date(params.clock.now()),
     })
 
