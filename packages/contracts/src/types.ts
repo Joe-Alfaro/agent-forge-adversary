@@ -186,3 +186,50 @@ export interface RerunRequest {
   reason?: string
   target: RerunTarget
 }
+
+/** The six terms of the ARCHITECTURE 7.2 priority score. */
+export interface PriorityTerms {
+  gap: number
+  open: number
+  regress: number
+  yield: number
+  stale: number
+  cost: number
+}
+
+export type NightlyPlanItemKind = 'operator_request' | 'coverage_campaign'
+export type OperatorRequestKind = 'rerun' | 'focus' | 'skip' | 'note'
+
+export interface NightlyPlanItem {
+  item_id: string
+  kind: NightlyPlanItemKind
+  request_id?: string
+  request_kind?: OperatorRequestKind
+  exploit_id?: string
+  category: string
+  subcategory?: string
+  priority?: number
+  score?: PriorityTerms
+  seed_case_ids: string[]
+  max_attempts: number
+  estimated_cost_usd: number
+  decision: 'run' | 'cut'
+  reason: string
+}
+
+export interface NightlyPlan {
+  schema_version: '1'
+  message_id: string
+  trace_id: string
+  produced_by: 'orchestrator'
+  produced_at: string
+  trigger: 'cron' | 'run_now'
+  target_version: string
+  budget_usd: number
+  estimated_cost_usd: number
+  weights: PriorityTerms
+  items: NightlyPlanItem[]
+  run_count: number
+  cut_count: number
+  notes?: string[]
+}
