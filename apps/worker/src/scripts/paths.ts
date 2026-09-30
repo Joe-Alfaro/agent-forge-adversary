@@ -9,3 +9,13 @@ function here(): string {
 export function seedDir(): string {
   return join(here(), '..', '..', '..', '..', 'evals', 'seeds')
 }
+
+/** dist/scripts -> repo root -> evals/ground_truth. */
+export function groundTruthDir(): string {
+  return join(here(), '..', '..', '..', '..', 'evals', 'ground_truth')
+}
+
+/** dist/scripts -> repo root -> evals/results. */
+export function resultsDir(): string {
+  return join(here(), '..', '..', '..', '..', 'evals', 'results')
+}
