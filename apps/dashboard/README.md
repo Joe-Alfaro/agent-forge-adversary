@@ -117,9 +117,24 @@ How the read models are derived:
   come from `coverage_snapshots.families_exercised` when that column exists,
   otherwise they are counted live: distinct lineage roots (via
   `parent_attempt_id`) among each cell's variant attempts.
-- **Tonight's queue** drains `ORDER BY position NULLS LAST, created_at`. Re-checks
-  are appended at the end with a stored `estimated_cost_usd`; requests without
-  a stored estimate show a family-size estimate (reruns) or $0 (campaigns).
+- **Tonight's queue** is what the Orchestrator will run (ARCHITECTURE.md 7.0,
+  7.2): the live operator requests first, in drain order (`ORDER BY position
+  NULLS LAST, created_at`; reorder and remove still apply), then the coverage
+  campaigns from tonight's plan preview, in plan (priority) order and
+  read-only. The plan is the newest `nightly_runs` row with `trigger = 'cron'`
+  and `status = 'scheduled'` (written by `plan:preview`); its `plan` is read as a
+  NightlyPlan leniently, keeping only `coverage_campaign` items (operator items
+  come from `operator_requests` so edits show at once). Each campaign shows
+  category and subcategory, OWASP ids (`owasp_ids` on the item; until
+  NightlyPlan carries that field, the OWASP ids seen in that cell's attempts),
+  priority (planner.ts adds 1000 for a focused category, shown as "+ focus"),
+  attempt budget, and cost. Run or cut is recomputed with planner.ts's rule
+  against the plan's `budget_usd`: in order, an item runs if it still fits,
+  otherwise it is cut, so a cheaper item further down can still run. Re-checks
+  carry a stored `estimated_cost_usd`; requests without one show a family-size
+  estimate (reruns) or $0 (focus, skip, note, which reshape the plan rather than
+  spend). Scheduled cron previews are left out of run history. Without a
+  scheduled plan the queue shows operator requests only.
 - **Cost** is `nightly_runs.spend_usd` per run and `agent_events.cost_usd` per
   agent over 30 days; `agent = 'target'` is the Co-Pilot's own spend.
 - **Approvals** (`/approvals`, ARCHITECTURE.md Section 10) lists the newest

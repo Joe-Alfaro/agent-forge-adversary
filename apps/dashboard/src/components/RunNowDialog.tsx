@@ -19,7 +19,7 @@ export interface RunNowDialogProps {
 export function RunNowDialog({ scope, estimate, pending, error, onConfirm, onCancel }: RunNowDialogProps) {
   const titleId = useId()
   const title = scope.kind === 'queue' ? 'Run the whole queue now?' : 'Run this request now?'
-  const requests = `${estimate.itemCount} request${estimate.itemCount === 1 ? '' : 's'}`
+  const items = `${estimate.itemCount} item${estimate.itemCount === 1 ? '' : 's'}`
 
   return (
     <div className="modal-backdrop">
@@ -36,8 +36,8 @@ export function RunNowDialog({ scope, estimate, pending, error, onConfirm, onCan
       >
         <h2 id={titleId}>{title}</h2>
         <dl className="detail-grid">
-          <dt>Requests</dt>
-          <dd>{requests}</dd>
+          <dt>Items</dt>
+          <dd>{items}</dd>
           <dt>Estimated cost</dt>
           <dd>{formatUsd(estimate.estimatedUsd)}</dd>
           <dt>Tonight’s envelope</dt>
@@ -51,7 +51,8 @@ export function RunNowDialog({ scope, estimate, pending, error, onConfirm, onCan
         )}
         <p className="muted">
           This runs outside the nightly window. The dashboard only schedules the run; the executor drains the{' '}
-          {scope.kind === 'queue' ? 'queue in order' : 'request'} and writes the morning report.
+          {scope.kind === 'queue' ? 'operator requests in order, runs the coverage campaigns,' : 'request'} and writes
+          the morning report.
         </p>
         {error && (
           <p role="alert" className="form-error">

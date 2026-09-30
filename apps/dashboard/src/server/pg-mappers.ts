@@ -93,7 +93,7 @@ function optionalIso(row: unknown, key: string): string | undefined {
   return iso(row, key)
 }
 
-function stringArray(value: unknown): string[] {
+export function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return []
   }

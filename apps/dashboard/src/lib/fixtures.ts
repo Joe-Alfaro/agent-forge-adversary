@@ -225,7 +225,7 @@ export const queueItems: QueueItem[] = [
     requestedAt: '2026-09-29T08:20:00Z',
     source: 'chat',
     reason: 'Spend most of tonight on exfiltration.',
-    estimatedCostUsd: 22,
+    estimatedCostUsd: 0,
   },
   {
     id: 'req-103',
@@ -253,7 +253,7 @@ export const queueItems: QueueItem[] = [
     requestedBy: 'dana',
     requestedAt: '2026-09-29T09:40:00Z',
     source: 'ui',
-    estimatedCostUsd: 18,
+    estimatedCostUsd: 0,
   },
 ]
 
@@ -492,3 +492,64 @@ export const reviewHistory: ReviewRecord[] = [
 
 /** Seeded Stage 3 labels plus the reviews above. */
 export const groundTruthLabels = 42
+
+function coverageCampaign(
+  category: string,
+  subcategory: string,
+  owaspIds: string[],
+  priority: number,
+  estimatedCostUsd: number,
+) {
+  return {
+    item_id: `cell-${category}/${subcategory}`,
+    kind: 'coverage_campaign',
+    category,
+    subcategory,
+    owasp_ids: owaspIds,
+    priority,
+    seed_case_ids: [`${subcategory}-seed-1`, `${subcategory}-seed-2`],
+    max_attempts: 40,
+    estimated_cost_usd: estimatedCostUsd,
+    decision: 'run',
+    reason: `coverage priority ${priority.toFixed(3)}`,
+  }
+}
+
+/**
+ * Tonight's plan preview (a scheduled cron nightly_runs row) as the
+ * Orchestrator's plan:preview writes it: coverage campaigns ranked by the 7.2
+ * priority score, data exfiltration boosted by the operator's focus request.
+ * With the queue's reruns first, the last two campaigns fall past the $25
+ * envelope.
+ */
+export const scheduledPlan = {
+  scheduledFor: '2026-09-30T06:00:00Z',
+  plan: {
+    schema_version: '1',
+    message_id: '70000000-0000-4000-8000-000000000001',
+    trace_id: 'plan-preview-2026-09-30',
+    produced_by: 'orchestrator',
+    produced_at: '2026-09-29T19:30:00Z',
+    trigger: 'cron',
+    target_version: TARGET_VERSION,
+    budget_usd: 25,
+    estimated_cost_usd: 22.8,
+    weights: { gap: 0.3, open: 0.2, regress: 0.25, yield: 0.1, stale: 0.1, cost: 0.05 },
+    run_count: 7,
+    cut_count: 2,
+    notes: [
+      'Operator focus on data_exfiltration.',
+      'Operator skipped category denial_of_service tonight.',
+      'Operator focus on prompt_injection.',
+    ],
+    items: [
+      coverageCampaign('data_exfiltration', 'phi_leakage', ['LLM02', 'A01'], 1000.82, 6.4),
+      coverageCampaign('data_exfiltration', 'authorization_bypass', ['A01'], 1000.71, 5.1),
+      coverageCampaign('prompt_injection', 'multi_turn', ['LLM01'], 1000.64, 4.2),
+      coverageCampaign('state_corruption', 'context_poisoning', ['LLM04'], 0.58, 3.6),
+      coverageCampaign('tool_misuse', 'parameter_tampering', ['LLM06'], 0.51, 3.0),
+      coverageCampaign('identity_role_exploitation', 'persona_hijacking', ['LLM01', 'A07'], 0.44, 4.5),
+      coverageCampaign('misinformation', 'unsupported_claim', ['LLM09'], 0.31, 2.9),
+    ],
+  },
+}

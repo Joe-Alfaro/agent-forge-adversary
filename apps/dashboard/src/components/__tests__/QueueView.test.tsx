@@ -10,6 +10,7 @@ import {
   removeQueueItem,
   resetTestData,
   setRunNowEnabled,
+  setScheduledPlan,
 } from '../../test-data-source.js'
 import { renderReady } from '../../test-utils.js'
 import { QueueView } from '../QueueView.js'
@@ -31,15 +32,47 @@ async function scheduledRunNows() {
 beforeEach(resetTestData)
 afterEach(cleanup)
 
+describe('QueueView plan', () => {
+  it('summarizes the whole plan against the envelope and says who planned it', async () => {
+    await renderQueue()
+    expect(screen.getByText(/10 of 12 items will run for \$23\.80 of the \$25\.00 envelope; 2 cut\./)).toBeTruthy()
+    expect(screen.getByText(/Planned by the Orchestrator at .* for copilot@1\.4\.0/)).toBeTruthy()
+    expect(screen.getByText('Operator skipped category denial_of_service tonight.')).toBeTruthy()
+  })
+
+  it('renders operator requests first, then the coverage campaigns in plan order', async () => {
+    await renderQueue()
+    const [, body] = screen.getAllByRole('rowgroup')
+    const kinds = within(body as HTMLElement)
+      .getAllByRole('row')
+      .map((row) => within(row).getAllByRole('cell')[1]?.textContent)
+    expect(kinds).toEqual([
+      'rerun',
+      'focus',
+      'rerun',
+      'skip',
+      'focus',
+      ...Array.from({ length: 7 }, () => 'coverage campaign'),
+    ])
+  })
+
+  it('says when the Orchestrator has not planned tonight yet', async () => {
+    setScheduledPlan(null)
+    await renderQueue()
+    expect(screen.getByText('The Orchestrator has not planned tonight yet; showing operator requests only.')).toBeTruthy()
+  })
+})
+
 describe('QueueView run now', () => {
-  it('shows the whole-queue estimate, item count, and envelope before anything runs', async () => {
+  it('shows the whole-plan estimate, item count, and envelope before anything runs', async () => {
     await renderQueue()
     fireEvent.click(screen.getByRole('button', { name: 'Run queue now' }))
     const dialog = screen.getByRole('dialog', { name: 'Run the whole queue now?' })
-    expect(dialog.textContent).toContain('5 requests')
-    expect(dialog.textContent).toContain('$41.50')
+    // 5 operator requests ($1.50) + 7 coverage campaigns ($29.70).
+    expect(dialog.textContent).toContain('12 items')
+    expect(dialog.textContent).toContain('$31.20')
     expect(dialog.textContent).toContain('$25.00')
-    expect(within(dialog).getByText(/exceeds tonight’s \$25\.00 envelope by \$16\.50/)).toBeTruthy()
+    expect(within(dialog).getByText(/exceeds tonight’s \$25\.00 envelope by \$6\.20/)).toBeTruthy()
     expect(await scheduledRunNows()).toEqual([])
   })
 
@@ -62,7 +95,7 @@ describe('QueueView run now', () => {
     await renderQueue()
     fireEvent.click(screen.getByRole('button', { name: 'Run request 1 now' }))
     const dialog = screen.getByRole('dialog', { name: 'Run this request now?' })
-    expect(dialog.textContent).toContain('1 request')
+    expect(dialog.textContent).toContain('1 item')
     expect(dialog.textContent).toContain('$0.60')
     expect(within(dialog).queryByText(/exceeds/)).toBeNull()
   })
@@ -94,7 +127,7 @@ describe('QueueView run now', () => {
   it('shows the server’s refusal, e.g. a second run while one is scheduled', async () => {
     await renderQueue()
     fireEvent.click(screen.getByRole('button', { name: 'Run queue now' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm: run now for $41.50' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm: run now for $31.20' }))
     await screen.findByText('Run run-now-1 is scheduled.')
     fireEvent.click(screen.getByRole('button', { name: 'Run request 2 now' }))
     fireEvent.click(screen.getByRole('button', { name: /^Confirm: run now/ }))

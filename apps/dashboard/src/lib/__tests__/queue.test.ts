@@ -3,7 +3,7 @@ import { validateRerunRequest } from '@agentforge/contracts'
 import { describe, expect, it } from 'vitest'
 
 import type { QueueItem } from '../models.js'
-import { buildRerunRequest, estimateRerunCostUsd, moveItem, planTonight } from '../queue.js'
+import { buildRerunRequest, estimateRerunCostUsd, moveItem } from '../queue.js'
 
 function item(id: string, estimatedCostUsd: number): QueueItem {
   return {
@@ -16,22 +16,6 @@ function item(id: string, estimatedCostUsd: number): QueueItem {
     estimatedCostUsd,
   }
 }
-
-describe('planTonight', () => {
-  it('keeps a running total and cuts everything after the envelope is exceeded', () => {
-    const plan = planTonight([item('a', 4), item('b', 5), item('c', 3), item('d', 1)], 10)
-    expect(plan.map((row) => [row.id, row.cumulativeUsd, row.cut])).toEqual([
-      ['a', 4, false],
-      ['b', 9, false],
-      ['c', 12, true],
-      ['d', 13, true],
-    ])
-  })
-
-  it('numbers positions from 1 in queue order', () => {
-    expect(planTonight([item('a', 1), item('b', 1)], 10).map((row) => row.position)).toEqual([1, 2])
-  })
-})
 
 describe('moveItem', () => {
   const items = [item('a', 1), item('b', 1), item('c', 1)]
