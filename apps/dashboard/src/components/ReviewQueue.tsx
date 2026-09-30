@@ -59,7 +59,7 @@ function ReviewCard({ item, mutation }: { item: ReviewItem; mutation: ResolveRev
       <h2>{cell}</h2>
       <p className="muted">
         {item.targetVersion ?? 'unknown version'} · flagged {formatDateTime(item.flaggedAt)} · rubric{' '}
-        <code>{item.rubricVersion.slice(0, 16)}</code>
+        <code>{item.rubricVersion}</code>
         {item.judgeModel && ` · ${item.judgeModel}`}
       </p>
       <p>

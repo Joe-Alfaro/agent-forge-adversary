@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { listTaxonomyCells } from '@agentforge/contracts'
 
+import { buildTrendSeries } from '../../lib/resilience.js'
 import { createFixtureRepository } from '../fixture-repository.js'
 import {
   contractEvents,
@@ -87,7 +88,7 @@ describe('fixture repository defaults', () => {
     const repo = createFixtureRepository({ config, now: () => contractNow })
     const trend = await repo.getResilienceTrend()
     expect(trend.versions.length).toBeGreaterThan(2)
-    expect(new Set(trend.points.map((point) => point.rubricVersion)).size).toBe(2)
+    expect(buildTrendSeries(trend).rubricChanges.map((change) => change.categories)).toEqual([['prompt_injection']])
   })
 
   it('simulates the executor: scheduled, then running (queue drained), then completed with a report', async () => {

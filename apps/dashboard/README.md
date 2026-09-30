@@ -138,8 +138,12 @@ How the read models are derived:
   fingerprint. Each novel attempt counts under its latest verdict's
   `rubric_version`, and is confirmed when that verdict is a `success` that is not
   `needs_review`, so a human verdict settles a flagged one. Unjudged attempts are
-  left out. Every rubric is its own series; lines join only adjacent versions
-  under the same rubric, and a version with no data also breaks the line.
+  left out. One point per version, summed across categories. The Judge keeps
+  one rubric per category (`rubric_version` is `category@hash`), so several
+  rubrics per version is normal; the line joins adjacent versions unless a
+  category judged in both changed rubric hash (a bare hash counts for every
+  category), and the chart names the categories whose rubric changed. A
+  version with no data also breaks the line.
 - **Agent activity** (`/activity`) is the newest 100 `agent_events`, refreshed
   every 15 seconds. `agent_events` has no trace URL column, so the Langfuse link
   comes from `payload.trace_url` (http or https only); the one-line summary is
