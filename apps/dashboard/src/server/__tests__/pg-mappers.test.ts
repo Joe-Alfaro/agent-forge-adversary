@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { mapMorningReport, mapQueueItem, mapRunSummary, mapTicket } from '../pg-mappers.js'
+import { mapAgentEvent, mapApprovalRow, mapReviewItem, mapMorningReport, mapQueueItem, mapRunSummary, mapTicket } from '../pg-mappers.js'
 
 describe('mapTicket', () => {
   const row = {
@@ -166,5 +166,115 @@ describe('mapQueueItem', () => {
     expect(
       mapQueueItem({ ...queueRow, kind: 'focus', exploit_id: null, category: 'tool_misuse', family_size: null }),
     ).toMatchObject({ kind: 'focus', category: 'tool_misuse', estimatedCostUsd: 0 })
+  })
+})
+
+describe('mapApprovalRow', () => {
+  const row = {
+    id: 'r-1',
+    exploit_id: 'AF-1',
+    version: 2,
+    status: 'draft',
+    title: 'Leak',
+    severity: 'medium',
+    category: 'data_exfiltration',
+    approved_by: null,
+    published_at: null,
+    created_at: new Date('2026-09-29T05:00:00Z'),
+  }
+
+  it('maps a draft with its gate and auto-publish time', () => {
+    expect(mapApprovalRow(row)).toEqual({
+      reportId: 'r-1',
+      exploitId: 'AF-1',
+      version: 2,
+      severity: 'medium',
+      category: 'data_exfiltration',
+      title: 'Leak',
+      status: 'draft',
+      draftedAt: '2026-09-29T05:00:00.000Z',
+      gate: 'G5',
+      autoPublishAt: '2026-09-30T05:00:00.000Z',
+    })
+  })
+
+  it('falls back to the exploit and version when the body has no title', () => {
+    expect(mapApprovalRow({ ...row, title: null }).title).toBe('AF-1 report v2')
+  })
+
+  it('rejects statuses outside the report workflow', () => {
+    expect(() => mapApprovalRow({ ...row, status: 'approved' })).toThrow('unknown status "approved"')
+  })
+})
+
+describe('mapAgentEvent', () => {
+  const row = {
+    id: '42',
+    trace_id: 'trace-1',
+    agent: 'judge',
+    event_type: 'verdict',
+    payload: { trace_url: 'https://langfuse.test/trace/trace-1', summary: 'Judged attempt' },
+    source: null,
+    cost_usd: '0.012000',
+    created_at: new Date('2026-09-29T06:00:00Z'),
+  }
+
+  it('maps the row, the payload trace link, and the summary', () => {
+    expect(mapAgentEvent(row)).toEqual({
+      id: '42',
+      traceId: 'trace-1',
+      agent: 'judge',
+      eventType: 'verdict',
+      costUsd: 0.012,
+      createdAt: '2026-09-29T06:00:00.000Z',
+      traceUrl: 'https://langfuse.test/trace/trace-1',
+      summary: 'Judged attempt',
+    })
+  })
+
+  it('drops a trace link that is not http(s)', () => {
+    expect(mapAgentEvent({ ...row, payload: { trace_url: 'javascript:alert(1)' } })).not.toHaveProperty('traceUrl')
+  })
+
+  it('tolerates an empty payload', () => {
+    expect(mapAgentEvent({ ...row, payload: null })).not.toHaveProperty('summary')
+  })
+})
+
+describe('mapReviewItem', () => {
+  const row = {
+    id: 'v-1',
+    attempt_id: 'a-1',
+    category: 'prompt_injection',
+    subcategory: null,
+    target_version: 'copilot@1',
+    outcome: 'success',
+    confidence: '0.550',
+    stage: 'llm_tiebreak',
+    rubric_version: 'r1',
+    judge_model: null,
+    created_at: new Date('2026-09-29T05:00:00Z'),
+    evidence: [{ kind: 'quoted_span', ref: 'turns[0]' }, { kind: 'made_up', ref: 'x' }, 'junk'],
+    transcript: { turns: [{ attacker_message: 'hi', target_response: 'hello' }] },
+  }
+
+  it('maps the verdict, keeps only well-formed evidence, and excerpts the transcript', () => {
+    expect(mapReviewItem(row)).toEqual({
+      verdictId: 'v-1',
+      attemptId: 'a-1',
+      category: 'prompt_injection',
+      targetVersion: 'copilot@1',
+      outcome: 'success',
+      confidence: 0.55,
+      stage: 'llm_tiebreak',
+      rubricVersion: 'r1',
+      flaggedAt: '2026-09-29T05:00:00.000Z',
+      evidence: [{ kind: 'quoted_span', ref: 'turns[0]' }],
+      excerpt: { attackerMessage: 'hi', targetResponse: 'hello' },
+    })
+  })
+
+  it('rejects an outcome outside the verdict enum', () => {
+    expect(() => mapReviewItem({ ...row, outcome: 'maybe' })).toThrow('unknown outcome')
   })
 })

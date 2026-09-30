@@ -10,8 +10,9 @@ resilience trend, cost, Judge health, approvals, and the Orchestrator chat.
 - **Tue (v1, read-only):** findings list, run history, coverage table, cost panel.
 - **Wed (v2):** ticket status workflow, assignee, "Re-check tonight", tonight's
   queue with reorder and remove, morning report.
-- **Thu (v3):** approvals queue, resilience trend, agent activity feed,
-  `needs_review` resolution, and the Orchestrator chat with confirm-before-enqueue.
+- **Thu (v3):** approvals queue, resilience trend, agent activity feed, and
+  `needs_review` resolution with Judge health (done); the Orchestrator chat with
+  confirm-before-enqueue is still to come.
 
 ## Running
 
@@ -29,6 +30,7 @@ npm run typecheck -w apps/dashboard
 | `DATABASE_URL` | Platform Postgres, migrated with `npm run migrate up` from the repo root. |
 | `NIGHTLY_BUDGET_USD` | Tonight's budget envelope for the queue view (default 25). |
 | `COVERAGE_TARGET_ATTEMPTS` | Attempts a high-risk cell needs to count toward M5 (`target_attempts`, ARCHITECTURE.md 7.2; default 20). |
+| `RUN_NOW_ENABLED` | `true` (default) or `false`. Set `false` on deployments where no executor consumes `run_now` rows (Railway): the Run-now buttons render disabled with a note, and the server function refuses. Any other value fails at startup. |
 | `NIGHTLY_CRON`, `NIGHTLY_TIMEZONE` | Used to work out tonight's run date for `requested_for` (defaults `0 1 * * *`, `America/Chicago`). |
 | `OPERATOR_USERNAME`, `OPERATOR_PASSWORD` | The single shared operator login (username defaults to `operator`). With `NODE_ENV=production` the server refuses to start without a password; in development with no password the login gate is off. |
 | `SESSION_SECRET` | HMAC key for the session cookie (optional; derived from the password when unset). Changing it, or the password, signs everyone out. |
@@ -77,8 +79,10 @@ over `src/lib/data-source.ts`, which calls TanStack Start server functions
   `src/lib/fixtures.ts`, in memory until the server restarts.
 
 Both run the same contract suite (`src/server/__tests__/repository-contract.ts`).
-The Postgres run needs a disposable, migrated database and truncates every
-platform table, so never point it at a shared one:
+The Postgres run migrates its own throwaway `af_test_*` schema with
+packages/db's migrations, works only inside it, and drops it afterwards, so it
+never alters or truncates `public` and can share a database with the other
+suites:
 
 ```bash
 DASHBOARD_TEST_DATABASE_URL=postgres://af:af@127.0.0.1:54339/af_dashboard_test npm test -w apps/dashboard
@@ -118,6 +122,56 @@ How the read models are derived:
   a stored estimate show a family-size estimate (reruns) or $0 (campaigns).
 - **Cost** is `nightly_runs.spend_usd` per run and `agent_events.cost_usd` per
   agent over 30 days; `agent = 'target'` is the Co-Pilot's own spend.
+- **Approvals** (`/approvals`, ARCHITECTURE.md Section 10) lists the newest
+  `reports` row per exploit whose `status` is `draft`; severity comes from the
+  exploit. Critical and high are gate G4 (need an operator); medium and low are
+  G5 and show when the 24-hour review window ends. The report workflow is
+  `draft → published | rejected` and `published → false_positive`
+  (`src/lib/approvals.ts`); only those buttons are offered and both
+  repositories refuse anything else. Approve sets `status = 'published'`,
+  `approved_by`, and `published_at`; reject sets `status = 'rejected'` and
+  records the reviewer in `approved_by` (there is no separate rejecter column).
+  The title is `body->>'title'` when the VulnReport body has one. Nothing
+  auto-publishes G5 drafts yet; the dashboard only shows when they would.
+- **Resilience trend** (`/resilience`) is KEY_METRICS M4 per target version
+  (ordered by `first_seen`). An attempt is novel when it is the first with its
+  fingerprint. Each novel attempt counts under its latest verdict's
+  `rubric_version`, and is confirmed when that verdict is a `success` that is not
+  `needs_review`, so a human verdict settles a flagged one. Unjudged attempts are
+  left out. Every rubric is its own series; lines join only adjacent versions
+  under the same rubric, and a version with no data also breaks the line.
+- **Agent activity** (`/activity`) is the newest 100 `agent_events`, refreshed
+  every 15 seconds. `agent_events` has no trace URL column, so the Langfuse link
+  comes from `payload.trace_url` (http or https only); the one-line summary is
+  the first of `payload.summary`, `message`, `note`, or `detail`.
+- **Judge health** (`/judge`, Section 8.4, gate G7) lists verdicts with
+  `needs_review` that have no later `stage = 'human'` verdict on the same
+  attempt. Confirm or overturn inserts a `stage = 'human'` verdict (confidence 1,
+  same rubric and evidence) and a `ground_truth` row with the attempt's
+  transcript, in one transaction; the Judge's verdict is never edited, so its
+  `needs_review` flag stays as the Judge wrote it. Health shows the backlog and
+  its age, the share of reviews that overturned the Judge per category, and the
+  ground-truth count. Calibration (M1, M2) is not shown: no table stores
+  calibration runs.
+- **Run now** (Tonight's queue, gate G10): "Run queue now" and each row's "Run
+  this now" open a confirmation showing the request count, the estimated cost
+  (the sum of the items' `estimated_cost_usd`, or the family-size estimate
+  where that is null), and the `NIGHTLY_BUDGET_USD` envelope, with a warning
+  when the estimate exceeds it. Confirming calls `runNow(scope)`, which inserts
+  one `nightly_runs` row: `trigger = 'run_now'`, `status = 'scheduled'`,
+  `scheduled_for = now`, and `plan = { scope, requested_by, requested_at }`, where
+  `scope` is `{ "kind": "queue" }` or `{ "kind": "single", "operatorRequestId" }`
+  (`src/lib/run-now.ts`). The dashboard never runs attacks or changes
+  `operator_requests`; the executor drains them and moves the row to `running`
+  and `completed` with a NightlyRunSummary. A new run-now is refused while
+  another is scheduled or running (an advisory lock serializes confirms), and a
+  single-request run must name a queued request. The page follows the run
+  (`?runNow=<id>`, polled every 3 seconds while active) and links to its morning
+  report when it completes. In fixtures mode the store simulates the executor:
+  the run stays scheduled for 5 seconds, is running (its requests leave the
+  queue) until 25 seconds, then completes with a report.
+- Human decisions are recorded under `OPERATOR_USERNAME` (default `operator`),
+  set on the server, never taken from the browser.
 
 ## Conventions
 

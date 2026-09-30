@@ -1,19 +1,33 @@
 import type { RerunRequest } from '@agentforge/contracts'
 
+import type { AgentEvent } from './activity.js'
+import type { ApprovalDecision, ApprovalItem } from './approvals.js'
+import type { ResilienceTrend } from './resilience.js'
+import type { RunNowScope } from './run-now.js'
+import type { JudgeHealth, ReviewInput, ReviewItem, ReviewResolution } from './judge.js'
 import type { CostSummary, CoverageMatrix, MorningReport, RunSummary, TonightQueue } from './models.js'
 import type { MoveDirection } from './queue.js'
 import {
+  decideApprovalFn,
   enqueueRerunFn,
   getCostFn,
   getCoverageFn,
   getDataSourceModeFn,
+  getJudgeHealthFn,
   getMorningReportFn,
   getQueueFn,
+  getResilienceTrendFn,
+  getRunFn,
   getTicketFn,
+  listAgentEventsFn,
+  listApprovalsFn,
+  listNeedsReviewFn,
   listRunsFn,
   listTicketsFn,
   moveQueueItemFn,
   removeQueueItemFn,
+  resolveReviewFn,
+  runNowFn,
   updateTicketFn,
 } from './server-fns.js'
 import type { TicketRow, TicketUpdate } from './tickets.js'
@@ -74,4 +88,40 @@ export function removeQueueItem(id: string): Promise<TonightQueue> {
 
 export function moveQueueItem(id: string, direction: MoveDirection): Promise<TonightQueue> {
   return moveQueueItemFn({ data: { id, direction } })
+}
+
+export function fetchApprovals(): Promise<ApprovalItem[]> {
+  return listApprovalsFn()
+}
+
+export function decideApproval(reportId: string, decision: ApprovalDecision): Promise<ApprovalItem> {
+  return decideApprovalFn({ data: { reportId, decision } })
+}
+
+export function fetchResilienceTrend(): Promise<ResilienceTrend> {
+  return getResilienceTrendFn()
+}
+
+export function fetchAgentEvents(): Promise<AgentEvent[]> {
+  return listAgentEventsFn()
+}
+
+export function fetchNeedsReview(): Promise<ReviewItem[]> {
+  return listNeedsReviewFn()
+}
+
+export function fetchJudgeHealth(): Promise<JudgeHealth> {
+  return getJudgeHealthFn()
+}
+
+export function resolveReview(verdictId: string, review: ReviewInput): Promise<ReviewResolution> {
+  return resolveReviewFn({ data: { verdictId, ...review } })
+}
+
+export function fetchRun(runId: string): Promise<RunSummary | null> {
+  return getRunFn({ data: runId })
+}
+
+export function runNow(scope: RunNowScope): Promise<RunSummary> {
+  return runNowFn({ data: scope })
 }

@@ -4,13 +4,31 @@ import { describe, expect, it } from 'vitest'
 import { listTaxonomyCells } from '@agentforge/contracts'
 
 import { createFixtureRepository } from '../fixture-repository.js'
-import { contractNow, contractQueue, contractTickets, describeRepositoryContract } from './repository-contract.js'
+import {
+  contractEvents,
+  contractNow,
+  contractQueue,
+  contractReports,
+  contractReviews,
+  contractTickets,
+  describeRepositoryContract,
+} from './repository-contract.js'
 
 const config = { envelopeUsd: 25, timeZone: 'America/Chicago', runHour: 1 }
 
 describeRepositoryContract('fixture', {
-  setup: async () =>
-    createFixtureRepository({ config, now: () => contractNow, seed: { tickets: contractTickets, queueItems: contractQueue } }),
+  setup: async (overrides = {}) =>
+    createFixtureRepository({
+      config: { ...config, ...overrides },
+      now: () => contractNow,
+      seed: {
+        tickets: contractTickets,
+        queueItems: contractQueue,
+        reports: contractReports,
+        events: contractEvents,
+        reviews: contractReviews,
+      },
+    }),
 })
 
 describe('fixture repository defaults', () => {
@@ -63,5 +81,36 @@ describe('fixture repository defaults', () => {
     expect(prdCategories).toHaveLength(6)
     expect(prdCategories).not.toContain('misinformation')
     expect(cells.some((cell) => cell.category === 'misinformation')).toBe(true)
+  })
+
+  it('serves an M4 demo trend with a rubric change', async () => {
+    const repo = createFixtureRepository({ config, now: () => contractNow })
+    const trend = await repo.getResilienceTrend()
+    expect(trend.versions.length).toBeGreaterThan(2)
+    expect(new Set(trend.points.map((point) => point.rubricVersion)).size).toBe(2)
+  })
+
+  it('simulates the executor: scheduled, then running (queue drained), then completed with a report', async () => {
+    const clock = { now: contractNow }
+    const repo = createFixtureRepository({
+      config,
+      now: () => clock.now,
+      runNowTimings: { startAfterMs: 1_000, finishAfterMs: 10_000 },
+    })
+    const queued = (await repo.getQueue()).items
+    const [first] = queued
+    const run = await repo.runNow({ kind: 'single', operatorRequestId: first?.id ?? '' }, 'operator')
+    expect(run.status).toBe('scheduled')
+    expect((await repo.getQueue()).items).toHaveLength(queued.length)
+
+    clock.now = new Date(contractNow.getTime() + 2_000)
+    expect((await repo.getRun(run.id))?.status).toBe('running')
+    expect((await repo.getQueue()).items.map((item) => item.id)).not.toContain(first?.id)
+    expect(await repo.getMorningReport(run.id)).toBeNull()
+
+    clock.now = new Date(contractNow.getTime() + 11_000)
+    expect(await repo.getRun(run.id)).toMatchObject({ status: 'completed', hasMorningReport: true })
+    expect((await repo.getMorningReport(run.id))?.queue).toEqual({ ran: 1, cut: 0 })
+    await expect(repo.runNow({ kind: 'queue' }, 'operator')).resolves.toMatchObject({ status: 'scheduled' })
   })
 })

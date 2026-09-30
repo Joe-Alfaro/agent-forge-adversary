@@ -13,18 +13,36 @@ import type { DashboardRepository } from './server/repository.js'
 /** 2026-09-29 15:00 CDT: tonight's run date is 2026-09-30. */
 export const TEST_NOW = new Date('2026-09-29T20:00:00Z')
 
+const clock = { now: TEST_NOW }
+const flags = { runNowEnabled: true }
+
+/** Simulated run-nows start after 1 s and complete after 10 s of test-clock time. */
 function freshRepository(): DashboardRepository {
   return createFixtureRepository({
-    config: { envelopeUsd: 25, timeZone: 'America/Chicago', runHour: 1 },
-    now: () => TEST_NOW,
+    config: { envelopeUsd: 25, timeZone: 'America/Chicago', runHour: 1, runNowEnabled: flags.runNowEnabled },
+    now: () => clock.now,
+    runNowTimings: { startAfterMs: 1_000, finishAfterMs: 10_000 },
   })
 }
 
 const state = { repository: freshRepository() }
 
-/** Restores the fixtures between tests. */
+/** Restores the fixtures and the clock between tests. */
 export function resetTestData(): void {
+  clock.now = TEST_NOW
+  flags.runNowEnabled = true
   state.repository = freshRepository()
+}
+
+/** Recreates the store as a deployment with RUN_NOW_ENABLED set to `enabled`. */
+export function setRunNowEnabled(enabled: boolean): void {
+  flags.runNowEnabled = enabled
+  state.repository = freshRepository()
+}
+
+/** Moves the fixture clock forward, e.g. to let a simulated run-now finish. */
+export function advanceTestClock(ms: number): void {
+  clock.now = new Date(clock.now.getTime() + ms)
 }
 
 export const fetchDataSourceMode: typeof DataSource.fetchDataSourceMode = async (): Promise<DataSourceMode> => 'fixtures'
@@ -41,3 +59,14 @@ export const enqueueRerun: typeof DataSource.enqueueRerun = (request) => state.r
 export const removeQueueItem: typeof DataSource.removeQueueItem = (id) => state.repository.removeQueueItem(id)
 export const moveQueueItem: typeof DataSource.moveQueueItem = (id, direction) =>
   state.repository.moveQueueItem(id, direction)
+export const fetchApprovals: typeof DataSource.fetchApprovals = () => state.repository.listApprovals()
+export const decideApproval: typeof DataSource.decideApproval = (reportId, decision) =>
+  state.repository.decideApproval(reportId, decision, 'operator')
+export const fetchResilienceTrend: typeof DataSource.fetchResilienceTrend = () => state.repository.getResilienceTrend()
+export const fetchAgentEvents: typeof DataSource.fetchAgentEvents = () => state.repository.listAgentEvents(100)
+export const fetchNeedsReview: typeof DataSource.fetchNeedsReview = () => state.repository.listNeedsReview()
+export const fetchJudgeHealth: typeof DataSource.fetchJudgeHealth = () => state.repository.getJudgeHealth()
+export const resolveReview: typeof DataSource.resolveReview = (verdictId, review) =>
+  state.repository.resolveReview(verdictId, review, 'operator')
+export const fetchRun: typeof DataSource.fetchRun = (runId) => state.repository.getRun(runId)
+export const runNow: typeof DataSource.runNow = (scope) => state.repository.runNow(scope, 'operator')

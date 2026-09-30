@@ -1,9 +1,13 @@
 import type pg from 'pg'
 
+import type { AgentEvent } from '../../lib/activity.js'
+import type { ReportRecord } from '../../lib/approvals.js'
+import type { ReviewItem } from '../../lib/judge.js'
 import type { QueueItem } from '../../lib/models.js'
 import type { TicketRow } from '../../lib/tickets.js'
 
 const TABLES = [
+  'ground_truth',
   'regression_results',
   'regression_runs',
   'coverage_snapshots',
@@ -78,6 +82,79 @@ export async function seedQueue(pool: pg.Pool, items: QueueItem[], requestedFor:
         item.source,
         item.requestedAt,
         index + 1,
+      ],
+    )
+  }, Promise.resolve())
+}
+
+export async function seedReports(pool: pg.Pool, reports: ReportRecord[]): Promise<void> {
+  await Promise.all(
+    reports.map((report) =>
+      pool.query(
+        `INSERT INTO reports (id, exploit_id, version, body, status, approved_by, published_at, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          report.id,
+          report.exploitId,
+          report.version,
+          { schema_version: '1', title: report.title },
+          report.status,
+          report.approvedBy ?? null,
+          report.publishedAt ?? null,
+          report.createdAt,
+        ],
+      ),
+    ),
+  )
+}
+
+/** Writes events with the given ids; trace URL and summary go in the payload, as agents write them. */
+export async function seedEvents(pool: pg.Pool, events: AgentEvent[]): Promise<void> {
+  await Promise.all(
+    events.map((event) => {
+      const payload = { ...(event.traceUrl ? { trace_url: event.traceUrl } : {}), ...(event.summary ? { summary: event.summary } : {}) }
+      return pool.query(
+        `INSERT INTO agent_events (id, trace_id, agent, event_type, payload, source, cost_usd, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [event.id, event.traceId, event.agent, event.eventType, payload, event.source ?? null, event.costUsd, event.createdAt],
+      )
+    }),
+  )
+}
+
+/** One attempt and one flagged Judge verdict per review item; the excerpt becomes a one-turn transcript. */
+export async function seedReviews(pool: pg.Pool, reviews: ReviewItem[], versionIds: Map<string, number>): Promise<void> {
+  await reviews.reduce(async (previous, review) => {
+    await previous
+    const transcript = review.excerpt
+      ? { turns: [{ attacker_message: review.excerpt.attackerMessage, target_response: review.excerpt.targetResponse }] }
+      : { turns: [] }
+    await pool.query(
+      `INSERT INTO attempts (id, fingerprint, category, subcategory, transcript, target_version_id, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        review.attemptId,
+        `fp-${review.attemptId}`,
+        review.category,
+        review.subcategory ?? null,
+        transcript,
+        review.targetVersion ? (versionIds.get(review.targetVersion) ?? null) : null,
+        review.flaggedAt,
+      ],
+    )
+    await pool.query(
+      `INSERT INTO verdicts (id, attempt_id, outcome, confidence, stage, rubric_version, judge_model, evidence, needs_review, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9)`,
+      [
+        review.verdictId,
+        review.attemptId,
+        review.outcome,
+        review.confidence,
+        review.stage,
+        review.rubricVersion,
+        review.judgeModel ?? null,
+        JSON.stringify(review.evidence),
+        review.flaggedAt,
       ],
     )
   }, Promise.resolve())

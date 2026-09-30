@@ -1,15 +1,32 @@
 import { listTaxonomyCells, PRD_CATEGORIES, type TaxonomyCell } from '@agentforge/contracts'
 
+import type { AgentEvent } from '../lib/activity.js'
+import { type ApprovalItem, buildApprovalItem, type ReportRecord, sortApprovals } from '../lib/approvals.js'
+import {
+  type ReviewItem,
+  type ReviewRecord,
+  resolvedOutcome,
+  summarizeJudgeHealth,
+} from '../lib/judge.js'
 import { mergeCoverage } from '../lib/coverage.js'
 import * as fixtures from '../lib/fixtures.js'
-import type { QueueItem, TonightQueue } from '../lib/models.js'
+import type { MorningReport, QueueItem, RunStatus, RunSummary, TonightQueue } from '../lib/models.js'
 import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
+import { isRunNowActive, type RunNowScope, scopedItems } from '../lib/run-now.js'
 import { nextRunDate } from '../lib/schedule.js'
 import type { TicketRow } from '../lib/tickets.js'
-import { m5Options, type QueueConfig } from './config.js'
+import { isRunNowEnabled, m5Options, type QueueConfig } from './config.js'
 import { computeM5 } from './m5.js'
 import type { DashboardRepository } from './repository.js'
-import { assertCanRecheck, assertRerunRequest, assertTransition, normalizeAssignee } from './rules.js'
+import {
+  assertCanRecheck,
+  assertReportDecision,
+  assertRerunRequest,
+  assertRunNow,
+  assertRunNowEnabled,
+  assertTransition,
+  normalizeAssignee,
+} from './rules.js'
 
 const DAY_MS = 86_400_000
 
@@ -33,6 +50,31 @@ function shiftOptional<T extends object, K extends keyof T & string>(value: T, k
 export interface FixtureSeed {
   tickets: TicketRow[]
   queueItems: QueueItem[]
+  reports?: ReportRecord[]
+  events?: AgentEvent[]
+  /** Verdicts waiting for a human. */
+  reviews?: ReviewItem[]
+  /** Reviews already settled before the store was created. */
+  reviewHistory?: ReviewRecord[]
+  groundTruthLabels?: number
+}
+
+/** How long a simulated run-now stays scheduled, and when it completes, after it is requested. */
+export interface RunNowTimings {
+  startAfterMs: number
+  finishAfterMs: number
+}
+
+const DEFAULT_RUN_NOW_TIMINGS: RunNowTimings = { startAfterMs: 5_000, finishAfterMs: 25_000 }
+
+/** A run-now the fixture store scheduled, standing in for the executor's nightly_runs row. */
+interface SimulatedRun {
+  id: string
+  scope: RunNowScope
+  requestedBy: string
+  requestedAt: string
+  /** The queued requests the executor would drain, captured when the run was requested. */
+  items: QueueItem[]
 }
 
 export interface FixtureRepositoryOptions {
@@ -41,6 +83,8 @@ export interface FixtureRepositoryOptions {
   seed?: FixtureSeed
   /** Every cell the Coverage panel must show, tested or not (defaults to AttackTaxonomy v1). */
   taxonomy?: readonly TaxonomyCell[]
+  /** Demo pacing for the simulated executor (fixtures mode only). */
+  runNowTimings?: RunNowTimings
 }
 
 /**
@@ -51,14 +95,49 @@ export interface FixtureRepositoryOptions {
 export function createFixtureRepository({
   config,
   now = () => new Date(),
-  seed = { tickets: fixtures.tickets, queueItems: fixtures.queueItems },
+  seed = { tickets: fixtures.tickets, queueItems: fixtures.queueItems, reports: fixtures.reports,
+    events: fixtures.agentEvents,
+    reviews: fixtures.reviewItems,
+    reviewHistory: fixtures.reviewHistory,
+    groundTruthLabels: fixtures.groundTruthLabels,
+  },
   taxonomy = listTaxonomyCells(),
+  runNowTimings = DEFAULT_RUN_NOW_TIMINGS,
 }: FixtureRepositoryOptions): DashboardRepository {
   // Seeded queue items move once, at creation; items enqueued later already use now().
   const createdOffset = dayOffsetMs(now())
   const store = {
     tickets: structuredClone(seed.tickets),
     queueItems: seed.queueItems.map((item) => ({ ...item, requestedAt: shift(item.requestedAt, createdOffset) })),
+    events: seed.events ?? [],
+    reviews: (seed.reviews ?? []).map((review) => ({ ...review, flaggedAt: shift(review.flaggedAt, createdOffset) })),
+    reviewHistory: seed.reviewHistory ?? [],
+    groundTruthLabels: seed.groundTruthLabels ?? 0,
+    resolved: new Set<string>(),
+    runNowRuns: [] as SimulatedRun[],
+    reports: (seed.reports ?? []).map((report) =>
+      shiftOptional({ ...report, createdAt: shift(report.createdAt, createdOffset) }, 'publishedAt', createdOffset),
+    ),
+  }
+
+  function approvalItem(report: ReportRecord): ApprovalItem {
+    const ticket = findTicket(report.exploitId)
+    const fields = {
+      reportId: report.id,
+      exploitId: report.exploitId,
+      version: report.version,
+      severity: ticket.severity,
+      category: ticket.category,
+      title: report.title,
+      status: report.status,
+      draftedAt: report.createdAt,
+    }
+    const withApprover = report.approvedBy ? { ...fields, approvedBy: report.approvedBy } : fields
+    return buildApprovalItem(report.publishedAt ? { ...withApprover, publishedAt: report.publishedAt } : withApprover)
+  }
+
+  function isLatestVersion(report: ReportRecord): boolean {
+    return store.reports.every((other) => other.exploitId !== report.exploitId || other.version <= report.version)
   }
 
   function findTicket(id: string): TicketRow {
@@ -69,11 +148,100 @@ export function createFixtureRepository({
     return ticket
   }
 
+  /*
+   * Simulated executor: a run-now is scheduled for startAfterMs, then running
+   * (its requests leave the queue, as the executor drains them), then completed
+   * with a summary and morning report at finishAfterMs.
+   */
+  function simulatedStatus(run: SimulatedRun): RunStatus {
+    const elapsed = now().getTime() - Date.parse(run.requestedAt)
+    if (elapsed < runNowTimings.startAfterMs) {
+      return 'scheduled'
+    }
+    return elapsed < runNowTimings.finishAfterMs ? 'running' : 'completed'
+  }
+
+  function simulatedSummary(run: SimulatedRun): RunSummary {
+    const status = simulatedStatus(run)
+    const base: RunSummary = {
+      id: run.id,
+      trigger: 'run_now',
+      status,
+      startedAt: run.requestedAt,
+      targetVersion: fixtures.TARGET_VERSION,
+      attempts: 0,
+      verdicts: { success: 0, partial: 0, fail: 0 },
+      newTickets: 0,
+      regressions: 0,
+      spendUsd: 0,
+      hasMorningReport: false,
+    }
+    if (status !== 'completed') {
+      return base
+    }
+    const drained = run.items.length
+    const attempts = drained * 40
+    return {
+      ...base,
+      finishedAt: new Date(Date.parse(run.requestedAt) + runNowTimings.finishAfterMs).toISOString(),
+      attempts,
+      verdicts: { success: drained, partial: drained * 2, fail: attempts - drained * 3 },
+      spendUsd: Math.round(run.items.reduce((sum, item) => sum + item.estimatedCostUsd, 0) * 100) / 100,
+      hasMorningReport: true,
+    }
+  }
+
+  function simulatedReport(run: SimulatedRun): MorningReport | null {
+    const summary = simulatedSummary(run)
+    if (!summary.hasMorningReport || !summary.finishedAt) {
+      return null
+    }
+    const drained = run.items.length
+    return {
+      runId: run.id,
+      targetVersion: summary.targetVersion,
+      generatedAt: summary.finishedAt,
+      headline: `Run now: ${drained} operator request${drained === 1 ? '' : 's'} drained; no new findings (simulated).`,
+      attempts: summary.attempts,
+      verdicts: summary.verdicts,
+      spendUsd: summary.spendUsd,
+      newTickets: [],
+      regressions: [],
+      verifiedFixes: [],
+      queue: { ran: drained, cut: 0 },
+      notes: [`Requested by ${run.requestedBy}. Demo data: the fixture store simulates the executor.`],
+    }
+  }
+
+  /** Queued requests no started run-now has drained yet. */
+  function pendingItems(): QueueItem[] {
+    const drained = new Set(
+      store.runNowRuns
+        .filter((run) => simulatedStatus(run) !== 'scheduled')
+        .flatMap((run) => run.items.map((item) => item.id)),
+    )
+    return store.queueItems.filter((item) => !drained.has(item.id))
+  }
+
+  function staticRuns(): RunSummary[] {
+    const offset = dayOffsetMs(now())
+    return fixtures.runs.map((run) =>
+      shiftOptional({ ...structuredClone(run), startedAt: shift(run.startedAt, offset) }, 'finishedAt', offset),
+    )
+  }
+
+  function allRuns(): RunSummary[] {
+    return [...store.runNowRuns.map(simulatedSummary), ...staticRuns()].sort(
+      (a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt),
+    )
+  }
+
   function queue(): TonightQueue {
     return structuredClone({
       runDate: nextRunDate(now(), config),
       envelopeUsd: config.envelopeUsd,
-      items: store.queueItems,
+      items: pendingItems(),
+      runNowEnabled: isRunNowEnabled(config),
     })
   }
 
@@ -98,13 +266,34 @@ export function createFixtureRepository({
     },
 
     async listRuns() {
-      const offset = dayOffsetMs(now())
-      return fixtures.runs.map((run) =>
-        shiftOptional({ ...structuredClone(run), startedAt: shift(run.startedAt, offset) }, 'finishedAt', offset),
-      )
+      return allRuns()
+    },
+
+    async getRun(runId) {
+      return allRuns().find((run) => run.id === runId) ?? null
+    },
+
+    async runNow(scope, requestedBy) {
+      assertRunNowEnabled(isRunNowEnabled(config))
+      const active = allRuns().some((run) => run.trigger === 'run_now' && isRunNowActive(run.status))
+      const pending = pendingItems()
+      assertRunNow(pending, scope, active)
+      const run: SimulatedRun = {
+        id: `run-now-${store.runNowRuns.length + 1}`,
+        scope,
+        requestedBy,
+        requestedAt: now().toISOString(),
+        items: structuredClone(scopedItems(pending, scope)),
+      }
+      store.runNowRuns = [...store.runNowRuns, run]
+      return simulatedSummary(run)
     },
 
     async getMorningReport(runId) {
+      const simulated = store.runNowRuns.find((run) => run.id === runId)
+      if (simulated) {
+        return simulatedReport(simulated)
+      }
       const report = fixtures.morningReports.find((row) => row.runId === runId)
       if (!report) {
         return null
@@ -133,7 +322,7 @@ export function createFixtureRepository({
     async enqueueRerun(input) {
       const { request, exploitId } = assertRerunRequest(input)
       const ticket = findTicket(exploitId)
-      const alreadyQueued = store.queueItems.some((item) => item.kind === 'rerun' && item.exploitId === exploitId)
+      const alreadyQueued = pendingItems().some((item) => item.kind === 'rerun' && item.exploitId === exploitId)
       assertCanRecheck(exploitId, ticket.status, alreadyQueued)
       const base: QueueItem = {
         id: request.message_id,
@@ -157,6 +346,61 @@ export function createFixtureRepository({
     async moveQueueItem(id, direction) {
       store.queueItems = moveItem(store.queueItems, id, direction)
       return queue()
+    },
+
+    async listAgentEvents(limit) {
+      // Shifted at read time, like run history, so a long-running demo server stays current.
+      const offset = dayOffsetMs(now())
+      return [...store.events]
+        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+        .slice(0, limit)
+        .map((event) => ({ ...event, createdAt: shift(event.createdAt, offset) }))
+    },
+
+    async listNeedsReview() {
+      return structuredClone(store.reviews).sort((a, b) => Date.parse(a.flaggedAt) - Date.parse(b.flaggedAt))
+    },
+
+    async resolveReview(verdictId, input, reviewer) {
+      const review = store.reviews.find((item) => item.verdictId === verdictId)
+      if (!review) {
+        throw new Error(
+          store.resolved.has(verdictId) ? `Verdict ${verdictId} is already resolved` : `Unknown verdict ${verdictId}`,
+        )
+      }
+      const outcome = resolvedOutcome(review.outcome, input)
+      store.reviews = store.reviews.filter((item) => item.verdictId !== verdictId)
+      store.resolved.add(verdictId)
+      store.reviewHistory = [...store.reviewHistory, { category: review.category, judged: review.outcome, human: outcome }]
+      store.groundTruthLabels += 1
+      return { verdictId, decision: input.decision, outcome, reviewer, resolvedAt: now().toISOString() }
+    },
+
+    async getJudgeHealth() {
+      return summarizeJudgeHealth(store.reviews, store.reviewHistory, store.groundTruthLabels)
+    },
+
+    async getResilienceTrend() {
+      return structuredClone(fixtures.resilience)
+    },
+
+    async listApprovals() {
+      const drafts = store.reports.filter((report) => report.status === 'draft' && isLatestVersion(report))
+      return sortApprovals(drafts.map(approvalItem))
+    },
+
+    async decideApproval(reportId, decision, reviewer) {
+      const report = store.reports.find((row) => row.id === reportId)
+      if (!report) {
+        throw new Error(`Unknown report ${reportId}`)
+      }
+      const status = assertReportDecision(report.status, decision)
+      const decided: ReportRecord =
+        status === 'published'
+          ? { ...report, status, approvedBy: reviewer, publishedAt: now().toISOString() }
+          : { ...report, status, approvedBy: reviewer }
+      store.reports = store.reports.map((row) => (row.id === reportId ? decided : row))
+      return approvalItem(decided)
     },
   }
 }

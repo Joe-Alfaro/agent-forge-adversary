@@ -2,16 +2,36 @@ import type pg from 'pg'
 
 import { listTaxonomyCells, PRD_CATEGORIES, type TaxonomyCell } from '@agentforge/contracts'
 
+import { isReportStatus, sortApprovals } from '../lib/approvals.js'
+import { isVerdictOutcome, resolvedOutcome } from '../lib/judge.js'
+import { buildRunNowPlan } from '../lib/run-now.js'
 import { cellKey, mergeCoverage } from '../lib/coverage.js'
 import type { CostSummary, CoverageCell, RunSpend } from '../lib/models.js'
 import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
 import { nextRunDate } from '../lib/schedule.js'
 import { isExploitStatus } from '../lib/tickets.js'
-import { m5Options, type QueueConfig } from './config.js'
+import { isRunNowEnabled, m5Options, type QueueConfig } from './config.js'
 import { computeM5 } from './m5.js'
-import { mapCoverageRow, mapMorningReport, mapQueueItem, mapRunSummary, mapTicket } from './pg-mappers.js'
+import {
+  mapAgentEvent,
+  mapApprovalRow,
+  mapCoverageRow,
+  mapMorningReport,
+  mapQueueItem,
+  mapReviewItem,
+  mapRunSummary,
+  mapTicket,
+} from './pg-mappers.js'
 import type { DashboardRepository } from './repository.js'
-import { assertCanRecheck, assertRerunRequest, assertTransition, normalizeAssignee } from './rules.js'
+import {
+  assertCanRecheck,
+  assertReportDecision,
+  assertRunNow,
+  assertRunNowEnabled,
+  assertRerunRequest,
+  assertTransition,
+  normalizeAssignee,
+} from './rules.js'
 
 export interface PgRepositoryOptions {
   pool: pg.Pool
@@ -157,6 +177,78 @@ function queueSql(lock: boolean): string {
     ${lock ? 'FOR UPDATE OF r' : ''}`
 }
 
+/** A human verdict on the same attempt, at or after the flagged one, settles it. */
+const UNRESOLVED = `
+  v.needs_review AND v.stage <> 'human'
+  AND NOT EXISTS (
+    SELECT 1 FROM verdicts h
+    WHERE h.attempt_id = v.attempt_id AND h.stage = 'human' AND h.created_at >= v.created_at
+  )`
+
+const REVIEW_COLUMNS = `
+  SELECT v.id, v.attempt_id, v.outcome, v.confidence, v.stage, v.rubric_version, v.judge_model, v.evidence,
+         v.created_at, a.category, a.subcategory, a.transcript, tv.version AS target_version
+  FROM verdicts v
+  JOIN attempts a ON a.id = v.attempt_id
+  LEFT JOIN target_versions tv ON tv.id = a.target_version_id`
+
+/**
+ * Settled reviews per category: each human verdict against the flagged Judge
+ * verdict it answered (the latest flagged one on that attempt before it).
+ */
+const REVIEWED_SQL = `
+  SELECT a.category, count(*) AS reviewed, count(*) FILTER (WHERE f.outcome <> h.outcome) AS overturned
+  FROM verdicts h
+  JOIN attempts a ON a.id = h.attempt_id
+  JOIN LATERAL (
+    SELECT f.outcome FROM verdicts f
+    WHERE f.attempt_id = h.attempt_id AND f.needs_review AND f.stage <> 'human' AND f.created_at <= h.created_at
+    ORDER BY f.created_at DESC
+    LIMIT 1
+  ) f ON true
+  WHERE h.stage = 'human'
+  GROUP BY a.category
+  ORDER BY a.category`
+
+/**
+ * M4 inputs. An attempt is novel when it is the first with its fingerprint (the
+ * Red Team's novelty check). Each is counted under its latest verdict's rubric;
+ * it is confirmed when that verdict is a success no longer awaiting review, so a
+ * human verdict (Section 8.4) settles a needs_review success either way.
+ * Unjudged attempts are left out.
+ */
+const RESILIENCE_SQL = `
+  WITH novel AS (
+    SELECT DISTINCT ON (fingerprint) id, target_version_id
+    FROM attempts
+    ORDER BY fingerprint, created_at, id
+  ), latest AS (
+    SELECT DISTINCT ON (attempt_id) attempt_id, outcome, rubric_version, needs_review, created_at
+    FROM verdicts
+    ORDER BY attempt_id, created_at DESC, id
+  )
+  SELECT tv.version, latest.rubric_version,
+         count(*) AS novel_attempts,
+         count(*) FILTER (WHERE latest.outcome = 'success' AND NOT latest.needs_review) AS confirmed
+  FROM novel
+  JOIN target_versions tv ON tv.id = novel.target_version_id
+  JOIN latest ON latest.attempt_id = novel.id
+  GROUP BY tv.id, tv.version, tv.first_seen, latest.rubric_version
+  -- Within a version, the older rubric first, so series keep the order rubrics were introduced.
+  ORDER BY tv.first_seen, tv.id, min(latest.created_at), latest.rubric_version`
+
+/** Report rows with the fields the approvals queue shows. */
+const REPORTS_SQL = `
+  SELECT r.id, r.exploit_id, r.version, r.status, r.approved_by, r.published_at, r.created_at,
+         r.body->>'title' AS title, e.severity, e.category
+  FROM reports r
+  JOIN exploits e ON e.id = r.exploit_id`
+
+/** A superseded draft is not offered: only the newest version per exploit waits for approval. */
+const PENDING_APPROVALS_SQL = `${REPORTS_SQL}
+  WHERE r.status = 'draft'
+    AND NOT EXISTS (SELECT 1 FROM reports newer WHERE newer.exploit_id = r.exploit_id AND newer.version > r.version)`
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const COST_RUN_WINDOW = 14
 const COST_DAYS = 30
@@ -185,7 +277,21 @@ export function createPgRepository({
   async function readQueue(db: Queryable) {
     const runDate = nextRunDate(now(), config)
     const result = await db.query(queueSql(false), [runDate])
-    return { runDate, envelopeUsd: config.envelopeUsd, items: result.rows.map(mapQueueItem) }
+    return {
+      runDate,
+      envelopeUsd: config.envelopeUsd,
+      items: result.rows.map(mapQueueItem),
+      runNowEnabled: isRunNowEnabled(config),
+    }
+  }
+
+  async function getRun(runId: string) {
+    if (!/^\d+$/.test(runId)) {
+      return null
+    }
+    const result = await pool.query(`${RUNS_SQL} WHERE r.id = $2`, [now(), Number(runId)])
+    const [row] = result.rows
+    return row ? mapRunSummary(row) : null
   }
 
   async function getTicket(id: string) {
@@ -229,6 +335,33 @@ export function createPgRepository({
         [now()],
       )
       return result.rows.map(mapRunSummary)
+    },
+
+    getRun,
+
+    async runNow(scope, requestedBy) {
+      assertRunNowEnabled(isRunNowEnabled(config))
+      const runId = await transaction(async (client) => {
+        // Serializes concurrent confirms, so two clicks cannot schedule two runs.
+        await client.query(`SELECT pg_advisory_xact_lock(hashtext('agentforge:run_now'))`)
+        const active = await client.query(
+          `SELECT 1 FROM nightly_runs WHERE trigger = 'run_now' AND status IN ('scheduled', 'running') LIMIT 1`,
+        )
+        const queue = await readQueue(client)
+        assertRunNow(queue.items, scope, (active.rowCount ?? 0) > 0)
+        const requestedAt = now()
+        const inserted = await client.query(
+          `INSERT INTO nightly_runs (scheduled_for, trigger, status, plan)
+           VALUES ($1, 'run_now', 'scheduled', $2) RETURNING id`,
+          [requestedAt, buildRunNowPlan(scope, requestedBy, requestedAt)],
+        )
+        return String(inserted.rows[0]?.id)
+      })
+      const run = await getRun(runId)
+      if (!run) {
+        throw new Error(`Run ${runId} was not written`)
+      }
+      return run
     },
 
     async getMorningReport(runId) {
@@ -375,6 +508,124 @@ export function createPgRepository({
         )
       })
       return readQueue(pool)
+    },
+
+    async listAgentEvents(limit) {
+      const result = await pool.query(
+        `SELECT id, trace_id, agent, event_type, payload, source, cost_usd, created_at
+         FROM agent_events
+         ORDER BY created_at DESC, id DESC
+         LIMIT $1`,
+        [limit],
+      )
+      return result.rows.map(mapAgentEvent)
+    },
+
+    async listNeedsReview() {
+      const result = await pool.query(`${REVIEW_COLUMNS} WHERE ${UNRESOLVED} ORDER BY v.created_at, v.id`)
+      return result.rows.map(mapReviewItem)
+    },
+
+    async resolveReview(verdictId, input, reviewer) {
+      if (!UUID.test(verdictId)) {
+        throw new Error(`Unknown verdict ${verdictId}`)
+      }
+      const resolvedAt = now()
+      const outcome = await transaction(async (client) => {
+        // Locking the flagged verdict serializes two reviewers resolving it at once.
+        const flagged = await client.query(
+          `SELECT v.outcome, v.rubric_version, v.evidence, v.created_at, v.attempt_id, a.category, a.transcript
+           FROM verdicts v JOIN attempts a ON a.id = v.attempt_id
+           WHERE v.id = $1 AND v.needs_review AND v.stage <> 'human'
+           FOR UPDATE OF v`,
+          [verdictId],
+        )
+        const row = flagged.rows[0]
+        if (!row) {
+          throw new Error(`Unknown verdict ${verdictId}`)
+        }
+        const pending = await client.query(`SELECT 1 FROM verdicts v WHERE v.id = $1 AND ${UNRESOLVED}`, [verdictId])
+        if (!pending.rowCount) {
+          throw new Error(`Verdict ${verdictId} is already resolved`)
+        }
+        const judged: unknown = row.outcome
+        if (!isVerdictOutcome(judged)) {
+          throw new Error(`Verdict ${verdictId} has an unknown outcome "${String(judged)}"`)
+        }
+        const decided = resolvedOutcome(judged, input)
+        await client.query(
+          `INSERT INTO verdicts (attempt_id, outcome, confidence, stage, rubric_version, judge_model, evidence, needs_review, created_at)
+           VALUES ($1, $2, 1, 'human', $3, NULL, $4, false, $5)`,
+          [row.attempt_id, decided, row.rubric_version, JSON.stringify(row.evidence ?? []), resolvedAt],
+        )
+        await client.query(
+          `INSERT INTO ground_truth (transcript, label, category, labeled_by, labeled_at) VALUES ($1, $2, $3, $4, $5)`,
+          [row.transcript, decided, row.category, reviewer, resolvedAt],
+        )
+        return decided
+      })
+      return { verdictId, decision: input.decision, outcome, reviewer, resolvedAt: resolvedAt.toISOString() }
+    },
+
+    async getJudgeHealth() {
+      const backlog = await pool.query(`SELECT count(*) AS backlog, min(v.created_at) AS oldest FROM verdicts v WHERE ${UNRESOLVED}`)
+      const reviewed = await pool.query(REVIEWED_SQL)
+      const truth = await pool.query('SELECT count(*) AS labels FROM ground_truth')
+      const byCategory = reviewed.rows.map((row) => ({
+        category: String(row.category),
+        reviewed: Number(row.reviewed),
+        overturned: Number(row.overturned),
+      }))
+      const oldest: unknown = backlog.rows[0]?.oldest
+      const health = {
+        backlog: Number(backlog.rows[0]?.backlog ?? 0),
+        reviewed: byCategory.reduce((sum, entry) => sum + entry.reviewed, 0),
+        overturned: byCategory.reduce((sum, entry) => sum + entry.overturned, 0),
+        byCategory,
+        groundTruthLabels: Number(truth.rows[0]?.labels ?? 0),
+      }
+      return oldest instanceof Date ? { ...health, oldestPendingAt: oldest.toISOString() } : health
+    },
+
+    async getResilienceTrend() {
+      const versions = await pool.query('SELECT version FROM target_versions ORDER BY first_seen, id')
+      const points = await pool.query(RESILIENCE_SQL)
+      return {
+        versions: versions.rows.map((row) => String(row.version)),
+        points: points.rows.map((row) => ({
+          targetVersion: String(row.version),
+          rubricVersion: String(row.rubric_version),
+          novelAttempts: Number(row.novel_attempts),
+          confirmed: Number(row.confirmed),
+        })),
+      }
+    },
+
+    async listApprovals() {
+      const result = await pool.query(PENDING_APPROVALS_SQL)
+      return sortApprovals(result.rows.map(mapApprovalRow))
+    },
+
+    async decideApproval(reportId, decision, reviewer) {
+      if (!UUID.test(reportId)) {
+        throw new Error(`Unknown report ${reportId}`)
+      }
+      await transaction(async (client) => {
+        const current = await client.query('SELECT status FROM reports WHERE id = $1 FOR UPDATE', [reportId])
+        const status: unknown = current.rows[0]?.status
+        if (!isReportStatus(status)) {
+          throw new Error(`Unknown report ${reportId}`)
+        }
+        const next = assertReportDecision(status, decision)
+        await client.query(
+          `UPDATE reports SET status = $2, approved_by = $3,
+                  published_at = CASE WHEN $2 = 'published' THEN $4::timestamptz ELSE published_at END
+           WHERE id = $1`,
+          [reportId, next, reviewer, now()],
+        )
+      })
+      const result = await pool.query(`${REPORTS_SQL} WHERE r.id = $1`, [reportId])
+      return mapApprovalRow(result.rows[0])
     },
   }
 }

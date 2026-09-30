@@ -1,6 +1,11 @@
 import { createServerFn } from '@tanstack/react-start'
 
+import { operatorName } from '../server/config.js'
 import { getRepository, getRuntime } from '../server/runtime.js'
+import { ACTIVITY_LIMIT } from './activity.js'
+import { isApprovalDecision } from './approvals.js'
+import { parseRunNowScope } from './run-now.js'
+import { isReviewDecision, isVerdictOutcome, type ReviewInput } from './judge.js'
 import type { MoveDirection } from './queue.js'
 import { isExploitStatus } from './tickets.js'
 
@@ -47,6 +52,15 @@ export const updateTicketFn = createServerFn({ method: 'POST' })
 
 export const listRunsFn = createServerFn({ method: 'GET' }).handler(() => getRepository().listRuns())
 
+export const getRunFn = createServerFn({ method: 'GET' })
+  .validator((runId: unknown) => requireString(runId, 'Run id'))
+  .handler(({ data }) => getRepository().getRun(data))
+
+/** Gate G10, after the operator confirmed the estimate: schedules the run, never executes it. */
+export const runNowFn = createServerFn({ method: 'POST' })
+  .validator((scope: unknown) => parseRunNowScope(scope))
+  .handler(({ data }) => getRepository().runNow(data, operatorName(process.env)))
+
 export const getMorningReportFn = createServerFn({ method: 'GET' })
   .validator((runId: unknown) => requireString(runId, 'Run id'))
   .handler(({ data }) => getRepository().getMorningReport(data))
@@ -74,3 +88,44 @@ export const moveQueueItemFn = createServerFn({ method: 'POST' })
     return { id: requireString(input.id, 'Request id'), direction }
   })
   .handler(({ data }) => getRepository().moveQueueItem(data.id, data.direction))
+
+export const listAgentEventsFn = createServerFn({ method: 'GET' }).handler(() =>
+  getRepository().listAgentEvents(ACTIVITY_LIMIT),
+)
+
+export const getResilienceTrendFn = createServerFn({ method: 'GET' }).handler(() =>
+  getRepository().getResilienceTrend(),
+)
+
+export const listApprovalsFn = createServerFn({ method: 'GET' }).handler(() => getRepository().listApprovals())
+
+export const decideApprovalFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => {
+    if (!isRecord(input) || !isApprovalDecision(input.decision)) {
+      throw new Error('Expected { reportId, decision: "approve" | "reject" }')
+    }
+    return { reportId: requireString(input.reportId, 'Report id'), decision: input.decision }
+  })
+  // The reviewer is set on the server, never taken from the browser.
+  .handler(({ data }) =>
+    getRepository().decideApproval(data.reportId, data.decision, operatorName(process.env)),
+  )
+
+export const listNeedsReviewFn = createServerFn({ method: 'GET' }).handler(() => getRepository().listNeedsReview())
+
+export const getJudgeHealthFn = createServerFn({ method: 'GET' }).handler(() => getRepository().getJudgeHealth())
+
+export const resolveReviewFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => {
+    if (!isRecord(input) || !isReviewDecision(input.decision)) {
+      throw new Error('Expected { verdictId, decision: "confirm" | "overturn", outcome? }')
+    }
+    if (input.outcome !== undefined && !isVerdictOutcome(input.outcome)) {
+      throw new Error('Unknown outcome')
+    }
+    const review: ReviewInput =
+      input.outcome === undefined ? { decision: input.decision } : { decision: input.decision, outcome: input.outcome }
+    return { verdictId: requireString(input.verdictId, 'Verdict id'), review }
+  })
+  // The reviewer is set on the server, never taken from the browser.
+  .handler(({ data }) => getRepository().resolveReview(data.verdictId, data.review, operatorName(process.env)))
