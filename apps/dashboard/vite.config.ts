@@ -18,6 +18,11 @@ export default defineConfig({
       'seroval',
     ],
   },
+  // Load the workspace packages from node_modules at runtime instead of inlining them:
+  // @agentforge/contracts requires its JSON schemas by a path relative to its own dist.
+  ssr: {
+    external: ['@agentforge/contracts', '@agentforge/db'],
+  },
   // Start's plugin must run before the React plugin so route files are transformed first.
   plugins: [tanstackStart(), viteReact()],
 })

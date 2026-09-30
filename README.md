@@ -48,6 +48,14 @@ DATABASE_URL=postgres://agentforge:agentforge@localhost:5432/agentforge \
   npm run migrate up
 ```
 
+To load a live eval results file into the platform tables (one completed
+`run_now` run with its attempts, Judge verdicts, and Judge cost), so the
+dashboard shows real results. Re-running it for the same file does nothing:
+
+```bash
+npm run db:import-eval -- evals/results/<file>.json
+```
+
 ## Execution model
 
 The platform runs one scheduled nightly run (default 01:00 CT) inside a budget

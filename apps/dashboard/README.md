@@ -30,6 +30,37 @@ npm run typecheck -w apps/dashboard
 | `NIGHTLY_BUDGET_USD` | Tonight's budget envelope for the queue view (default 25). |
 | `COVERAGE_TARGET_ATTEMPTS` | Attempts a high-risk cell needs to count toward M5 (`target_attempts`, ARCHITECTURE.md 7.2; default 20). |
 | `NIGHTLY_CRON`, `NIGHTLY_TIMEZONE` | Used to work out tonight's run date for `requested_for` (defaults `0 1 * * *`, `America/Chicago`). |
+| `OPERATOR_USERNAME`, `OPERATOR_PASSWORD` | The single shared operator login (username defaults to `operator`). With `NODE_ENV=production` the server refuses to start without a password; in development with no password the login gate is off. |
+| `SESSION_SECRET` | HMAC key for the session cookie (optional; derived from the password when unset). Changing it, or the password, signs everyone out. |
+
+## Operator login
+
+`src/server.ts` is a custom Start server entry that wraps every request in
+`src/server/auth.ts`: a signed, `HttpOnly`, `SameSite=Lax` session cookie
+(12 hours; `Secure` in production). Signed-out page views redirect to `/login`,
+while signed-out server-function and other non-page requests get a 401.
+`/logout` clears the cookie, and `/healthz` is open for the platform health
+check. Static assets under `/assets` are served before the gate and contain
+no data.
+
+## Production and deploy
+
+```bash
+npm run build -w apps/dashboard                 # dist/client + dist/server/server.js
+NODE_ENV=production PORT=3000 OPERATOR_PASSWORD=... DATABASE_URL=... \
+  npm start -w apps/dashboard                   # srvx serving the Start fetch handler
+```
+
+The platform runs on Railway, in project `agentforge-platform` with services
+`dashboard` and `Postgres` (Postgres 16). `apps/dashboard/Dockerfile` builds
+from the repo root with `npm ci`. The service runs `npm run migrate up` as its
+pre-deploy command, so migrations apply before each release, and it
+health-checks `/healthz`. `railway.json` records those settings. The Railway
+CLI did not pick that file up for the service, so the same values were
+applied with `railway environment edit`. Change them in both places. To deploy
+from a checkout linked to the project, run `railway up -s dashboard --ci`.
+`DATABASE_URL` is the reference `${{Postgres.DATABASE_URL}}` on the private
+network, and the operator password is set only as a Railway variable.
 
 ## Data access
 
