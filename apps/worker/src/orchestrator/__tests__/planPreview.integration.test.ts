@@ -273,4 +273,19 @@ describe.skipIf(!url)('plan:preview against Postgres (dry run)', () => {
     expect(plan.notes?.some((n) => n.includes('copilot@test1 -> copilot@test2'))).toBe(true)
     expect(await scheduledCronRows(pool)).toHaveLength(1)
   })
+
+  it('refreshes the row the dashboard reads (latest scheduled cron row by scheduled_for DESC, id DESC)', async () => {
+    // A stray later-dated scheduled cron row must not shadow the refreshed plan.
+    await pool.query(
+      `INSERT INTO nightly_runs (scheduled_for, trigger, status, plan) VALUES ('2026-10-05T06:00:00Z', 'cron', 'scheduled', '{}')`,
+    )
+    const result = await previewNightlyPlan({ pool, seeds, config, now })
+    const read = await pool.query(
+      `SELECT id, plan FROM nightly_runs WHERE trigger = 'cron' AND status = 'scheduled'
+       ORDER BY scheduled_for DESC, id DESC LIMIT 1`,
+    )
+    expect(Number(read.rows[0]?.id)).toBe(result.nightlyRunId)
+    expect((read.rows[0]?.plan as NightlyPlan).message_id).toBe(result.plan.message_id)
+    expect(result.created).toBe(false)
+  })
 })
