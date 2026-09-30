@@ -29,6 +29,14 @@ npm test                  # runs the Vitest suite across workspaces
 npm run typecheck         # composite tsc -b build
 ```
 
+The Postgres integration suites are skipped unless their variable is set.
+Never point either variable at a database you care about:
+
+| Variable | Suite | What it does to the database |
+|----------|-------|------------------------------|
+| `DASHBOARD_TEST_DATABASE_URL` | dashboard repository contract | Truncates every platform table in `public`. Give it its own disposable, migrated database. |
+| `DB_TEST_DATABASE_URL` | `packages/db` importers | Migrates a throwaway `af_test_*` schema per suite and drops it afterwards. It never touches `public`, so it may share a database with the dashboard suite. |
+
 Use `npm ci` (install from the lockfile). npm 10.9 has an arborist bug that
 crashes with `Cannot read properties of null (reading 'edgesOut')` when it
 regenerates this dependency tree from scratch. Installing from the committed
@@ -54,6 +62,24 @@ dashboard shows real results. Re-running it for the same file does nothing:
 
 ```bash
 npm run db:import-eval -- evals/results/<file>.json
+```
+
+A campaign or nightly run artifact (`RunArtifact` v1 in
+`packages/db/src/run-import.ts`: CampaignPlan, AttackTranscript, Verdict, and
+NightlyRunSummary v1 objects plus exploits, agent events, and coverage) loads
+the same way, validated and in one transaction, once per `run_key`. A re-found
+exploit merges its family and keeps the operator's status and assignee:
+
+```bash
+npm run db:import-run -- <run-artifact>.json
+```
+
+The platform Postgres on Railway is private (no public TCP proxy), so a local
+`railway run` cannot reach it. Run the importer inside Railway's network
+instead. `-` reads the artifact from stdin:
+
+```bash
+railway ssh -s dashboard -- "cd /app && npm run -s db:import-run -- -" < <run-artifact>.json
 ```
 
 ## Execution model
