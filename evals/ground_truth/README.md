@@ -48,7 +48,7 @@ category, with set sizes), the clean-control false-positive rate (M1), false
 positives and negatives, `needs_review` count, stage-2 calls, and cost per stage-2
 verdict (priced from the usage each response reports, at $2/$10 per MTok for
 Sonnet 5.5 and $1/$5 for Haiku 4.5). It also lists every case the models judged
-differently. A full live run of this set costs about $0.08–0.09.
+differently. A full live run of this set costs about $0.10 (measured $0.095 on 2026-09-30).
 
 Adding a label: append a case with a rationale, run `npm test` (the
 calibration tests check shape, seed ids, and that detector routing matches the
