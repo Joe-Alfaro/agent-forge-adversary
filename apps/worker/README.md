@@ -265,3 +265,29 @@ row in place. Knobs: `NIGHTLY_BUDGET_USD` (envelope, default 25),
 `PLAN_MAX_ATTEMPTS`, `PLAN_COST_PER_ATTEMPT_USD`, `PLAN_TARGET_VERSION`. The
 importable core is `previewNightlyPlan` (`buildPreviewPlan` builds without
 persisting).
+
+## Documentation Agent (`src/docs/`)
+
+Turns confirmed exploits (`exploits` rows) into `VulnReport v1` drafts
+(`contracts/vuln_report/v1.json`, validated with `validateVulnReport` plus the
+taxonomy-cell check) and writes them to `reports` (Architecture 4.4, 14.3).
+The model writes only the prose (title, summary, observed/expected behavior,
+clinical impact, remediation) on `claude-sonnet-5-5`, or `claude-opus-5-5` for
+critical findings. Identity, taxonomy, OWASP ids (the exploit row's, else the
+seed mapping for its cell), reproduction steps, references, and history are
+derived from the record. A draft that fails validation retries once with the
+errors fed back; a second failure files a `ReportGenerationFailed` agent event
+with the raw material and the pass continues.
+
+Dedupe is by exploit (whose fingerprint is unique): an exploit with a report is
+never drafted again. A newer confirmed hit on the same fingerprint is a
+**re-discovery**: a new `reports.version` with the same report id, one more
+`history` entry, and the previous version's approval state. There is no model
+call, and report bodies are never rewritten in place.
+
+`npm run build && DATABASE_URL=postgres://… npm run docs:generate -w apps/worker`
+runs one pass and is safe to re-run. Knobs: `DOCS_MODE` (`llm` default, or
+`offline` for template narratives with no spend), `ANTHROPIC_API_KEY_DOCS`
+(required for `llm`), `DOCS_MAX_REPORTS` (new drafts per pass, default 10). The
+Postgres test (`src/docs/__tests__/pgRepository.integration.test.ts`) runs when
+`DOCS_TEST_DATABASE_URL` is set.
