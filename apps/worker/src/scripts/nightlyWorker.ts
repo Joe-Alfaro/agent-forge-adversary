@@ -7,7 +7,8 @@
  * Nothing is scheduled unless NIGHTLY_ENABLED=true — otherwise it removes any
  * existing schedule and exits — so starting this worker cannot spend by
  * accident. When enabled, NIGHTLY_SPEND_CAP_USD (hard cap) is required and spend
- * is also bounded by the plan envelope (NIGHTLY_BUDGET_USD).
+ * is also bounded by the envelope: platform_settings.nightly_budget_usd (set in
+ * the dashboard), else NIGHTLY_BUDGET_USD, else $25.
  *
  * Usage (after `npm run build`):
  *   NIGHTLY_ENABLED=true NIGHTLY_SPEND_CAP_USD=5 NIGHTLY_BUDGET_USD=5 \
@@ -70,7 +71,8 @@ async function main(): Promise<void> {
           now: new Date(),
           scheduledFor,
         }),
-      execute: (claimId) => runScheduledNightly({ ...deps, repo, spendCapUsd, targetBaseUrl: deps.copilotBase, claimId }),
+      execute: (claimId) =>
+        runScheduledNightly({ ...deps, repo, spendCapUsd, fallbackBudgetUsd: previewConfig.budgetUsd, targetBaseUrl: deps.copilotBase, claimId }),
       log: (message) => console.log(`[nightly] ${message}`),
     })
     if (result !== null) printRunResult(result, spendCapUsd)
@@ -78,7 +80,11 @@ async function main(): Promise<void> {
   }
 
   await registerNightlyCron(boss, cron, handler)
-  console.log(`Nightly scheduled: "${cron.cron}" ${cron.timeZone}; envelope $${previewConfig.budgetUsd}, hard cap $${spendCapUsd}.`)
+  const operatorBudget = await repo.getNightlyBudgetUsd()
+  console.log(
+    `Nightly scheduled: "${cron.cron}" ${cron.timeZone}; envelope $${operatorBudget ?? previewConfig.budgetUsd} ` +
+      `(${operatorBudget === null ? 'NIGHTLY_BUDGET_USD / default' : 'platform_settings'}, re-read each night), hard cap $${spendCapUsd}.`,
+  )
 
   const shutdown = async () => {
     await boss.stop().catch(() => {})

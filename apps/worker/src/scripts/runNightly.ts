@@ -3,7 +3,9 @@
  * plan:preview wrote (the one the dashboard's Tonight's queue shows) and
  * executes its NightlyPlan in order against the DEPLOYED Co-Pilot — operator
  * reruns, regressions, coverage campaigns — writing to DATABASE_URL. Spend is
- * capped at the lower of the plan's envelope and RUN_SPEND_CAP_USD (required).
+ * capped at the lowest of the plan's envelope, the current envelope
+ * (platform_settings, else NIGHTLY_BUDGET_USD, else $25), and RUN_SPEND_CAP_USD
+ * (required).
  * Also writes an importable RunArtifact.
  *
  * THIS SPENDS. Usage (after `npm run build`):
@@ -12,7 +14,7 @@
  */
 import pg from 'pg'
 
-import { PgOrchestratorRepository, runScheduledNightly } from '../orchestrator/index.js'
+import { PgOrchestratorRepository, readPlanPreviewConfig, runScheduledNightly } from '../orchestrator/index.js'
 import { liveDeps, requirePositiveUsd } from './liveDeps.js'
 import { loadAgentforgeEnv } from './loadEnv.js'
 import { printRunResult } from './runReport.js'
@@ -32,6 +34,7 @@ async function main(): Promise<void> {
       ...deps,
       repo: new PgOrchestratorRepository(pool),
       spendCapUsd,
+      fallbackBudgetUsd: readPlanPreviewConfig(process.env).budgetUsd,
       targetBaseUrl: deps.copilotBase,
       ...(claimId === undefined ? {} : { claimId }),
     })

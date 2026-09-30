@@ -278,4 +278,16 @@ describe.skipIf(!url)('plan:preview against Postgres (dry run)', () => {
     expect(result.scheduledFor).toBe('2026-09-30T06:00:00.000Z')
     expect(result.plan.notes?.[0]).toContain('2026-09-30T06:00:00.000Z')
   })
+
+  it('takes the envelope from platform_settings when an operator set it, else the configured fallback', async () => {
+    await pool.query(`INSERT INTO platform_settings (id, nightly_budget_usd, updated_by) VALUES (1, 2, 'priya')`)
+    const fromSettings = await previewNightlyPlan({ pool, seeds, config: { ...config, budgetUsd: 25 }, now })
+    expect(fromSettings.plan.budget_usd).toBe(2)
+    expect(fromSettings.plan.estimated_cost_usd).toBeLessThanOrEqual(2)
+    expect(fromSettings.plan.notes?.some((n) => n.includes('platform_settings'))).toBe(true)
+
+    await pool.query('DELETE FROM platform_settings')
+    const fallback = await previewNightlyPlan({ pool, seeds, config: { ...config, budgetUsd: 7 }, now })
+    expect(fallback.plan.budget_usd).toBe(7)
+  })
 })

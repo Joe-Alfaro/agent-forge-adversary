@@ -22,6 +22,7 @@ import { judgeAttempt, type JudgeModel } from '../judge/index.js'
 import type { PlatformTracer, TraceScope } from '../observability/index.js'
 import { fingerprintTurns, runCampaign, type CampaignAdapter, type CampaignSeed, type AttemptDetail } from '../redteam/index.js'
 import { buildNightlyPlan, REGRESSION_REPLAYS, type QueuedRequest } from './planner.js'
+import { DEFAULT_NIGHTLY_BUDGET_USD } from './planPreview.js'
 import type { AgentEventRow, CoverageSnapshotRow, OrchestratorRepository, RegressionFamily } from './repository.js'
 
 /**
@@ -734,6 +735,8 @@ export async function runScheduledRunNow(params: RunScheduledParams): Promise<Ru
 export interface RunNightlyParams extends Omit<RunPlanParams, 'plan' | 'scheduledFor'> {
   /** Claim a specific scheduled cron row; otherwise the one the dashboard reads. */
   claimId?: number
+  /** Envelope when platform_settings has no operator value (NIGHTLY_BUDGET_USD); default $25. */
+  fallbackBudgetUsd?: number
 }
 
 /**
@@ -742,7 +745,9 @@ export interface RunNightlyParams extends Omit<RunPlanParams, 'plan' | 'schedule
  * stored NightlyPlan v1, and executes the `run` items IN PLAN ORDER — operator
  * reruns (replayed from the exploit's min_repro), regressions (the Regression
  * Harness), then coverage campaigns — against the claimed row. Spend is capped
- * at the lower of the plan's envelope and the hard cap. Returns null when there
+ * at the lowest of the plan's envelope, the operator's CURRENT envelope
+ * (platform_settings, re-read now so a budget lowered after planning is
+ * honoured; else the fallback), and the hard cap. Returns null when there
  * is nothing to claim; marks the row `failed` (and rethrows) on any error.
  */
 export async function runScheduledNightly(params: RunNightlyParams): Promise<RunPlanResult | null> {
@@ -758,8 +763,9 @@ export async function runScheduledNightly(params: RunNightlyParams): Promise<Run
     const stored = check.value
     const targetVersionId = await params.repo.ensureTargetVersion(params.targetBaseUrl, stored.target_version)
     const { plan, seedsById } = await resolveRerunSeeds(stored, params.repo, params.seedsById)
+    const envelopeUsd = (await params.repo.getNightlyBudgetUsd()) ?? params.fallbackBudgetUsd ?? DEFAULT_NIGHTLY_BUDGET_USD
     return await executePlan(
-      { ...params, plan, seedsById, spendCapUsd: Math.min(params.spendCapUsd, stored.budget_usd) },
+      { ...params, plan, seedsById, spendCapUsd: Math.min(params.spendCapUsd, stored.budget_usd, envelopeUsd) },
       claimed.nightlyRunId,
       targetVersionId,
     )

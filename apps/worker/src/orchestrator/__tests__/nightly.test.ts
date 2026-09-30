@@ -162,6 +162,21 @@ describe('runScheduledNightly', () => {
     expect(repo.finished?.status).toBe('aborted')
   })
 
+  it('spends at most the operator budget in platform_settings when it was lowered after planning', async () => {
+    const repo = nightlyRepo(cronPlan({ budget_usd: 3 }))
+    repo.nightlyBudgetUsd = 0.004
+    const result = await runScheduledNightly(nightlyParams(repo, { spendCapUsd: 50 }) as never)
+    expect(result?.status).toBe('aborted')
+    expect(result?.spendUsd).toBeLessThanOrEqual(0.004)
+  })
+
+  it('without a platform_settings row, falls back to the configured default budget', async () => {
+    const repo = nightlyRepo(cronPlan({ budget_usd: 3 }))
+    const result = await runScheduledNightly(nightlyParams(repo, { spendCapUsd: 50, fallbackBudgetUsd: 0.004 }) as never)
+    expect(result?.status).toBe('aborted')
+    expect(result?.spendUsd).toBeLessThanOrEqual(0.004)
+  })
+
   it('marks the claimed row failed when the stored plan is not a valid NightlyPlan', async () => {
     const repo = new FakeRepo()
     repo.cronId = 12

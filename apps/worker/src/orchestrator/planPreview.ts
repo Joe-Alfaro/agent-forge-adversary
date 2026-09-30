@@ -23,6 +23,7 @@ import { DEFAULT_NIGHTLY_HOUR, DEFAULT_NIGHTLY_TIME_ZONE, nextNightlyWindow, typ
  */
 
 export interface PlanPreviewConfig {
+  /** The envelope when platform_settings has no operator value (NIGHTLY_BUDGET_USD, else $25). */
   budgetUsd: number
   weights: PriorityTerms
   costPerAttemptUsd: number
@@ -113,6 +114,15 @@ export async function buildPreviewPlan(params: Omit<PlanPreviewParams, 'pool'> &
   const runDate = scheduledFor.toISOString().slice(0, 10)
   const notes: string[] = []
 
+  // The operator's in-app budget wins; the configured value is the fallback.
+  const operatorBudget = await repo.getNightlyBudgetUsd()
+  const budgetUsd = operatorBudget ?? config.budgetUsd
+  notes.push(
+    operatorBudget === null
+      ? `Envelope $${budgetUsd} from configuration (no platform_settings budget set).`
+      : `Envelope $${budgetUsd} from platform_settings (operator-set).`,
+  )
+
   const target = await repo.findTargetVersion(config.targetVersion)
   const targetVersion = config.targetVersion ?? target?.version ?? 'unknown'
   if (target === null) {
@@ -137,7 +147,7 @@ export async function buildPreviewPlan(params: Omit<PlanPreviewParams, 'pool'> &
   const plan = buildNightlyPlan({
     trigger: 'cron',
     targetVersion,
-    budgetUsd: config.budgetUsd,
+    budgetUsd,
     weights: config.weights,
     operatorRequests,
     regressions,

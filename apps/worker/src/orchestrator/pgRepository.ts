@@ -275,6 +275,15 @@ export class PgOrchestratorRepository implements OrchestratorRepository {
     await this.pool.query('UPDATE regression_runs SET status = $2, finished_at = now() WHERE id = $1', [id, status])
   }
 
+  async getNightlyBudgetUsd(): Promise<number | null> {
+    // A database that predates the platform_settings migration reads as "no row".
+    const present = await this.pool.query(`SELECT to_regclass('platform_settings') IS NOT NULL AS present`)
+    if (present.rows[0]?.present !== true) return null
+    const result = await this.pool.query('SELECT nightly_budget_usd FROM platform_settings WHERE id = 1')
+    const row = result.rows[0]
+    return row ? Number(row.nightly_budget_usd) : null
+  }
+
   // ---- Read side, used by the Run-now entrypoint to build a plan ----
 
   /**
