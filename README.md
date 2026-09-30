@@ -56,6 +56,24 @@ dashboard shows real results. Re-running it for the same file does nothing:
 npm run db:import-eval -- evals/results/<file>.json
 ```
 
+A campaign or nightly run artifact (`RunArtifact` v1 in
+`packages/db/src/run-import.ts`: CampaignPlan, AttackTranscript, Verdict, and
+NightlyRunSummary v1 objects plus exploits, agent events, and coverage) loads
+the same way, validated and in one transaction, once per `run_key`. A re-found
+exploit merges its family and keeps the operator's status and assignee:
+
+```bash
+npm run db:import-run -- <run-artifact>.json
+```
+
+The platform Postgres on Railway is private (no public TCP proxy), so a local
+`railway run` cannot reach it. Run the importer inside Railway's network
+instead. `-` reads the artifact from stdin:
+
+```bash
+railway ssh -s dashboard -- "cd /app && npm run -s db:import-run -- -" < <run-artifact>.json
+```
+
 ## Execution model
 
 The platform runs one scheduled nightly run (default 01:00 CT) inside a budget

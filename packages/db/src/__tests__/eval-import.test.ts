@@ -5,7 +5,8 @@ import { validateNightlyRunSummary } from '@agentforge/contracts'
 import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { importEvalResults, planEvalImport, type EvalResultsFile, type SeedCase } from '../eval-import.js'
+import { planEvalImport, type EvalResultsFile, type SeedCase } from '../eval-import.js'
+import { importPlan } from '../import-writer.js'
 
 const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 const RESULTS_FILE = 'evals/results/2026-09-29-copilot-c1f011e.json'
@@ -45,9 +46,10 @@ describe('planEvalImport', () => {
       category: 'data_exfiltration',
       subcategory: 'phi_leakage',
       owaspIds: ['LLM02', 'A01'],
-      verdict: { outcome: 'fail', confidence: 0.9, stage: 'llm_primary', needsReview: false },
+      verdicts: [{ outcome: 'fail', confidence: 0.9, stage: 'llm_primary', needsReview: false }],
     })
-    const judgeSpend = plan.attempts.reduce((sum, attempt) => sum + attempt.judgeCostUsd, 0)
+    expect(plan.events.every((event) => event.agent === 'judge')).toBe(true)
+    const judgeSpend = plan.events.reduce((sum, event) => sum + event.costUsd, 0)
     expect(judgeSpend).toBeCloseTo(results.spend_estimate_usd.judge, 6)
   })
 
@@ -56,7 +58,8 @@ describe('planEvalImport', () => {
   })
 })
 
-// Needs a disposable, migrated database; it truncates the platform tables.
+// Needs a disposable, migrated database; it truncates the platform tables. Run with
+// --no-file-parallelism so the two importer suites do not truncate under each other.
 const testDbUrl = process.env.DB_TEST_DATABASE_URL
 
 describe.skipIf(!testDbUrl)('importEvalResults (Postgres)', () => {
@@ -72,8 +75,8 @@ describe.skipIf(!testDbUrl)('importEvalResults (Postgres)', () => {
 
   it('imports once and is a no-op the second time', async () => {
     const plan = planEvalImport(results, seeds, RESULTS_FILE)
-    const first = await importEvalResults(pool, plan)
-    const second = await importEvalResults(pool, plan)
+    const first = await importPlan(pool, plan)
+    const second = await importPlan(pool, plan)
     expect(first.status).toBe('imported')
     expect(second).toEqual({ status: 'already_imported', runId: first.runId })
 
