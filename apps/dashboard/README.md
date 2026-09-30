@@ -10,8 +10,9 @@ resilience trend, cost, Judge health, approvals, and the Orchestrator chat.
 - **Tue (v1, read-only):** findings list, run history, coverage table, cost panel.
 - **Wed (v2):** ticket status workflow, assignee, "Re-check tonight", tonight's
   queue with reorder and remove, morning report.
-- **Thu (v3):** approvals queue, resilience trend, agent activity feed,
-  `needs_review` resolution, and the Orchestrator chat with confirm-before-enqueue.
+- **Thu (v3):** approvals queue, resilience trend, agent activity feed, and
+  `needs_review` resolution with Judge health (done); the Orchestrator chat with
+  confirm-before-enqueue is still to come.
 
 ## Running
 
@@ -118,6 +119,39 @@ How the read models are derived:
   a stored estimate show a family-size estimate (reruns) or $0 (campaigns).
 - **Cost** is `nightly_runs.spend_usd` per run and `agent_events.cost_usd` per
   agent over 30 days; `agent = 'target'` is the Co-Pilot's own spend.
+- **Approvals** (`/approvals`, ARCHITECTURE.md Section 10) lists the newest
+  `reports` row per exploit whose `status` is `draft`; severity comes from the
+  exploit. Critical and high are gate G4 (need an operator); medium and low are
+  G5 and show when the 24-hour review window ends. The report workflow is
+  `draft → published | rejected` and `published → false_positive`
+  (`src/lib/approvals.ts`); only those buttons are offered and both
+  repositories refuse anything else. Approve sets `status = 'published'`,
+  `approved_by`, and `published_at`; reject sets `status = 'rejected'` and
+  records the reviewer in `approved_by` (there is no separate rejecter column).
+  The title is `body->>'title'` when the VulnReport body has one. Nothing
+  auto-publishes G5 drafts yet; the dashboard only shows when they would.
+- **Resilience trend** (`/resilience`) is KEY_METRICS M4 per target version
+  (ordered by `first_seen`). An attempt is novel when it is the first with its
+  fingerprint. Each novel attempt counts under its latest verdict's
+  `rubric_version`, and is confirmed when that verdict is a `success` that is not
+  `needs_review`, so a human verdict settles a flagged one. Unjudged attempts are
+  left out. Every rubric is its own series; lines join only adjacent versions
+  under the same rubric, and a version with no data also breaks the line.
+- **Agent activity** (`/activity`) is the newest 100 `agent_events`, refreshed
+  every 15 seconds. `agent_events` has no trace URL column, so the Langfuse link
+  comes from `payload.trace_url` (http or https only); the one-line summary is
+  the first of `payload.summary`, `message`, `note`, or `detail`.
+- **Judge health** (`/judge`, Section 8.4, gate G7) lists verdicts with
+  `needs_review` that have no later `stage = 'human'` verdict on the same
+  attempt. Confirm or overturn inserts a `stage = 'human'` verdict (confidence 1,
+  same rubric and evidence) and a `ground_truth` row with the attempt's
+  transcript, in one transaction; the Judge's verdict is never edited, so its
+  `needs_review` flag stays as the Judge wrote it. Health shows the backlog and
+  its age, the share of reviews that overturned the Judge per category, and the
+  ground-truth count. Calibration (M1, M2) is not shown: no table stores
+  calibration runs.
+- Human decisions are recorded under `OPERATOR_USERNAME` (default `operator`),
+  set on the server, never taken from the browser.
 
 ## Conventions
 
