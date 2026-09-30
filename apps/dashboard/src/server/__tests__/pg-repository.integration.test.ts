@@ -8,7 +8,6 @@ import type { QueueConfig } from '../config.js'
 import type { DashboardRepository } from '../repository.js'
 import { createIsolatedSchema, type IsolatedSchema } from './pg-schema.js'
 import {
-  ensurePlatformSettings,
   resetDatabase,
   seedEvents,
   seedQueue,
@@ -60,7 +59,6 @@ describe.skipIf(!url)('Postgres repository', () => {
     await seedEvents(pool, contractEvents)
     await seedReviews(pool, contractReviews, versions)
     await seedScheduledPlan(pool, contractScheduledPlan)
-    await ensurePlatformSettings(pool)
     return createPgRepository({ pool, config: { ...config, ...overrides }, now: () => contractNow })
   }
 
@@ -131,14 +129,22 @@ describe.skipIf(!url)('Postgres repository', () => {
       expect(row.rows[0]?.updated_by).toBe('priya')
     })
 
-    it('falls back to NIGHTLY_BUDGET_USD and refuses to save until platform_settings is migrated', async () => {
+    it('reads NIGHTLY_BUDGET_USD until an operator has set a budget (the migration seeds no row)', async () => {
       const repo = await seededRepo({ envelopeUsd: 18 })
-      await pool.query('DROP TABLE platform_settings')
+      expect((await repo.getQueue()).envelopeUsd).toBe(18)
+      await repo.updateNightlyBudget(30, 'operator')
+      expect((await repo.getQueue()).envelopeUsd).toBe(30)
+    })
+
+    it('falls back to NIGHTLY_BUDGET_USD and refuses to save on a database without the migration', async () => {
+      const repo = await seededRepo({ envelopeUsd: 18 })
+      // Hides the real table (and its constraints) rather than dropping it.
+      await pool.query('ALTER TABLE platform_settings RENAME TO platform_settings_hidden')
       try {
         expect((await repo.getQueue()).envelopeUsd).toBe(18)
         await expect(repo.updateNightlyBudget(30, 'operator')).rejects.toThrow('platform_settings')
       } finally {
-        await ensurePlatformSettings(pool)
+        await pool.query('ALTER TABLE platform_settings_hidden RENAME TO platform_settings')
       }
     })
   })

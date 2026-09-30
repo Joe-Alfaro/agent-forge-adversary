@@ -137,14 +137,16 @@ How the read models are derived:
   `estimated_cost_usd`; requests without one show a family-size estimate
   (reruns) or $0 (focus, skip, note, which reshape the plan rather than spend).
   Without a scheduled plan the queue shows operator requests only.
-- **Nightly budget** is `platform_settings.nightly_budget_usd` (row `id = 1`),
+- **Nightly budget** is `platform_settings.nightly_budget_usd` (row `id = 1`;
+  table from `packages/db/migrations/1727900000000_platform-settings.cjs`),
   shown and edited on Tonight's queue (gate G3). A new value must be more than
   $0 and at most $1000, rounded to cents; it is written with an upsert that
   stamps `updated_at` and records the operator's login in `updated_by`, and the queue's envelope, run/cut markers, and Run-now
   estimate use it at once. When tonight's plan was made with a different
   `budget_usd`, the page says so; `plan:preview` re-plans against the new
-  budget. Until the `platform_settings` table exists the budget comes from
-  `NIGHTLY_BUDGET_USD` and saving is refused with a message.
+  budget. Until an operator saves one (the migration seeds no row) the budget is
+  `NIGHTLY_BUDGET_USD`; on a database without the migration saving is refused
+  with a message.
 - **Run history and Cost** list only runs that have started: every
   `status = 'scheduled'` row is left out (the cron plan preview belongs to the
   queue page; a scheduled run-now is followed by id until it starts).
