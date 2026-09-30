@@ -152,6 +152,8 @@ export const contractReviews: ReviewItem[] = [
   {
     verdictId: contractReviewIds.injection,
     attemptId: '50000000-0000-4000-8000-000000000001',
+    // A variant in AF-T-0001's family, so its resolution changes that ticket.
+    exploitId: 'AF-T-0001',
     category: 'prompt_injection',
     subcategory: 'direct',
     targetVersion: 'copilot@9.0.0',
@@ -456,6 +458,16 @@ export function describeRepositoryContract(name: string, options: ContractOption
           ],
           groundTruthLabels: 2,
         })
+      })
+
+      it('confirming a success updates the linked ticket: last verdict success at full confidence', async () => {
+        await repo.resolveReview(contractReviewIds.injection, { decision: 'confirm' }, 'operator')
+        expect(await repo.getTicket('AF-T-0001')).toMatchObject({ lastVerdict: 'success', confidence: 1 })
+      })
+
+      it('overturning updates the linked ticket’s last verdict', async () => {
+        await repo.resolveReview(contractReviewIds.injection, { decision: 'overturn', outcome: 'fail' }, 'operator')
+        expect((await repo.getTicket('AF-T-0001'))?.lastVerdict).toBe('fail')
       })
 
       it('refuses an overturn that changes nothing, and leaves the verdict pending', async () => {

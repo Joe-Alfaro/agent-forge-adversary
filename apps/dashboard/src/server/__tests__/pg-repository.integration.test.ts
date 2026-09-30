@@ -189,6 +189,13 @@ describe.skipIf(!url)('Postgres repository', () => {
   })
 
   describe('review storage', () => {
+    it('no longer counts an overturned Judge success toward the ticket’s confidence', async () => {
+      const repo = await seededRepo()
+      expect((await repo.getTicket('AF-T-0001'))?.confidence).toBe(0.55)
+      await repo.resolveReview(contractReviewIds.injection, { decision: 'overturn', outcome: 'partial' }, 'priya')
+      expect(await repo.getTicket('AF-T-0001')).toMatchObject({ lastVerdict: 'partial', confidence: 0 })
+    })
+
     it('adds a human verdict and a ground-truth row, and leaves the Judge verdict as it was', async () => {
       const repo = await seededRepo()
       await repo.resolveReview(contractReviewIds.injection, { decision: 'overturn', outcome: 'fail' }, 'priya')

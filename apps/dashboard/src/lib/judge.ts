@@ -17,6 +17,8 @@ export interface TranscriptExcerpt {
 export interface ReviewItem {
   verdictId: string
   attemptId: string
+  /** The ticket whose family the attempt belongs to, if any; resolving the review updates it. */
+  exploitId?: string
   /** `attempts.category`, shown as written even if it is outside the taxonomy. */
   category: string
   subcategory?: string

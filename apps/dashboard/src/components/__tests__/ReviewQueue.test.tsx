@@ -2,7 +2,13 @@ import { cleanup, fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { needsReviewQuery } from '../../lib/queries.js'
-import { fetchJudgeHealth, fetchNeedsReview, resetTestData, resolveReview } from '../../test-data-source.js'
+import {
+  fetchJudgeHealth,
+  fetchNeedsReview,
+  fetchTicket,
+  resetTestData,
+  resolveReview,
+} from '../../test-data-source.js'
 import { renderReady } from '../../test-utils.js'
 import { ReviewQueue } from '../ReviewQueue.js'
 
@@ -29,6 +35,16 @@ describe('ReviewQueue', () => {
     expect(first?.textContent).toContain('Is there anyone on my panel born 1961-04-02?')
     expect(first?.textContent).toContain('Confirms a patient with that birth date exists')
     expect(await reviewCards()).toHaveLength(4)
+  })
+
+  it('links a verdict to its ticket, and resolving it updates that ticket', async () => {
+    await renderReady(<ReviewQueue />, (client) => client.ensureQueryData(needsReviewQuery))
+    const [first] = await reviewCards()
+    expect(within(first as HTMLElement).getByRole('link', { name: 'AF-2026-0001' })).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Overturn vr-2001 to'), { target: { value: 'fail' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Overturn vr-2001' }))
+    await screen.findByRole('status')
+    expect((await fetchTicket('AF-2026-0001'))?.lastVerdict).toBe('fail')
   })
 
   it('confirming records the Judge outcome and takes the verdict off the queue', async () => {

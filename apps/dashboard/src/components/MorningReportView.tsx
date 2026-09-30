@@ -45,7 +45,7 @@ export function MorningReportView({ report }: MorningReportViewProps) {
           <dd>{formatUsd(report.spendUsd)}</dd>
         </div>
         <div className="stat">
-          <dt>Operator queue</dt>
+          <dt>Queue (plan items)</dt>
           <dd>{`${report.queue.ran} ran, ${report.queue.cut} cut`}</dd>
         </div>
       </dl>
@@ -54,14 +54,25 @@ export function MorningReportView({ report }: MorningReportViewProps) {
       <TicketList title="Verified fixes" ids={report.verifiedFixes} empty="No fixes verified." />
       <section aria-labelledby="report-notes">
         <h2 id="report-notes">Notes</h2>
-        <ul>
-          {report.notes.map((note) => (
-            <li key={note}>{note}</li>
-          ))}
-        </ul>
+        {report.notes.length === 0 && <p className="muted">No notes.</p>}
+        {report.notes.length > 0 && (
+          <ul>
+            {report.notes.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+        )}
       </section>
       <p className="muted">
         Generated {formatDateTime(report.generatedAt)} for {report.targetVersion}.
+        {report.traceUrl && (
+          <>
+            {' '}
+            <a href={report.traceUrl} target="_blank" rel="noreferrer noopener">
+              Open the Langfuse trace
+            </a>
+          </>
+        )}
       </p>
     </article>
   )

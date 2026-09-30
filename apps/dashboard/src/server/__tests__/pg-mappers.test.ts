@@ -123,7 +123,13 @@ describe('mapMorningReport', () => {
       newTickets: ['AF-2026-0009'],
       regressions: ['AF-2026-0004'],
       spendUsd: 41.25,
+      traceUrl: 'https://t/12',
     })
+  })
+
+  it('drops a trace link that is not http(s)', () => {
+    const summary = { ...runRow.summary, trace_url: 'javascript:alert(1)' }
+    expect(mapMorningReport({ ...runRow, summary })).not.toHaveProperty('traceUrl')
   })
 
   it('has no report until the run has a summary', () => {
