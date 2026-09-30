@@ -2,6 +2,7 @@ import type pg from 'pg'
 
 import { listTaxonomyCells } from '@agentforge/contracts'
 
+import { parseNightlyBudgetUsd } from './budget.js'
 import type { CoverageCellInput, Severity } from './priority.js'
 import type { QueuedRequest, RegressionOwed } from './planner.js'
 import type {
@@ -280,8 +281,8 @@ export class PgOrchestratorRepository implements OrchestratorRepository {
     const present = await this.pool.query(`SELECT to_regclass('platform_settings') IS NOT NULL AS present`)
     if (present.rows[0]?.present !== true) return null
     const result = await this.pool.query('SELECT nightly_budget_usd FROM platform_settings WHERE id = 1')
-    const row = result.rows[0]
-    return row ? Number(row.nightly_budget_usd) : null
+    // Validated defensively (>$0, <=$1000, cents); an invalid value reads as "no row".
+    return parseNightlyBudgetUsd(result.rows[0]?.nightly_budget_usd)
   }
 
   // ---- Read side, used by the Run-now entrypoint to build a plan ----

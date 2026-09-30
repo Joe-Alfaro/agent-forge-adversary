@@ -61,7 +61,13 @@ describe.skipIf(!testDbUrl)('platform_settings migration', () => {
 
     // Singleton and sign constraints.
     await expect(pool.query('INSERT INTO platform_settings (id) VALUES (2)')).rejects.toThrow(/platform_settings_singleton/)
-    await expect(pool.query('UPDATE platform_settings SET nightly_budget_usd = -1')).rejects.toThrow(/platform_settings_budget_nonnegative/)
+    // Same range the dashboard validates: more than $0, at most $1000, cents.
+    await expect(pool.query('UPDATE platform_settings SET nightly_budget_usd = 0')).rejects.toThrow(/platform_settings_budget_range/)
+    await expect(pool.query('UPDATE platform_settings SET nightly_budget_usd = -1')).rejects.toThrow(/platform_settings_budget_range/)
+    await expect(pool.query('UPDATE platform_settings SET nightly_budget_usd = 1000.01')).rejects.toThrow(/platform_settings_budget_range/)
+    await pool.query('UPDATE platform_settings SET nightly_budget_usd = 1000')
+    await pool.query('UPDATE platform_settings SET nightly_budget_usd = 2.345')
+    expect((await pool.query('SELECT nightly_budget_usd FROM platform_settings')).rows[0]?.nightly_budget_usd).toBe('2.35')
 
     await migrate('down', 1)
     expect(await exists()).toBe(false)

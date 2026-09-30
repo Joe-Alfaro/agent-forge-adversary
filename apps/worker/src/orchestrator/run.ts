@@ -22,7 +22,7 @@ import { judgeAttempt, type JudgeModel } from '../judge/index.js'
 import type { PlatformTracer, TraceScope } from '../observability/index.js'
 import { fingerprintTurns, runCampaign, type CampaignAdapter, type CampaignSeed, type AttemptDetail } from '../redteam/index.js'
 import { buildNightlyPlan, REGRESSION_REPLAYS, type QueuedRequest } from './planner.js'
-import { DEFAULT_NIGHTLY_BUDGET_USD } from './planPreview.js'
+import { DEFAULT_NIGHTLY_BUDGET_USD } from './budget.js'
 import type { AgentEventRow, CoverageSnapshotRow, OrchestratorRepository, RegressionFamily } from './repository.js'
 
 /**

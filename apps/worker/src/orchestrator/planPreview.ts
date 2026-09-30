@@ -4,6 +4,7 @@ import type pg from 'pg'
 
 import type { NightlyPlan, PriorityTerms } from '@agentforge/contracts'
 
+import { DEFAULT_NIGHTLY_BUDGET_USD } from './budget.js'
 import { buildCellOwaspMap, unmappedCells, type OwaspMappedCase } from './owasp.js'
 import { PgOrchestratorRepository } from './pgRepository.js'
 import { buildNightlyPlan, REGRESSION_REPLAYS } from './planner.js'
@@ -34,7 +35,6 @@ export interface PlanPreviewConfig {
   targetVersion?: string
 }
 
-export const DEFAULT_NIGHTLY_BUDGET_USD = 25
 export const DEFAULT_COST_PER_ATTEMPT_USD = 0.05
 export const DEFAULT_PREVIEW_MAX_ATTEMPTS = 4
 export const DEFAULT_PREVIEW_TOP_K = 6

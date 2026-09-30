@@ -15,7 +15,10 @@ exports.up = (pgm) => {
     updated_by: { type: 'text' },
   })
   pgm.addConstraint('platform_settings', 'platform_settings_singleton', { check: 'id = 1' })
-  pgm.addConstraint('platform_settings', 'platform_settings_budget_nonnegative', { check: 'nightly_budget_usd >= 0' })
+  // The dashboard's validation: more than $0, at most $1000 (numeric(10,2) keeps cents).
+  pgm.addConstraint('platform_settings', 'platform_settings_budget_range', {
+    check: 'nightly_budget_usd > 0 AND nightly_budget_usd <= 1000',
+  })
 }
 
 exports.down = (pgm) => {
