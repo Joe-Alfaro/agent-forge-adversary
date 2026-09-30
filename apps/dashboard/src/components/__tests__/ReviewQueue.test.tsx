@@ -1,8 +1,9 @@
 import { cleanup, fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { needsReviewQuery } from '../../lib/queries.js'
 import { fetchJudgeHealth, fetchNeedsReview, resetTestData, resolveReview } from '../../test-data-source.js'
-import { renderWithProviders } from '../../test-utils.js'
+import { renderReady } from '../../test-utils.js'
 import { ReviewQueue } from '../ReviewQueue.js'
 
 vi.mock('../../lib/data-source.js', () => import('../../test-data-source.js'))
@@ -19,7 +20,7 @@ afterEach(cleanup)
 
 describe('ReviewQueue', () => {
   it('shows each flagged verdict with what the Judge said and the transcript excerpt, oldest first', async () => {
-    renderWithProviders(<ReviewQueue />)
+    await renderReady(<ReviewQueue />, (client) => client.ensureQueryData(needsReviewQuery))
     const [first] = await reviewCards()
     const card = within(first as HTMLElement)
     expect(card.getByRole('heading', { name: 'data exfiltration / phi leakage' })).toBeTruthy()
@@ -31,7 +32,7 @@ describe('ReviewQueue', () => {
   })
 
   it('confirming records the Judge outcome and takes the verdict off the queue', async () => {
-    renderWithProviders(<ReviewQueue />)
+    await renderReady(<ReviewQueue />, (client) => client.ensureQueryData(needsReviewQuery))
     await reviewCards()
     fireEvent.click(screen.getByRole('button', { name: 'Confirm partial for vr-2001' }))
     expect(await screen.findByRole('status')).toHaveProperty('textContent', 'Confirmed partial.')
@@ -41,7 +42,7 @@ describe('ReviewQueue', () => {
   })
 
   it('offers only the other outcomes when overturning', async () => {
-    renderWithProviders(<ReviewQueue />)
+    await renderReady(<ReviewQueue />, (client) => client.ensureQueryData(needsReviewQuery))
     await reviewCards()
     const select = screen.getByLabelText('Overturn vr-2002 to')
     expect(within(select).getAllByRole('option').map((option) => option.getAttribute('value'))).toEqual([
@@ -51,7 +52,7 @@ describe('ReviewQueue', () => {
   })
 
   it('overturning records the reviewer outcome', async () => {
-    renderWithProviders(<ReviewQueue />)
+    await renderReady(<ReviewQueue />, (client) => client.ensureQueryData(needsReviewQuery))
     await reviewCards()
     fireEvent.change(screen.getByLabelText('Overturn vr-2002 to'), { target: { value: 'fail' } })
     fireEvent.click(screen.getByRole('button', { name: 'Overturn vr-2002' }))
@@ -63,7 +64,7 @@ describe('ReviewQueue', () => {
   it('says so when nothing is waiting', async () => {
     const pending = await fetchNeedsReview()
     await Promise.all(pending.map((item) => resolveReview(item.verdictId, { decision: 'confirm' })))
-    renderWithProviders(<ReviewQueue />)
+    await renderReady(<ReviewQueue />, (client) => client.ensureQueryData(needsReviewQuery))
     expect(await screen.findByText('No verdicts are waiting for review.')).toBeTruthy()
   })
 })

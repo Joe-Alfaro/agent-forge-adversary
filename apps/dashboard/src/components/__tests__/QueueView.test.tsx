@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { queueQuery } from '../../lib/queries.js'
 import {
   advanceTestClock,
   fetchQueue,
@@ -10,13 +11,15 @@ import {
   resetTestData,
   setRunNowEnabled,
 } from '../../test-data-source.js'
-import { renderWithProviders } from '../../test-utils.js'
+import { renderReady } from '../../test-utils.js'
 import { QueueView } from '../QueueView.js'
 
 vi.mock('../../lib/data-source.js', () => import('../../test-data-source.js'))
 
 async function renderQueue(onRunScheduled = vi.fn()) {
-  renderWithProviders(<QueueView pollMs={20} onRunScheduled={onRunScheduled} />)
+  await renderReady(<QueueView pollMs={20} onRunScheduled={onRunScheduled} />, (client) =>
+    client.ensureQueryData(queueQuery),
+  )
   await screen.findByRole('table', { name: "Tonight's queue in run order" })
   return onRunScheduled
 }
@@ -108,7 +111,7 @@ describe('QueueView run now', () => {
 
   it('disables Run queue now when nothing is queued', async () => {
     await Promise.all((await fetchQueue()).items.map((entry) => removeQueueItem(entry.id)))
-    renderWithProviders(<QueueView pollMs={20} />)
+    await renderReady(<QueueView pollMs={20} />, (client) => client.ensureQueryData(queueQuery))
     const button = await screen.findByRole('button', { name: 'Run queue now' })
     expect(button).toHaveProperty('disabled', true)
   })
