@@ -1,7 +1,7 @@
 import { createColumnHelper } from '@tanstack/react-table'
 
 import { type ApprovalDecision, type ApprovalItem, allowedDecisions } from '../lib/approvals.js'
-import { formatDateTime, humanize } from '../lib/format.js'
+import { formatDateTime } from '../lib/format.js'
 import { useDecideApproval } from '../lib/mutations.js'
 import { useApprovals } from '../lib/queries.js'
 import { DataTable } from './DataTable.js'
@@ -38,7 +38,6 @@ export function ApprovalsQueue() {
       header: 'Severity',
       cell: (info) => <span className={`badge severity-${info.getValue()}`}>{info.getValue()}</span>,
     }),
-    column.accessor('category', { header: 'Category', cell: (info) => humanize(info.getValue()) }),
     column.accessor('title', {
       header: 'Report',
       cell: ({ row }) => `${row.original.title} (v${row.original.version})`,
@@ -70,7 +69,7 @@ export function ApprovalsQueue() {
   ]
 
   return (
-    <>
+    <div className="approvals">
       {decide.error && (
         <p role="alert" className="form-error">
           {decide.error.message}
@@ -87,6 +86,6 @@ export function ApprovalsQueue() {
         caption="Reports waiting for a publish decision"
         emptyMessage="No reports are waiting for a decision."
       />
-    </>
+    </div>
   )
 }

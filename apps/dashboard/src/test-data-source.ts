@@ -46,3 +46,7 @@ export const decideApproval: typeof DataSource.decideApproval = (reportId, decis
   state.repository.decideApproval(reportId, decision, 'operator')
 export const fetchResilienceTrend: typeof DataSource.fetchResilienceTrend = () => state.repository.getResilienceTrend()
 export const fetchAgentEvents: typeof DataSource.fetchAgentEvents = () => state.repository.listAgentEvents(100)
+export const fetchNeedsReview: typeof DataSource.fetchNeedsReview = () => state.repository.listNeedsReview()
+export const fetchJudgeHealth: typeof DataSource.fetchJudgeHealth = () => state.repository.getJudgeHealth()
+export const resolveReview: typeof DataSource.resolveReview = (verdictId, review) =>
+  state.repository.resolveReview(verdictId, review, 'operator')

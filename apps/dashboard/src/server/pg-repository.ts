@@ -3,6 +3,7 @@ import type pg from 'pg'
 import { listTaxonomyCells, PRD_CATEGORIES, type TaxonomyCell } from '@agentforge/contracts'
 
 import { isReportStatus, sortApprovals } from '../lib/approvals.js'
+import { isVerdictOutcome, resolvedOutcome } from '../lib/judge.js'
 import { cellKey, mergeCoverage } from '../lib/coverage.js'
 import type { CostSummary, CoverageCell, RunSpend } from '../lib/models.js'
 import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
@@ -16,6 +17,7 @@ import {
   mapCoverageRow,
   mapMorningReport,
   mapQueueItem,
+  mapReviewItem,
   mapRunSummary,
   mapTicket,
 } from './pg-mappers.js'
@@ -171,6 +173,39 @@ function queueSql(lock: boolean): string {
     ORDER BY r.position NULLS LAST, r.created_at, r.id
     ${lock ? 'FOR UPDATE OF r' : ''}`
 }
+
+/** A human verdict on the same attempt, at or after the flagged one, settles it. */
+const UNRESOLVED = `
+  v.needs_review AND v.stage <> 'human'
+  AND NOT EXISTS (
+    SELECT 1 FROM verdicts h
+    WHERE h.attempt_id = v.attempt_id AND h.stage = 'human' AND h.created_at >= v.created_at
+  )`
+
+const REVIEW_COLUMNS = `
+  SELECT v.id, v.attempt_id, v.outcome, v.confidence, v.stage, v.rubric_version, v.judge_model, v.evidence,
+         v.created_at, a.category, a.subcategory, a.transcript, tv.version AS target_version
+  FROM verdicts v
+  JOIN attempts a ON a.id = v.attempt_id
+  LEFT JOIN target_versions tv ON tv.id = a.target_version_id`
+
+/**
+ * Settled reviews per category: each human verdict against the flagged Judge
+ * verdict it answered (the latest flagged one on that attempt before it).
+ */
+const REVIEWED_SQL = `
+  SELECT a.category, count(*) AS reviewed, count(*) FILTER (WHERE f.outcome <> h.outcome) AS overturned
+  FROM verdicts h
+  JOIN attempts a ON a.id = h.attempt_id
+  JOIN LATERAL (
+    SELECT f.outcome FROM verdicts f
+    WHERE f.attempt_id = h.attempt_id AND f.needs_review AND f.stage <> 'human' AND f.created_at <= h.created_at
+    ORDER BY f.created_at DESC
+    LIMIT 1
+  ) f ON true
+  WHERE h.stage = 'human'
+  GROUP BY a.category
+  ORDER BY a.category`
 
 /**
  * M4 inputs. An attempt is novel when it is the first with its fingerprint (the
@@ -440,6 +475,72 @@ export function createPgRepository({
         [limit],
       )
       return result.rows.map(mapAgentEvent)
+    },
+
+    async listNeedsReview() {
+      const result = await pool.query(`${REVIEW_COLUMNS} WHERE ${UNRESOLVED} ORDER BY v.created_at, v.id`)
+      return result.rows.map(mapReviewItem)
+    },
+
+    async resolveReview(verdictId, input, reviewer) {
+      if (!UUID.test(verdictId)) {
+        throw new Error(`Unknown verdict ${verdictId}`)
+      }
+      const resolvedAt = now()
+      const outcome = await transaction(async (client) => {
+        // Locking the flagged verdict serializes two reviewers resolving it at once.
+        const flagged = await client.query(
+          `SELECT v.outcome, v.rubric_version, v.evidence, v.created_at, v.attempt_id, a.category, a.transcript
+           FROM verdicts v JOIN attempts a ON a.id = v.attempt_id
+           WHERE v.id = $1 AND v.needs_review AND v.stage <> 'human'
+           FOR UPDATE OF v`,
+          [verdictId],
+        )
+        const row = flagged.rows[0]
+        if (!row) {
+          throw new Error(`Unknown verdict ${verdictId}`)
+        }
+        const pending = await client.query(`SELECT 1 FROM verdicts v WHERE v.id = $1 AND ${UNRESOLVED}`, [verdictId])
+        if (!pending.rowCount) {
+          throw new Error(`Verdict ${verdictId} is already resolved`)
+        }
+        const judged: unknown = row.outcome
+        if (!isVerdictOutcome(judged)) {
+          throw new Error(`Verdict ${verdictId} has an unknown outcome "${String(judged)}"`)
+        }
+        const decided = resolvedOutcome(judged, input)
+        await client.query(
+          `INSERT INTO verdicts (attempt_id, outcome, confidence, stage, rubric_version, judge_model, evidence, needs_review, created_at)
+           VALUES ($1, $2, 1, 'human', $3, NULL, $4, false, $5)`,
+          [row.attempt_id, decided, row.rubric_version, JSON.stringify(row.evidence ?? []), resolvedAt],
+        )
+        await client.query(
+          `INSERT INTO ground_truth (transcript, label, category, labeled_by, labeled_at) VALUES ($1, $2, $3, $4, $5)`,
+          [row.transcript, decided, row.category, reviewer, resolvedAt],
+        )
+        return decided
+      })
+      return { verdictId, decision: input.decision, outcome, reviewer, resolvedAt: resolvedAt.toISOString() }
+    },
+
+    async getJudgeHealth() {
+      const backlog = await pool.query(`SELECT count(*) AS backlog, min(v.created_at) AS oldest FROM verdicts v WHERE ${UNRESOLVED}`)
+      const reviewed = await pool.query(REVIEWED_SQL)
+      const truth = await pool.query('SELECT count(*) AS labels FROM ground_truth')
+      const byCategory = reviewed.rows.map((row) => ({
+        category: String(row.category),
+        reviewed: Number(row.reviewed),
+        overturned: Number(row.overturned),
+      }))
+      const oldest: unknown = backlog.rows[0]?.oldest
+      const health = {
+        backlog: Number(backlog.rows[0]?.backlog ?? 0),
+        reviewed: byCategory.reduce((sum, entry) => sum + entry.reviewed, 0),
+        overturned: byCategory.reduce((sum, entry) => sum + entry.overturned, 0),
+        byCategory,
+        groundTruthLabels: Number(truth.rows[0]?.labels ?? 0),
+      }
+      return oldest instanceof Date ? { ...health, oldestPendingAt: oldest.toISOString() } : health
     },
 
     async getResilienceTrend() {

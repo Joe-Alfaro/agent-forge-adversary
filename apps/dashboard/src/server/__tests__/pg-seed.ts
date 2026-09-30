@@ -2,10 +2,12 @@ import type pg from 'pg'
 
 import type { AgentEvent } from '../../lib/activity.js'
 import type { ReportRecord } from '../../lib/approvals.js'
+import type { ReviewItem } from '../../lib/judge.js'
 import type { QueueItem } from '../../lib/models.js'
 import type { TicketRow } from '../../lib/tickets.js'
 
 const TABLES = [
+  'ground_truth',
   'regression_results',
   'regression_runs',
   'coverage_snapshots',
@@ -118,4 +120,42 @@ export async function seedEvents(pool: pg.Pool, events: AgentEvent[]): Promise<v
       )
     }),
   )
+}
+
+/** One attempt and one flagged Judge verdict per review item; the excerpt becomes a one-turn transcript. */
+export async function seedReviews(pool: pg.Pool, reviews: ReviewItem[], versionIds: Map<string, number>): Promise<void> {
+  await reviews.reduce(async (previous, review) => {
+    await previous
+    const transcript = review.excerpt
+      ? { turns: [{ attacker_message: review.excerpt.attackerMessage, target_response: review.excerpt.targetResponse }] }
+      : { turns: [] }
+    await pool.query(
+      `INSERT INTO attempts (id, fingerprint, category, subcategory, transcript, target_version_id, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        review.attemptId,
+        `fp-${review.attemptId}`,
+        review.category,
+        review.subcategory ?? null,
+        transcript,
+        review.targetVersion ? (versionIds.get(review.targetVersion) ?? null) : null,
+        review.flaggedAt,
+      ],
+    )
+    await pool.query(
+      `INSERT INTO verdicts (id, attempt_id, outcome, confidence, stage, rubric_version, judge_model, evidence, needs_review, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9)`,
+      [
+        review.verdictId,
+        review.attemptId,
+        review.outcome,
+        review.confidence,
+        review.stage,
+        review.rubricVersion,
+        review.judgeModel ?? null,
+        JSON.stringify(review.evidence),
+        review.flaggedAt,
+      ],
+    )
+  }, Promise.resolve())
 }

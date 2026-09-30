@@ -4,6 +4,7 @@ import { operatorName } from '../server/config.js'
 import { getRepository, getRuntime } from '../server/runtime.js'
 import { ACTIVITY_LIMIT } from './activity.js'
 import { isApprovalDecision } from './approvals.js'
+import { isReviewDecision, isVerdictOutcome, type ReviewInput } from './judge.js'
 import type { MoveDirection } from './queue.js'
 import { isExploitStatus } from './tickets.js'
 
@@ -99,3 +100,22 @@ export const decideApprovalFn = createServerFn({ method: 'POST' })
   .handler(({ data }) =>
     getRepository().decideApproval(data.reportId, data.decision, operatorName(process.env)),
   )
+
+export const listNeedsReviewFn = createServerFn({ method: 'GET' }).handler(() => getRepository().listNeedsReview())
+
+export const getJudgeHealthFn = createServerFn({ method: 'GET' }).handler(() => getRepository().getJudgeHealth())
+
+export const resolveReviewFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => {
+    if (!isRecord(input) || !isReviewDecision(input.decision)) {
+      throw new Error('Expected { verdictId, decision: "confirm" | "overturn", outcome? }')
+    }
+    if (input.outcome !== undefined && !isVerdictOutcome(input.outcome)) {
+      throw new Error('Unknown outcome')
+    }
+    const review: ReviewInput =
+      input.outcome === undefined ? { decision: input.decision } : { decision: input.decision, outcome: input.outcome }
+    return { verdictId: requireString(input.verdictId, 'Verdict id'), review }
+  })
+  // The reviewer is set on the server, never taken from the browser.
+  .handler(({ data }) => getRepository().resolveReview(data.verdictId, data.review, operatorName(process.env)))

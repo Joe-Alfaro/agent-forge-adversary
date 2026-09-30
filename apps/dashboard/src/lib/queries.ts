@@ -7,7 +7,9 @@ import {
   fetchCost,
   fetchCoverage,
   fetchDataSourceMode,
+  fetchJudgeHealth,
   fetchMorningReport,
+  fetchNeedsReview,
   fetchQueue,
   fetchResilienceTrend,
   fetchRuns,
@@ -72,6 +74,17 @@ export const agentEventsQuery = queryOptions({
   refetchInterval: ACTIVITY_REFRESH_MS,
 })
 
+// Both Judge keys nest under ['judge'] so a resolution refreshes the queue and the health numbers together.
+export const needsReviewQuery = queryOptions({
+  queryKey: ['judge', 'needs-review'],
+  queryFn: fetchNeedsReview,
+})
+
+export const judgeHealthQuery = queryOptions({
+  queryKey: ['judge', 'health'],
+  queryFn: fetchJudgeHealth,
+})
+
 export const resilienceQuery = queryOptions({
   queryKey: ['resilience'],
   queryFn: fetchResilienceTrend,
@@ -120,4 +133,12 @@ export function useResilienceTrend() {
 
 export function useAgentEvents() {
   return useSuspenseQuery(agentEventsQuery)
+}
+
+export function useNeedsReview() {
+  return useSuspenseQuery(needsReviewQuery)
+}
+
+export function useJudgeHealth() {
+  return useSuspenseQuery(judgeHealthQuery)
 }

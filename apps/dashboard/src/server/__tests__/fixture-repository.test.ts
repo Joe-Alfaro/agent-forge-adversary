@@ -9,6 +9,7 @@ import {
   contractNow,
   contractQueue,
   contractReports,
+  contractReviews,
   contractTickets,
   describeRepositoryContract,
 } from './repository-contract.js'
@@ -20,7 +21,13 @@ describeRepositoryContract('fixture', {
     createFixtureRepository({
       config,
       now: () => contractNow,
-      seed: { tickets: contractTickets, queueItems: contractQueue, reports: contractReports, events: contractEvents },
+      seed: {
+        tickets: contractTickets,
+        queueItems: contractQueue,
+        reports: contractReports,
+        events: contractEvents,
+        reviews: contractReviews,
+      },
     }),
 })
 

@@ -2,6 +2,12 @@ import { listTaxonomyCells, PRD_CATEGORIES, type TaxonomyCell } from '@agentforg
 
 import type { AgentEvent } from '../lib/activity.js'
 import { type ApprovalItem, buildApprovalItem, type ReportRecord, sortApprovals } from '../lib/approvals.js'
+import {
+  type ReviewItem,
+  type ReviewRecord,
+  resolvedOutcome,
+  summarizeJudgeHealth,
+} from '../lib/judge.js'
 import { mergeCoverage } from '../lib/coverage.js'
 import * as fixtures from '../lib/fixtures.js'
 import type { QueueItem, TonightQueue } from '../lib/models.js'
@@ -43,6 +49,11 @@ export interface FixtureSeed {
   queueItems: QueueItem[]
   reports?: ReportRecord[]
   events?: AgentEvent[]
+  /** Verdicts waiting for a human. */
+  reviews?: ReviewItem[]
+  /** Reviews already settled before the store was created. */
+  reviewHistory?: ReviewRecord[]
+  groundTruthLabels?: number
 }
 
 export interface FixtureRepositoryOptions {
@@ -61,7 +72,12 @@ export interface FixtureRepositoryOptions {
 export function createFixtureRepository({
   config,
   now = () => new Date(),
-  seed = { tickets: fixtures.tickets, queueItems: fixtures.queueItems, reports: fixtures.reports, events: fixtures.agentEvents },
+  seed = { tickets: fixtures.tickets, queueItems: fixtures.queueItems, reports: fixtures.reports,
+    events: fixtures.agentEvents,
+    reviews: fixtures.reviewItems,
+    reviewHistory: fixtures.reviewHistory,
+    groundTruthLabels: fixtures.groundTruthLabels,
+  },
   taxonomy = listTaxonomyCells(),
 }: FixtureRepositoryOptions): DashboardRepository {
   // Seeded queue items move once, at creation; items enqueued later already use now().
@@ -70,6 +86,10 @@ export function createFixtureRepository({
     tickets: structuredClone(seed.tickets),
     queueItems: seed.queueItems.map((item) => ({ ...item, requestedAt: shift(item.requestedAt, createdOffset) })),
     events: seed.events ?? [],
+    reviews: (seed.reviews ?? []).map((review) => ({ ...review, flaggedAt: shift(review.flaggedAt, createdOffset) })),
+    reviewHistory: seed.reviewHistory ?? [],
+    groundTruthLabels: seed.groundTruthLabels ?? 0,
+    resolved: new Set<string>(),
     reports: (seed.reports ?? []).map((report) =>
       shiftOptional({ ...report, createdAt: shift(report.createdAt, createdOffset) }, 'publishedAt', createdOffset),
     ),
@@ -200,6 +220,29 @@ export function createFixtureRepository({
         .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
         .slice(0, limit)
         .map((event) => ({ ...event, createdAt: shift(event.createdAt, offset) }))
+    },
+
+    async listNeedsReview() {
+      return structuredClone(store.reviews).sort((a, b) => Date.parse(a.flaggedAt) - Date.parse(b.flaggedAt))
+    },
+
+    async resolveReview(verdictId, input, reviewer) {
+      const review = store.reviews.find((item) => item.verdictId === verdictId)
+      if (!review) {
+        throw new Error(
+          store.resolved.has(verdictId) ? `Verdict ${verdictId} is already resolved` : `Unknown verdict ${verdictId}`,
+        )
+      }
+      const outcome = resolvedOutcome(review.outcome, input)
+      store.reviews = store.reviews.filter((item) => item.verdictId !== verdictId)
+      store.resolved.add(verdictId)
+      store.reviewHistory = [...store.reviewHistory, { category: review.category, judged: review.outcome, human: outcome }]
+      store.groundTruthLabels += 1
+      return { verdictId, decision: input.decision, outcome, reviewer, resolvedAt: now().toISOString() }
+    },
+
+    async getJudgeHealth() {
+      return summarizeJudgeHealth(store.reviews, store.reviewHistory, store.groundTruthLabels)
     },
 
     async getResilienceTrend() {

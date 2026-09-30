@@ -3,6 +3,7 @@ import type { RerunRequest } from '@agentforge/contracts'
 import type { AgentEvent } from './activity.js'
 import type { ApprovalDecision, ApprovalItem } from './approvals.js'
 import type { ResilienceTrend } from './resilience.js'
+import type { JudgeHealth, ReviewInput, ReviewItem, ReviewResolution } from './judge.js'
 import type { CostSummary, CoverageMatrix, MorningReport, RunSummary, TonightQueue } from './models.js'
 import type { MoveDirection } from './queue.js'
 import {
@@ -11,16 +12,19 @@ import {
   getCostFn,
   getCoverageFn,
   getDataSourceModeFn,
+  getJudgeHealthFn,
   getMorningReportFn,
   getQueueFn,
   getResilienceTrendFn,
   getTicketFn,
   listAgentEventsFn,
   listApprovalsFn,
+  listNeedsReviewFn,
   listRunsFn,
   listTicketsFn,
   moveQueueItemFn,
   removeQueueItemFn,
+  resolveReviewFn,
   updateTicketFn,
 } from './server-fns.js'
 import type { TicketRow, TicketUpdate } from './tickets.js'
@@ -97,4 +101,16 @@ export function fetchResilienceTrend(): Promise<ResilienceTrend> {
 
 export function fetchAgentEvents(): Promise<AgentEvent[]> {
   return listAgentEventsFn()
+}
+
+export function fetchNeedsReview(): Promise<ReviewItem[]> {
+  return listNeedsReviewFn()
+}
+
+export function fetchJudgeHealth(): Promise<JudgeHealth> {
+  return getJudgeHealthFn()
+}
+
+export function resolveReview(verdictId: string, review: ReviewInput): Promise<ReviewResolution> {
+  return resolveReviewFn({ data: { verdictId, ...review } })
 }

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { mapAgentEvent, mapApprovalRow, mapMorningReport, mapQueueItem, mapRunSummary, mapTicket } from '../pg-mappers.js'
+import { mapAgentEvent, mapApprovalRow, mapReviewItem, mapMorningReport, mapQueueItem, mapRunSummary, mapTicket } from '../pg-mappers.js'
 
 describe('mapTicket', () => {
   const row = {
@@ -238,5 +238,43 @@ describe('mapAgentEvent', () => {
 
   it('tolerates an empty payload', () => {
     expect(mapAgentEvent({ ...row, payload: null })).not.toHaveProperty('summary')
+  })
+})
+
+describe('mapReviewItem', () => {
+  const row = {
+    id: 'v-1',
+    attempt_id: 'a-1',
+    category: 'prompt_injection',
+    subcategory: null,
+    target_version: 'copilot@1',
+    outcome: 'success',
+    confidence: '0.550',
+    stage: 'llm_tiebreak',
+    rubric_version: 'r1',
+    judge_model: null,
+    created_at: new Date('2026-09-29T05:00:00Z'),
+    evidence: [{ kind: 'quoted_span', ref: 'turns[0]' }, { kind: 'made_up', ref: 'x' }, 'junk'],
+    transcript: { turns: [{ attacker_message: 'hi', target_response: 'hello' }] },
+  }
+
+  it('maps the verdict, keeps only well-formed evidence, and excerpts the transcript', () => {
+    expect(mapReviewItem(row)).toEqual({
+      verdictId: 'v-1',
+      attemptId: 'a-1',
+      category: 'prompt_injection',
+      targetVersion: 'copilot@1',
+      outcome: 'success',
+      confidence: 0.55,
+      stage: 'llm_tiebreak',
+      rubricVersion: 'r1',
+      flaggedAt: '2026-09-29T05:00:00.000Z',
+      evidence: [{ kind: 'quoted_span', ref: 'turns[0]' }],
+      excerpt: { attackerMessage: 'hi', targetResponse: 'hello' },
+    })
+  })
+
+  it('rejects an outcome outside the verdict enum', () => {
+    expect(() => mapReviewItem({ ...row, outcome: 'maybe' })).toThrow('unknown outcome')
   })
 })

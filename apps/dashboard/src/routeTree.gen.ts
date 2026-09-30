@@ -14,6 +14,7 @@ import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as ApprovalsRouteImport } from './routes/approvals'
 import { Route as CostRouteImport } from './routes/cost'
 import { Route as CoverageRouteImport } from './routes/coverage'
+import { Route as JudgeRouteImport } from './routes/judge'
 import { Route as QueueRouteImport } from './routes/queue'
 import { Route as ResilienceRouteImport } from './routes/resilience'
 import { Route as RunsRouteImport } from './routes/runs'
@@ -44,6 +45,11 @@ const CostRoute = CostRouteImport.update({
 const CoverageRoute = CoverageRouteImport.update({
   id: '/coverage',
   path: '/coverage',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JudgeRoute = JudgeRouteImport.update({
+  id: '/judge',
+  path: '/judge',
   getParentRoute: () => rootRouteImport,
 } as any)
 const QueueRoute = QueueRouteImport.update({
@@ -83,6 +89,7 @@ export interface FileRoutesByFullPath {
   '/approvals': typeof ApprovalsRoute
   '/cost': typeof CostRoute
   '/coverage': typeof CoverageRoute
+  '/judge': typeof JudgeRoute
   '/queue': typeof QueueRoute
   '/resilience': typeof ResilienceRoute
   '/runs': typeof RunsRoute
@@ -96,6 +103,7 @@ export interface FileRoutesByTo {
   '/approvals': typeof ApprovalsRoute
   '/cost': typeof CostRoute
   '/coverage': typeof CoverageRoute
+  '/judge': typeof JudgeRoute
   '/queue': typeof QueueRoute
   '/resilience': typeof ResilienceRoute
   '/runs': typeof RunsRoute
@@ -110,6 +118,7 @@ export interface FileRoutesById {
   '/approvals': typeof ApprovalsRoute
   '/cost': typeof CostRoute
   '/coverage': typeof CoverageRoute
+  '/judge': typeof JudgeRoute
   '/queue': typeof QueueRoute
   '/resilience': typeof ResilienceRoute
   '/runs': typeof RunsRoute
@@ -125,6 +134,7 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/cost'
     | '/coverage'
+    | '/judge'
     | '/queue'
     | '/resilience'
     | '/runs'
@@ -138,6 +148,7 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/cost'
     | '/coverage'
+    | '/judge'
     | '/queue'
     | '/resilience'
     | '/runs'
@@ -151,6 +162,7 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/cost'
     | '/coverage'
+    | '/judge'
     | '/queue'
     | '/resilience'
     | '/runs'
@@ -165,6 +177,7 @@ export interface RootRouteChildren {
   ApprovalsRoute: typeof ApprovalsRoute
   CostRoute: typeof CostRoute
   CoverageRoute: typeof CoverageRoute
+  JudgeRoute: typeof JudgeRoute
   QueueRoute: typeof QueueRoute
   ResilienceRoute: typeof ResilienceRoute
   RunsRoute: typeof RunsRoute
@@ -208,6 +221,13 @@ declare module '@tanstack/react-router' {
       path: '/coverage'
       fullPath: '/coverage'
       preLoaderRoute: typeof CoverageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/judge': {
+      id: '/judge'
+      path: '/judge'
+      fullPath: '/judge'
+      preLoaderRoute: typeof JudgeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/queue': {
@@ -261,6 +281,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApprovalsRoute: ApprovalsRoute,
   CostRoute: CostRoute,
   CoverageRoute: CoverageRoute,
+  JudgeRoute: JudgeRoute,
   QueueRoute: QueueRoute,
   ResilienceRoute: ResilienceRoute,
   RunsRoute: RunsRoute,
