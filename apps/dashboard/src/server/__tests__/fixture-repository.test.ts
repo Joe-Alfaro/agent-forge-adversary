@@ -89,4 +89,28 @@ describe('fixture repository defaults', () => {
     expect(trend.versions.length).toBeGreaterThan(2)
     expect(new Set(trend.points.map((point) => point.rubricVersion)).size).toBe(2)
   })
+
+  it('simulates the executor: scheduled, then running (queue drained), then completed with a report', async () => {
+    const clock = { now: contractNow }
+    const repo = createFixtureRepository({
+      config,
+      now: () => clock.now,
+      runNowTimings: { startAfterMs: 1_000, finishAfterMs: 10_000 },
+    })
+    const queued = (await repo.getQueue()).items
+    const [first] = queued
+    const run = await repo.runNow({ kind: 'single', operatorRequestId: first?.id ?? '' }, 'operator')
+    expect(run.status).toBe('scheduled')
+    expect((await repo.getQueue()).items).toHaveLength(queued.length)
+
+    clock.now = new Date(contractNow.getTime() + 2_000)
+    expect((await repo.getRun(run.id))?.status).toBe('running')
+    expect((await repo.getQueue()).items.map((item) => item.id)).not.toContain(first?.id)
+    expect(await repo.getMorningReport(run.id)).toBeNull()
+
+    clock.now = new Date(contractNow.getTime() + 11_000)
+    expect(await repo.getRun(run.id)).toMatchObject({ status: 'completed', hasMorningReport: true })
+    expect((await repo.getMorningReport(run.id))?.queue).toEqual({ ran: 1, cut: 0 })
+    await expect(repo.runNow({ kind: 'queue' }, 'operator')).resolves.toMatchObject({ status: 'scheduled' })
+  })
 })

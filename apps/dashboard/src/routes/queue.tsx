@@ -1,45 +1,28 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-import { QueueTable } from '../components/QueueTable.js'
-import { formatUsd } from '../lib/format.js'
-import { useMoveQueueItem, useRemoveQueueItem } from '../lib/mutations.js'
-import { queueQuery, useQueue } from '../lib/queries.js'
-import { planTonight } from '../lib/queue.js'
+import { QueueView } from '../components/QueueView.js'
+import { queueQuery } from '../lib/queries.js'
+
+interface QueueSearch {
+  /** The run-now being followed, kept in the URL so a reload keeps showing its status. */
+  runNow?: string
+}
 
 export const Route = createFileRoute('/queue')({
+  validateSearch: (search: Record<string, unknown>): QueueSearch =>
+    typeof search.runNow === 'string' && search.runNow !== '' ? { runNow: search.runNow } : {},
   loader: ({ context }) => context.queryClient.ensureQueryData(queueQuery),
   component: QueuePage,
 })
 
 function QueuePage() {
-  const { data: queue } = useQueue()
-  const remove = useRemoveQueueItem()
-  const move = useMoveQueueItem()
-  const plan = planTonight(queue.items, queue.envelopeUsd)
-  const planned = plan.at(-1)?.cumulativeUsd ?? 0
-  const cutCount = plan.filter((item) => item.cut).length
-  const error = remove.error ?? move.error
-
+  const { runNow } = Route.useSearch()
+  const navigate = Route.useNavigate()
   return (
-    <>
-      <header className="page-header">
-        <h1>Tonight's queue</h1>
-        <p>
-          Run on {queue.runDate}. Requested {formatUsd(planned)} against a {formatUsd(queue.envelopeUsd)} envelope
-          {cutCount > 0 && `; ${cutCount} request${cutCount === 1 ? '' : 's'} will be cut`}.
-        </p>
-      </header>
-      {error && (
-        <p role="alert" className="form-error">
-          {error.message}
-        </p>
-      )}
-      <QueueTable
-        plan={plan}
-        busy={remove.isPending || move.isPending}
-        onRemove={(id) => remove.mutate(id)}
-        onMove={(id, direction) => move.mutate({ id, direction })}
-      />
-    </>
+    <QueueView
+      {...(runNow ? { runId: runNow } : {})}
+      onRunScheduled={(runId) => void navigate({ search: { runNow: runId }, replace: true })}
+      onDismissRun={() => void navigate({ search: {}, replace: true })}
+    />
   )
 }

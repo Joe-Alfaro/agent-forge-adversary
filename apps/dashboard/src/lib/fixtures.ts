@@ -117,8 +117,9 @@ export const runs: RunSummary[] = [
   {
     id: 'run-2026-09-29',
     trigger: 'run_now',
-    status: 'running',
+    status: 'completed',
     startedAt: '2026-09-29T14:05:00Z',
+    finishedAt: '2026-09-29T15:02:00Z',
     targetVersion: TARGET_VERSION,
     attempts: 212,
     verdicts: { success: 6, partial: 14, fail: 192 },
@@ -366,8 +367,8 @@ export const resilience: ResilienceTrend = {
 const LAST_NIGHT_TRACE = 'https://langfuse.example/trace/run-2026-09-28'
 
 /**
- * Agent activity for last night's run (traced in Langfuse) and today's run-now,
- * which is still going and whose events carry no trace link yet.
+ * Agent activity for last night's run (traced in Langfuse) and this afternoon's
+ * run-now, whose events carry no trace link.
  */
 export const agentEvents: AgentEvent[] = [
   { id: '1001', traceId: 'run-2026-09-28', agent: 'orchestrator', eventType: 'plan_created', costUsd: 0.04, createdAt: '2026-09-28T07:00:40Z', traceUrl: LAST_NIGHT_TRACE, summary: 'Planned 6 campaigns; 2 operator requests, 1 cut at the envelope' },

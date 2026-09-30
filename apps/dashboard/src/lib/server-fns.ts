@@ -4,6 +4,7 @@ import { operatorName } from '../server/config.js'
 import { getRepository, getRuntime } from '../server/runtime.js'
 import { ACTIVITY_LIMIT } from './activity.js'
 import { isApprovalDecision } from './approvals.js'
+import { parseRunNowScope } from './run-now.js'
 import { isReviewDecision, isVerdictOutcome, type ReviewInput } from './judge.js'
 import type { MoveDirection } from './queue.js'
 import { isExploitStatus } from './tickets.js'
@@ -50,6 +51,15 @@ export const updateTicketFn = createServerFn({ method: 'POST' })
   .handler(({ data }) => getRepository().updateTicket(data.id, data.update))
 
 export const listRunsFn = createServerFn({ method: 'GET' }).handler(() => getRepository().listRuns())
+
+export const getRunFn = createServerFn({ method: 'GET' })
+  .validator((runId: unknown) => requireString(runId, 'Run id'))
+  .handler(({ data }) => getRepository().getRun(data))
+
+/** Gate G10, after the operator confirmed the estimate: schedules the run, never executes it. */
+export const runNowFn = createServerFn({ method: 'POST' })
+  .validator((scope: unknown) => parseRunNowScope(scope))
+  .handler(({ data }) => getRepository().runNow(data, operatorName(process.env)))
 
 export const getMorningReportFn = createServerFn({ method: 'GET' })
   .validator((runId: unknown) => requireString(runId, 'Run id'))

@@ -250,6 +250,54 @@ export function describeRepositoryContract(name: string, options: ContractOption
       })
     })
 
+    describe('run now', () => {
+      it('schedules one run_now run for the whole queue and lists it in run history', async () => {
+        const run = await repo.runNow({ kind: 'queue' }, 'operator')
+        expect(run).toMatchObject({
+          trigger: 'run_now',
+          status: 'scheduled',
+          startedAt: contractNow.toISOString(),
+          attempts: 0,
+          hasMorningReport: false,
+        })
+        expect(await repo.getRun(run.id)).toEqual(run)
+        expect((await repo.listRuns())[0]?.id).toBe(run.id)
+      })
+
+      it('schedules a single queued request', async () => {
+        const [, second] = contractQueue
+        if (!second) {
+          throw new Error('seed needs two queue items')
+        }
+        const run = await repo.runNow({ kind: 'single', operatorRequestId: second.id }, 'operator')
+        expect(run).toMatchObject({ trigger: 'run_now', status: 'scheduled' })
+      })
+
+      it('refuses a request that is not in tonight’s queue', async () => {
+        await expect(
+          repo.runNow({ kind: 'single', operatorRequestId: '00000000-0000-4000-8000-00000000ffff' }, 'operator'),
+        ).rejects.toThrow('not in tonight’s queue')
+        await expect(repo.runNow({ kind: 'single', operatorRequestId: 'nope' }, 'operator')).rejects.toThrow(
+          'not in tonight’s queue',
+        )
+      })
+
+      it('refuses to run an empty queue', async () => {
+        await Promise.all(contractQueue.map((entry) => repo.removeQueueItem(entry.id)))
+        await expect(repo.runNow({ kind: 'queue' }, 'operator')).rejects.toThrow('Nothing is queued')
+      })
+
+      it('refuses a second run-now while one is still scheduled', async () => {
+        await repo.runNow({ kind: 'queue' }, 'operator')
+        await expect(repo.runNow({ kind: 'queue' }, 'operator')).rejects.toThrow('already scheduled or running')
+      })
+
+      it('returns null for an unknown run', async () => {
+        expect(await repo.getRun('999999')).toBeNull()
+        expect(await repo.getRun('not-a-run')).toBeNull()
+      })
+    })
+
     describe('agent activity', () => {
       it('lists events newest first with trace linkage', async () => {
         const events = await repo.listAgentEvents(10)
