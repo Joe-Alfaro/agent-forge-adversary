@@ -154,7 +154,7 @@ async function main(): Promise<void> {
 
     // Plan inputs: drained queue + coverage cells (scoped to requested categories).
     const runDate = new Date().toISOString().slice(0, 10)
-    const queue = (await repo.drainQueue(runDate)).filter((r) => categories.length === 0 || !r.category || categories.includes(r.category))
+    const queue = (await repo.drainOperatorRequests(runDate)).filter((r) => categories.length === 0 || !r.category || categories.includes(r.category))
     const allCells = await repo.getCoverageCells(targetVersionId, COST_PER_ATTEMPT_ESTIMATE * maxAttempts)
     const coverageCells = allCells.filter((c) => categories.length === 0 || categories.includes(c.category))
 

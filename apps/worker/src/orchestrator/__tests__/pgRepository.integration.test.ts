@@ -124,7 +124,7 @@ describe.skipIf(!url)('PgOrchestratorRepository', () => {
        ('22222222-2222-4222-8222-222222222222', 'rerun', 'data_exfiltration', 'op', 'ui', 'queued', 1, now()),
        ('33333333-3333-4333-8333-333333333333', 'note', NULL, 'op', 'chat', 'queued', NULL, now())`,
     )
-    const drained = await repo.drainQueue(new Date().toISOString().slice(0, 10))
+    const drained = await repo.drainOperatorRequests(new Date().toISOString().slice(0, 10))
     expect(drained.map((d) => d.id)).toEqual([
       '22222222-2222-4222-8222-222222222222',
       '11111111-1111-4111-8111-111111111111',
@@ -252,5 +252,35 @@ describe.skipIf(!url)('PgOrchestratorRepository', () => {
     const snap = await pool.query('SELECT attempts, families_exercised FROM coverage_snapshots')
     expect(snap.rowCount).toBe(1)
     expect(Number(snap.rows[0]?.attempts)).toBe(result.attempts)
+  })
+
+  it('claims a scheduled run_now row exactly once', async () => {
+    await pool.query(
+      `INSERT INTO nightly_runs (scheduled_for, trigger, status, plan)
+       VALUES (now(), 'run_now', 'scheduled', '{"scope":{"kind":"queue"}}')`,
+    )
+    const first = await repo.claimRunNow()
+    const second = await repo.claimRunNow()
+    expect(first).not.toBeNull()
+    expect(second).toBeNull()
+    const row = await pool.query('SELECT status FROM nightly_runs WHERE id = $1', [first?.nightlyRunId])
+    expect(row.rows[0]?.status).toBe('running')
+  })
+
+  it('getExploitReproduction returns the stored min_repro turns', async () => {
+    const tvId = await repo.ensureTargetVersion('https://copilot/', 'copilot@abc')
+    const up = await repo.upsertExploit({
+      fingerprint: 'fp-repro',
+      severity: 'high',
+      category: 'prompt_injection',
+      subcategory: 'direct',
+      owaspIds: [],
+      minRepro: { turns: ['turn a', 'turn b'] },
+      discoveredVersionId: tvId,
+      familyIds: [],
+    })
+    const repro = await repo.getExploitReproduction(up.id)
+    expect(repro?.category).toBe('prompt_injection')
+    expect(repro?.turns).toEqual(['turn a', 'turn b'])
   })
 })

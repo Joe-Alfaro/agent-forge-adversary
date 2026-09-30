@@ -6,3 +6,6 @@ dist/
 coverage/
 .DS_Store
 .ao/
+
+# Railway CLI project link state (never commit; may reference deployed resources)
+.railway/
