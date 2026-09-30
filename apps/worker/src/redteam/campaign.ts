@@ -50,6 +50,17 @@ export interface FamilyStat {
   refusals: number
 }
 
+/** One executed attempt, with enough lineage for persistence and coverage. */
+export interface AttemptDetail {
+  seedId: string
+  family: string
+  /** True for the seed attempt itself (a lineage root); false for a variant. */
+  isSeed: boolean
+  fingerprint: string
+  transcript: AttackTranscript
+  refused: boolean
+}
+
 export interface CampaignResult {
   campaignId: string
   category: string
@@ -60,6 +71,8 @@ export interface CampaignResult {
   /** Share of attempts whose operative target response was a refusal. */
   refusalRate: number
   transcripts: AttackTranscript[]
+  /** Per-attempt detail (lineage, family, refusal) for persistence and coverage. */
+  attemptsDetail: AttemptDetail[]
   /** `seed` plus one key per mutation family. */
   byFamily: Record<string, FamilyStat>
   novelty: { unique: number; duplicatesSkipped: number }
@@ -181,6 +194,7 @@ export async function runCampaign(params: RunCampaignParams): Promise<CampaignRe
   const targetVersion = await adapter.getVersion()
 
   const transcripts: AttackTranscript[] = []
+  const attemptsDetail: AttemptDetail[] = []
   const byFamily: Record<string, FamilyStat> = {}
   const seen = new Set<string>()
   let attempts = 0
@@ -218,6 +232,14 @@ export async function runCampaign(params: RunCampaignParams): Promise<CampaignRe
       const refused = attemptWasRefused(transcript)
       if (refused) refusals += 1
       bump(attempt.family, refused)
+      attemptsDetail.push({
+        seedId: seed.id,
+        family: attempt.family,
+        isSeed: attempt.family === 'seed',
+        fingerprint: attempt.fingerprint,
+        transcript,
+        refused,
+      })
     }
   }
 
@@ -231,6 +253,7 @@ export async function runCampaign(params: RunCampaignParams): Promise<CampaignRe
     nonRefusals,
     refusalRate: attempts === 0 ? 0 : refusals / attempts,
     transcripts,
+    attemptsDetail,
     byFamily,
     novelty: { unique: attempts, duplicatesSkipped },
   }
