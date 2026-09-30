@@ -19,7 +19,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc -b",
     "migrate": "node-pg-migrate -m packages/db/migrations",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "db:import-eval": "node packages/db/dist/scripts/import-eval-results.js"
   },
   "devDependencies": {
     "typescript": "~5.9.2",
