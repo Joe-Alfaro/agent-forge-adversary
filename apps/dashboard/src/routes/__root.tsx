@@ -44,6 +44,10 @@ function AppLayout() {
         <p className="brand-sub">Operator dashboard</p>
         <DataSourceBadge />
         <AppNav />
+        {/* A plain form post: the operator auth gate in src/server.ts handles /logout. */}
+        <form className="sign-out" method="post" action="/logout">
+          <button type="submit">Sign out</button>
+        </form>
       </aside>
       <main className="content">
         <Outlet />

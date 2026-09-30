@@ -9,7 +9,8 @@
     "migrate": "node-pg-migrate -m migrations"
   },
   "dependencies": {
-    "pg": "^8.13.1"
+    "pg": "^8.13.1",
+    "@agentforge/contracts": "*"
   },
   "devDependencies": {
     "@types/pg": "^8.11.10",
