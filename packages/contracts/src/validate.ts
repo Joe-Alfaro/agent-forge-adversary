@@ -10,6 +10,7 @@ import type {
   CampaignPlan,
   NightlyRunSummary,
   NightlyPlan,
+  VulnReport,
 } from './types.js'
 import { isTaxonomyCell, type TaxonomyCell } from './taxonomy.js'
 
@@ -22,6 +23,7 @@ const detectorResultSchema = require('../../../contracts/detector_result/v1.json
 const campaignPlanSchema = require('../../../contracts/campaign_plan/v1.json')
 const nightlyRunSummarySchema = require('../../../contracts/nightly_run_summary/v1.json')
 const nightlyPlanSchema = require('../../../contracts/nightly_plan/v1.json')
+const vulnReportSchema = require('../../../contracts/vuln_report/v1.json')
 
 // ajv-formats ships its callable as a CommonJS default; resolve it for NodeNext.
 type AddFormats = (ajv: Ajv) => Ajv
@@ -55,6 +57,7 @@ const validateDetectorResultFn = ajv.compile(detectorResultSchema)
 const validateCampaignPlanFn = ajv.compile(campaignPlanSchema)
 const validateNightlyRunSummaryFn = ajv.compile(nightlyRunSummarySchema)
 const validateNightlyPlanFn = ajv.compile(nightlyPlanSchema)
+const validateVulnReportFn = ajv.compile(vulnReportSchema)
 
 export function validateVerdict(value: unknown): ValidationResult<Verdict> {
   return runValidator<Verdict>(validateVerdictFn, value)
@@ -82,6 +85,10 @@ export function validateNightlyRunSummary(value: unknown): ValidationResult<Nigh
 
 export function validateNightlyPlan(value: unknown): ValidationResult<NightlyPlan> {
   return runValidator<NightlyPlan>(validateNightlyPlanFn, value)
+}
+
+export function validateVulnReport(value: unknown): ValidationResult<VulnReport> {
+  return runValidator<VulnReport>(validateVulnReportFn, value)
 }
 
 /**
