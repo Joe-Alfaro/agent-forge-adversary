@@ -361,3 +361,19 @@ describe('runScheduledRunNow', () => {
     expect(result?.summary.queue.ran).toBeGreaterThanOrEqual(1)
   })
 })
+
+describe('runPlan run artifact', () => {
+  it('emits a RunArtifact v1 that agentforge-6 planRunImport accepts', async () => {
+    const { planRunImport } = await import('@agentforge/db')
+    const repo = new FakeRepo()
+    const result = await runPlan(baseParams({ repo, perFamily: 2 }) as never)
+    const importPlanShape = planRunImport(result.artifact)
+    expect(importPlanShape.kind).toBe('run_artifact')
+    expect(importPlanShape.attempts.length).toBe(result.attempts)
+    expect(importPlanShape.campaigns.length).toBe(result.artifact.campaigns.length)
+    // Every attempt maps to a real taxonomy cell and its verdict is carried.
+    importPlanShape.attempts.forEach((a) => expect(a.verdicts.length).toBeGreaterThan(0))
+    expect(result.artifact.run_key).toBeTruthy()
+    expect(result.artifact.coverage?.length).toBeGreaterThan(0)
+  })
+})

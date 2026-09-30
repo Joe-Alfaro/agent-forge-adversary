@@ -25,6 +25,9 @@ export interface CampaignSeed {
   session_role: string
   turns: string[]
   technique_tags?: string[]
+  /** OWASP mapping carried from the eval case, used in the run artifact. */
+  owasp_llm_ids?: string[]
+  owasp_ids?: string[]
 }
 
 /** The minimal Target Adapter surface the runner needs (structural). */
