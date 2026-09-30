@@ -6,6 +6,7 @@ import { isReportStatus, sortApprovals } from '../lib/approvals.js'
 import { isVerdictOutcome, resolvedOutcome } from '../lib/judge.js'
 import { buildRunNowPlan } from '../lib/run-now.js'
 import { parseTonightPlan } from '../lib/tonight.js'
+import { parseNightlyBudget } from '../lib/budget.js'
 import { cellKey, mergeCoverage } from '../lib/coverage.js'
 import type { CostSummary, CoverageCell, RunSpend } from '../lib/models.js'
 import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
@@ -315,12 +316,27 @@ export function createPgRepository({
     return plan
   }
 
+  async function hasPlatformSettings(db: Queryable): Promise<boolean> {
+    const result = await db.query(`SELECT to_regclass('platform_settings') IS NOT NULL AS present`)
+    return result.rows[0]?.present === true
+  }
+
+  /** The operator's in-app budget (platform_settings row 1), or NIGHTLY_BUDGET_USD until that table exists. */
+  async function readBudget(db: Queryable): Promise<number> {
+    if (!(await hasPlatformSettings(db))) {
+      return config.envelopeUsd
+    }
+    const result = await db.query('SELECT nightly_budget_usd FROM platform_settings WHERE id = 1')
+    const [row] = result.rows
+    return row ? Number(row.nightly_budget_usd) : config.envelopeUsd
+  }
+
   async function readQueue(db: Queryable) {
     const runDate = nextRunDate(now(), config)
     const result = await db.query(queueSql(false), [runDate])
     return {
       runDate,
-      envelopeUsd: config.envelopeUsd,
+      envelopeUsd: await readBudget(db),
       items: result.rows.map(mapQueueItem),
       runNowEnabled: isRunNowEnabled(config),
       plan: await readTonightPlan(db),
@@ -528,6 +544,22 @@ export function createPgRepository({
           ],
         )
       })
+      return readQueue(pool)
+    },
+
+    async updateNightlyBudget(value, updatedBy) {
+      const budgetUsd = parseNightlyBudget(value)
+      if (!(await hasPlatformSettings(pool))) {
+        throw new Error(
+          'The platform_settings table is not migrated yet, so the budget comes from NIGHTLY_BUDGET_USD and cannot be changed here',
+        )
+      }
+      await pool.query(
+        `INSERT INTO platform_settings (id, nightly_budget_usd, updated_at, updated_by) VALUES (1, $1, now(), $2)
+         ON CONFLICT (id) DO UPDATE
+           SET nightly_budget_usd = EXCLUDED.nightly_budget_usd, updated_at = now(), updated_by = EXCLUDED.updated_by`,
+        [budgetUsd, updatedBy],
+      )
       return readQueue(pool)
     },
 

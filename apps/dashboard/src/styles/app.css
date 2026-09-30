@@ -859,3 +859,34 @@ button:disabled {
 .queue-table .data-table th {
   white-space: normal;
 }
+
+/* Nightly budget control on tonight's queue */
+.budget-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
+
+.budget-control label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.budget-control input {
+  font: inherit;
+  font-size: 14px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 120px;
+}
+
+.budget-control .form-error {
+  flex-basis: 100%;
+  margin: 0;
+}

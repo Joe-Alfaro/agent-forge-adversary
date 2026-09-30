@@ -168,3 +168,23 @@ export async function seedScheduledPlan(pool: pg.Pool, scheduled: { scheduledFor
     [scheduled.scheduledFor, scheduled.plan],
   )
 }
+
+/**
+ * platform_settings as agentforge-10's migration defines it (singleton row id 1).
+ * Created here until that migration lands; IF NOT EXISTS keeps this harmless after.
+ */
+export async function ensurePlatformSettings(pool: pg.Pool, budgetUsd = 25): Promise<void> {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS platform_settings (
+       id integer PRIMARY KEY,
+       nightly_budget_usd numeric(10,2) NOT NULL DEFAULT 25,
+       updated_at timestamptz NOT NULL DEFAULT now(),
+       updated_by text
+     )`,
+  )
+  await pool.query(
+    `INSERT INTO platform_settings (id, nightly_budget_usd) VALUES (1, $1)
+     ON CONFLICT (id) DO UPDATE SET nightly_budget_usd = EXCLUDED.nightly_budget_usd`,
+    [budgetUsd],
+  )
+}
