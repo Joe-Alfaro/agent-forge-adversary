@@ -123,6 +123,10 @@ export class FakeRepo implements OrchestratorRepository {
   async insertRegressionResult(row: RegressionResultRow) {
     this.regressionResults.push(row)
   }
+  nightlyBudgetUsd: number | null = null
+  async getNightlyBudgetUsd() {
+    return this.nightlyBudgetUsd
+  }
   async finishRegressionRun(id: string, status: string) {
     const run = this.regressionRuns.find((r) => r.id === id)
     if (run) run.status = status

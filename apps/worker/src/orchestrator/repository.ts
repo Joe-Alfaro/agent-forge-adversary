@@ -132,4 +132,9 @@ export interface OrchestratorRepository {
   createRegressionRun(row: { targetVersionId: number; scope: 'full' | 'targeted' }): Promise<string>
   insertRegressionResult(row: RegressionResultRow): Promise<void>
   finishRegressionRun(id: string, status: string): Promise<void>
+  /**
+   * The operator's nightly budget envelope (platform_settings row 1, set from
+   * the dashboard). Null when no row exists, or the table is not migrated yet.
+   */
+  getNightlyBudgetUsd(): Promise<number | null>
 }

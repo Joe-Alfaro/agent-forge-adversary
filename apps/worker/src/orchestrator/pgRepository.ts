@@ -2,6 +2,7 @@ import type pg from 'pg'
 
 import { listTaxonomyCells } from '@agentforge/contracts'
 
+import { parseNightlyBudgetUsd } from './budget.js'
 import type { CoverageCellInput, Severity } from './priority.js'
 import type { QueuedRequest, RegressionOwed } from './planner.js'
 import type {
@@ -273,6 +274,15 @@ export class PgOrchestratorRepository implements OrchestratorRepository {
 
   async finishRegressionRun(id: string, status: string): Promise<void> {
     await this.pool.query('UPDATE regression_runs SET status = $2, finished_at = now() WHERE id = $1', [id, status])
+  }
+
+  async getNightlyBudgetUsd(): Promise<number | null> {
+    // A database that predates the platform_settings migration reads as "no row".
+    const present = await this.pool.query(`SELECT to_regclass('platform_settings') IS NOT NULL AS present`)
+    if (present.rows[0]?.present !== true) return null
+    const result = await this.pool.query('SELECT nightly_budget_usd FROM platform_settings WHERE id = 1')
+    // Validated defensively (>$0, <=$1000, cents); an invalid value reads as "no row".
+    return parseNightlyBudgetUsd(result.rows[0]?.nightly_budget_usd)
   }
 
   // ---- Read side, used by the Run-now entrypoint to build a plan ----

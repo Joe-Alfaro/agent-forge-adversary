@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { DEFAULT_WEIGHTS } from '../priority.js'
+import { parseNightlyBudgetUsd } from '../budget.js'
 import { readPlanPreviewConfig } from '../planPreview.js'
 
 describe('readPlanPreviewConfig', () => {
@@ -38,5 +39,17 @@ describe('readPlanPreviewConfig', () => {
   it('rejects a malformed envelope', () => {
     expect(() => readPlanPreviewConfig({ NIGHTLY_BUDGET_USD: 'lots' })).toThrow(/NIGHTLY_BUDGET_USD/)
     expect(() => readPlanPreviewConfig({ PLAN_TOP_K: '2.5' })).toThrow(/PLAN_TOP_K/)
+  })
+})
+
+describe('parseNightlyBudgetUsd', () => {
+  it('accepts more than $0 up to $1000, rounded to cents', () => {
+    expect(parseNightlyBudgetUsd('2.00')).toBe(2)
+    expect(parseNightlyBudgetUsd(2.345)).toBe(2.35)
+    expect(parseNightlyBudgetUsd('1000')).toBe(1000)
+  })
+
+  it('rejects out-of-range or non-numeric values so the caller falls back', () => {
+    ;[0, -1, 1000.01, 'lots', null, undefined, Number.NaN].forEach((v) => expect(parseNightlyBudgetUsd(v)).toBeNull())
   })
 })

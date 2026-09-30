@@ -269,7 +269,9 @@ owed regressions, coverage matrix + 7.2 score) and upserts it into the **one**
 `nightly_runs` row with `trigger = 'cron'` and `status = 'scheduled'`
 (`scheduled_for` = the next window). Nothing executes and nothing is spent: no
 target or model call, and the queue is not drained. Re-running refreshes that
-row in place. Knobs: `NIGHTLY_BUDGET_USD` (envelope, default 25),
+row in place. The envelope is `platform_settings.nightly_budget_usd` (the
+operator sets it on the dashboard's Tonight's queue), else `NIGHTLY_BUDGET_USD`,
+else $25. Knobs:
 `NIGHTLY_HOUR`/`NIGHTLY_TZ` (default 01:00 `America/Chicago`), `PLAN_TOP_K`,
 `PLAN_MAX_ATTEMPTS`, `PLAN_COST_PER_ATTEMPT_USD`, `PLAN_TARGET_VERSION`. The
 importable core is `previewNightlyPlan` (`buildPreviewPlan` builds without
@@ -279,7 +281,9 @@ persisting).
 
 - Manual: `RUN_SPEND_CAP_USD=3 DATABASE_URL=… npm run run:nightly -w apps/worker`
   consumes the scheduled cron row (run `plan:preview` first). `RUN_NIGHTLY_ID`
-  claims a specific row.
+  claims a specific row. Spend is capped at the lowest of the plan's envelope,
+  the current envelope (re-read from `platform_settings`, so lowering the budget
+  after planning is honoured), and the hard cap.
 - Cron: `NIGHTLY_ENABLED=true NIGHTLY_SPEND_CAP_USD=5 NIGHTLY_BUDGET_USD=5
   DATABASE_URL=… npm run nightly:worker -w apps/worker` (long-running).
   `NIGHTLY_CRON` (default `0 1 * * *`) and `NIGHTLY_TZ` (default
