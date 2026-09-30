@@ -15,7 +15,8 @@
     "plan:preview": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/planPreview.js",
     "docs:generate": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/generateReports.js",
     "run:nightly": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/runNightly.js",
-    "nightly:worker": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/nightlyWorker.js"
+    "nightly:worker": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/nightlyWorker.js",
+    "judge:model-eval": "node --env-file-if-exists=${AGENTFORGE_ENV_FILE:-$HOME/.config/agentforge/.env} dist/scripts/judgeModelEval.js"
   },
   "dependencies": {
     "@agentforge/contracts": "*",

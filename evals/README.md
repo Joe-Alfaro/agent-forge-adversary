@@ -17,6 +17,11 @@ regression families.
 `seeds/<category>.json` — each file is a JSON array of cases. Load them with
 `loadEvalSuite()` from `@agentforge/worker`.
 
+`ground_truth/judge_calibration_v1.json` — the hand-labeled Judge calibration set
+(clean controls, defended and successful attacks) behind KEY_METRICS M1/M2 and the
+Sonnet-vs-Haiku Judge comparison (`npm run judge:model-eval`). See
+`ground_truth/README.md`.
+
 ## Case format
 
 | Field | Meaning |
