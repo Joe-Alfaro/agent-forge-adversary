@@ -20,7 +20,8 @@
     "typecheck": "tsc -b",
     "migrate": "node-pg-migrate -m packages/db/migrations",
     "lint": "eslint .",
-    "db:import-eval": "node packages/db/dist/scripts/import-eval-results.js"
+    "db:import-eval": "node packages/db/dist/scripts/import-eval-results.js",
+    "db:import-run": "node packages/db/dist/scripts/import-run.js"
   },
   "devDependencies": {
     "typescript": "~5.9.2",
