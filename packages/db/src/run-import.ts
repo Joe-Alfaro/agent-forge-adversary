@@ -59,7 +59,8 @@ export interface RunArtifactAttempt {
 }
 
 export interface RunArtifactExploit {
-  id: string
+  /** Ignored: the importer assigns ids from agentforge_exploit_seq. Fingerprint is the key. */
+  id?: string
   fingerprint: string
   severity: 'critical' | 'high' | 'medium' | 'low'
   category: string
@@ -107,7 +108,8 @@ function deriveSummary(artifact: RunArtifact, attempts: PlannedAttempt[]): Night
   return {
     target_version: artifact.target.version,
     headline: `${artifact.trigger === 'cron' ? 'Nightly run' : 'Run now'} against ${artifact.target.version}: ${attempts.length} attempts, ${confirmed} confirmed.`,
-    new_tickets: (artifact.exploits ?? []).map((exploit) => exploit.id),
+    // Filled in by the writer with the ids it assigns to newly inserted exploits.
+    new_tickets: [],
     regressions: [],
     verified_fixes: [],
     queue: { ran: artifact.queue_request_ids?.length ?? 0, cut: 0 },
@@ -167,7 +169,6 @@ export function planRunImport(artifact: RunArtifact): ImportPlan {
   const exploits = (artifact.exploits ?? []).map((exploit, e) => {
     checkCell(`exploits[${e}]`, exploit.category, exploit.subcategory)
     return {
-      id: exploit.id,
       fingerprint: exploit.fingerprint,
       severity: exploit.severity,
       category: exploit.category,

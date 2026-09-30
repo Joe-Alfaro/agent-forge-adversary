@@ -67,8 +67,12 @@ npm run db:import-eval -- evals/results/<file>.json
 A campaign or nightly run artifact (`RunArtifact` v1 in
 `packages/db/src/run-import.ts`: CampaignPlan, AttackTranscript, Verdict, and
 NightlyRunSummary v1 objects plus exploits, agent events, and coverage) loads
-the same way, validated and in one transaction, once per `run_key`. A re-found
-exploit merges its family and keeps the operator's status and assignee:
+the same way, validated and in one transaction, once per `run_key`. Exploits
+are keyed by `fingerprint`. The importer assigns each new one an `AF-<year>-NNNN`
+id from `agentforge_exploit_seq`, the same format the run executor uses, and
+ignores any `id` in the artifact. It also writes those new ids into the run's
+`summary.new_tickets`. A re-found exploit keeps its id, merges its family, and
+keeps the operator's status and assignee:
 
 ```bash
 npm run db:import-run -- <run-artifact>.json

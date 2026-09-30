@@ -101,7 +101,8 @@ function artifact(overrides: Partial<RunArtifact> = {}): RunArtifact {
     ],
     exploits: [
       {
-        id: 'AF-TEST-1',
+        // Ignored by the importer: ids come from agentforge_exploit_seq.
+        id: 'AF-ARTIFACT-IGNORED',
         fingerprint: 'fp-child',
         severity: 'high',
         category: 'data_exfiltration',
@@ -132,13 +133,15 @@ describe('planRunImport', () => {
       [CHILD_ID, ROOT_ID],
     ])
     expect(result.attempts[1]!.verdicts[0]).toMatchObject({ outcome: 'success', stage: 'detector' })
-    expect(result.exploits[0]).toMatchObject({ id: 'AF-TEST-1', report: { title: 'Canary leak' } })
+    expect(result.exploits[0]).toMatchObject({ fingerprint: 'fp-child', report: { title: 'Canary leak' } })
+    expect(result.exploits[0]).not.toHaveProperty('id')
     expect(result.events).toHaveLength(2)
   })
 
   it('derives a valid morning report when the artifact has none', () => {
     const summary = planRunImport(artifact()).run.summary
-    expect(summary).toMatchObject({ target_version: 'copilot@test1', new_tickets: ['AF-TEST-1'] })
+    // new_tickets is filled in by the writer with the ids it assigns.
+    expect(summary).toMatchObject({ target_version: 'copilot@test1', new_tickets: [] })
     expect(summary.headline).toContain('1 confirmed')
   })
 
@@ -189,7 +192,14 @@ describe.skipIf(!testDbUrl)('importPlan for a run artifact (Postgres)', () => {
     const request = await pool.query('SELECT status, nightly_run_id FROM operator_requests WHERE id = $1', [requestId])
     expect(request.rows[0]).toEqual({ status: 'ran', nightly_run_id: first.runId })
 
-    await pool.query(`UPDATE exploits SET status = 'in_progress', assignee = 'dana' WHERE id = 'AF-TEST-1'`)
+    const minted = await pool.query<{ id: string }>(`SELECT id FROM exploits WHERE fingerprint = 'fp-child'`)
+    const ticketId = minted.rows[0]!.id
+    expect(ticketId).toMatch(new RegExp(`^AF-${new Date().getFullYear()}-\\d{4}$`))
+    expect(ticketId).not.toBe('AF-ARTIFACT-IGNORED')
+    const firstSummary = await pool.query(`SELECT summary->'new_tickets' AS t FROM nightly_runs WHERE id = $1`, [first.runId])
+    expect(firstSummary.rows[0].t).toEqual([ticketId])
+
+    await pool.query(`UPDATE exploits SET status = 'in_progress', assignee = 'dana' WHERE id = $1`, [ticketId])
     const laterChild = '66666666-6666-4666-8666-666666666666'
     const later = artifact({ run_key: 'run-now-test-2' })
     const laterCampaign = { ...later.campaigns[0]!, plan: { ...plan, campaign_id: '77777777-7777-4777-8777-777777777777' } }
@@ -203,9 +213,12 @@ describe.skipIf(!testDbUrl)('importPlan for a run artifact (Postgres)', () => {
     ]
     later.campaigns = [laterCampaign]
     later.exploits = [{ ...later.exploits![0]!, family_ids: [laterChild] }]
-    await importPlan(pool, planRunImport(later))
+    const second = await importPlan(pool, planRunImport(later))
+    const secondSummary = await pool.query(`SELECT summary->'new_tickets' AS t FROM nightly_runs WHERE id = $1`, [second.runId])
+    expect(secondSummary.rows[0].t).toEqual([])
 
-    const ticket = await pool.query(`SELECT status, assignee, family_ids FROM exploits WHERE id = 'AF-TEST-1'`)
+    const ticket = await pool.query(`SELECT id, status, assignee, family_ids FROM exploits WHERE fingerprint = 'fp-child'`)
+    expect(ticket.rows[0].id).toBe(ticketId)
     expect(ticket.rows[0]).toMatchObject({ status: 'in_progress', assignee: 'dana' })
     expect([...ticket.rows[0].family_ids].sort()).toEqual([ROOT_ID, CHILD_ID, laterChild].sort())
 
