@@ -150,6 +150,23 @@ How the read models are derived:
   its age, the share of reviews that overturned the Judge per category, and the
   ground-truth count. Calibration (M1, M2) is not shown: no table stores
   calibration runs.
+- **Run now** (Tonight's queue, gate G10): "Run queue now" and each row's "Run
+  this now" open a confirmation showing the request count, the estimated cost
+  (the sum of the items' `estimated_cost_usd`, or the family-size estimate
+  where that is null), and the `NIGHTLY_BUDGET_USD` envelope, with a warning
+  when the estimate exceeds it. Confirming calls `runNow(scope)`, which inserts
+  one `nightly_runs` row: `trigger = 'run_now'`, `status = 'scheduled'`,
+  `scheduled_for = now`, and `plan = { scope, requested_by, requested_at }`, where
+  `scope` is `{ "kind": "queue" }` or `{ "kind": "single", "operatorRequestId" }`
+  (`src/lib/run-now.ts`). The dashboard never runs attacks or changes
+  `operator_requests`; the executor drains them and moves the row to `running`
+  and `completed` with a NightlyRunSummary. A new run-now is refused while
+  another is scheduled or running (an advisory lock serializes confirms), and a
+  single-request run must name a queued request. The page follows the run
+  (`?runNow=<id>`, polled every 3 seconds while active) and links to its morning
+  report when it completes. In fixtures mode the store simulates the executor:
+  the run stays scheduled for 5 seconds, is running (its requests leave the
+  queue) until 25 seconds, then completes with a report.
 - Human decisions are recorded under `OPERATOR_USERNAME` (default `operator`),
   set on the server, never taken from the browser.
 

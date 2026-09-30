@@ -10,6 +10,8 @@ export interface QueueTableProps {
   plan: PlannedQueueItem[]
   onRemove: (id: string) => void
   onMove: (id: string, direction: MoveDirection) => void
+  /** Opens the run-now confirmation for one request; the button is hidden without it. */
+  onRunNow?: (id: string) => void
   /** Disables the controls while an edit is in flight. */
   busy?: boolean
 }
@@ -26,7 +28,7 @@ function QueueTarget({ item }: { item: PlannedQueueItem }) {
 
 const column = createColumnHelper<PlannedQueueItem>()
 
-export function QueueTable({ plan, onRemove, onMove, busy = false }: QueueTableProps) {
+export function QueueTable({ plan, onRemove, onMove, onRunNow, busy = false }: QueueTableProps) {
   const last = plan.length
   const columns = [
     column.accessor('position', { header: '#' }),
@@ -67,6 +69,11 @@ export function QueueTable({ plan, onRemove, onMove, busy = false }: QueueTableP
             <button type="button" aria-label={`Remove request ${position}`} disabled={busy} onClick={() => onRemove(id)}>
               Remove
             </button>
+            {onRunNow && (
+              <button type="button" aria-label={`Run request ${position} now`} disabled={busy} onClick={() => onRunNow(id)}>
+                Run this now
+              </button>
+            )}
           </span>
         )
       },

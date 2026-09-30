@@ -13,18 +13,28 @@ import type { DashboardRepository } from './server/repository.js'
 /** 2026-09-29 15:00 CDT: tonight's run date is 2026-09-30. */
 export const TEST_NOW = new Date('2026-09-29T20:00:00Z')
 
+const clock = { now: TEST_NOW }
+
+/** Simulated run-nows start after 1 s and complete after 10 s of test-clock time. */
 function freshRepository(): DashboardRepository {
   return createFixtureRepository({
     config: { envelopeUsd: 25, timeZone: 'America/Chicago', runHour: 1 },
-    now: () => TEST_NOW,
+    now: () => clock.now,
+    runNowTimings: { startAfterMs: 1_000, finishAfterMs: 10_000 },
   })
 }
 
 const state = { repository: freshRepository() }
 
-/** Restores the fixtures between tests. */
+/** Restores the fixtures and the clock between tests. */
 export function resetTestData(): void {
+  clock.now = TEST_NOW
   state.repository = freshRepository()
+}
+
+/** Moves the fixture clock forward, e.g. to let a simulated run-now finish. */
+export function advanceTestClock(ms: number): void {
+  clock.now = new Date(clock.now.getTime() + ms)
 }
 
 export const fetchDataSourceMode: typeof DataSource.fetchDataSourceMode = async (): Promise<DataSourceMode> => 'fixtures'
@@ -50,3 +60,5 @@ export const fetchNeedsReview: typeof DataSource.fetchNeedsReview = () => state.
 export const fetchJudgeHealth: typeof DataSource.fetchJudgeHealth = () => state.repository.getJudgeHealth()
 export const resolveReview: typeof DataSource.resolveReview = (verdictId, review) =>
   state.repository.resolveReview(verdictId, review, 'operator')
+export const fetchRun: typeof DataSource.fetchRun = (runId) => state.repository.getRun(runId)
+export const runNow: typeof DataSource.runNow = (scope) => state.repository.runNow(scope, 'operator')

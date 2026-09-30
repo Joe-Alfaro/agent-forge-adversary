@@ -4,6 +4,7 @@ import { listTaxonomyCells, PRD_CATEGORIES, type TaxonomyCell } from '@agentforg
 
 import { isReportStatus, sortApprovals } from '../lib/approvals.js'
 import { isVerdictOutcome, resolvedOutcome } from '../lib/judge.js'
+import { buildRunNowPlan } from '../lib/run-now.js'
 import { cellKey, mergeCoverage } from '../lib/coverage.js'
 import type { CostSummary, CoverageCell, RunSpend } from '../lib/models.js'
 import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
@@ -25,6 +26,7 @@ import type { DashboardRepository } from './repository.js'
 import {
   assertCanRecheck,
   assertReportDecision,
+  assertRunNow,
   assertRerunRequest,
   assertTransition,
   normalizeAssignee,
@@ -277,6 +279,15 @@ export function createPgRepository({
     return { runDate, envelopeUsd: config.envelopeUsd, items: result.rows.map(mapQueueItem) }
   }
 
+  async function getRun(runId: string) {
+    if (!/^\d+$/.test(runId)) {
+      return null
+    }
+    const result = await pool.query(`${RUNS_SQL} WHERE r.id = $2`, [now(), Number(runId)])
+    const [row] = result.rows
+    return row ? mapRunSummary(row) : null
+  }
+
   async function getTicket(id: string) {
     const result = await pool.query(`${TICKETS_SQL} WHERE e.id = $1`, [id])
     const [row] = result.rows
@@ -318,6 +329,32 @@ export function createPgRepository({
         [now()],
       )
       return result.rows.map(mapRunSummary)
+    },
+
+    getRun,
+
+    async runNow(scope, requestedBy) {
+      const runId = await transaction(async (client) => {
+        // Serializes concurrent confirms, so two clicks cannot schedule two runs.
+        await client.query(`SELECT pg_advisory_xact_lock(hashtext('agentforge:run_now'))`)
+        const active = await client.query(
+          `SELECT 1 FROM nightly_runs WHERE trigger = 'run_now' AND status IN ('scheduled', 'running') LIMIT 1`,
+        )
+        const queue = await readQueue(client)
+        assertRunNow(queue.items, scope, (active.rowCount ?? 0) > 0)
+        const requestedAt = now()
+        const inserted = await client.query(
+          `INSERT INTO nightly_runs (scheduled_for, trigger, status, plan)
+           VALUES ($1, 'run_now', 'scheduled', $2) RETURNING id`,
+          [requestedAt, buildRunNowPlan(scope, requestedBy, requestedAt)],
+        )
+        return String(inserted.rows[0]?.id)
+      })
+      const run = await getRun(runId)
+      if (!run) {
+        throw new Error(`Run ${runId} was not written`)
+      }
+      return run
     },
 
     async getMorningReport(runId) {

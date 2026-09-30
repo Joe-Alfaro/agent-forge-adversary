@@ -1,6 +1,7 @@
 import { queryOptions, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 
 import { ACTIVITY_REFRESH_MS } from './activity.js'
+import { isRunNowActive } from './run-now.js'
 import {
   fetchAgentEvents,
   fetchApprovals,
@@ -12,6 +13,7 @@ import {
   fetchNeedsReview,
   fetchQueue,
   fetchResilienceTrend,
+  fetchRun,
   fetchRuns,
   fetchTicket,
   fetchTickets,
@@ -45,6 +47,18 @@ export const runsQuery = queryOptions({
   queryKey: ['runs'],
   queryFn: fetchRuns,
 })
+
+/** Polls a run while the executor has it scheduled or running, then stops. */
+export function runStatusQuery(runId: string, pollMs: number) {
+  return queryOptions({
+    queryKey: ['runs', runId, 'status'],
+    queryFn: () => fetchRun(runId),
+    refetchInterval: (query) => {
+      const run = query.state.data
+      return run && !isRunNowActive(run.status) ? false : pollMs
+    },
+  })
+}
 
 export function morningReportQuery(runId: string) {
   return queryOptions({
@@ -141,4 +155,9 @@ export function useNeedsReview() {
 
 export function useJudgeHealth() {
   return useSuspenseQuery(judgeHealthQuery)
+}
+
+/** Non-suspending, so the status line can sit inside the queue page. */
+export function useRunStatus(runId: string, pollMs: number) {
+  return useQuery(runStatusQuery(runId, pollMs))
 }

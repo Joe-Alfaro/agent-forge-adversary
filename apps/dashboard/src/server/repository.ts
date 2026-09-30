@@ -4,6 +4,7 @@ import type { JudgeHealth, ReviewInput, ReviewItem, ReviewResolution } from '../
 import type { CostSummary, CoverageMatrix, MorningReport, RunSummary, TonightQueue } from '../lib/models.js'
 import type { MoveDirection } from '../lib/queue.js'
 import type { ResilienceTrend } from '../lib/resilience.js'
+import type { RunNowScope } from '../lib/run-now.js'
 import type { TicketRow, TicketUpdate } from '../lib/tickets.js'
 
 /**
@@ -16,6 +17,12 @@ export interface DashboardRepository {
   getTicket(id: string): Promise<TicketRow | null>
   updateTicket(id: string, update: TicketUpdate): Promise<TicketRow>
   listRuns(): Promise<RunSummary[]>
+  getRun(runId: string): Promise<RunSummary | null>
+  /**
+   * Gate G10: inserts one nightly_runs row (trigger run_now, status scheduled,
+   * plan RunNowPlan) for the executor to pick up. Never runs anything itself.
+   */
+  runNow(scope: RunNowScope, requestedBy: string): Promise<RunSummary>
   getMorningReport(runId: string): Promise<MorningReport | null>
   getCoverage(): Promise<CoverageMatrix>
   getCost(): Promise<CostSummary>

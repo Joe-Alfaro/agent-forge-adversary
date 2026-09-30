@@ -3,17 +3,19 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import type { ApprovalDecision } from './approvals.js'
 import type { ReviewInput } from './judge.js'
+import type { RunNowScope } from './run-now.js'
 import {
   decideApproval,
   enqueueRerun,
   moveQueueItem,
   removeQueueItem,
   resolveReview,
+  runNow,
   type TicketUpdate,
   updateTicket,
 } from './data-source.js'
 import type { MoveDirection } from './queue.js'
-import { approvalsQuery, queueQuery, resilienceQuery, ticketsQuery } from './queries.js'
+import { approvalsQuery, queueQuery, resilienceQuery, runsQuery, ticketsQuery } from './queries.js'
 
 export interface TicketUpdateVariables {
   id: string
@@ -85,6 +87,19 @@ export function useResolveReview() {
         queryClient.invalidateQueries({ queryKey: ['judge'] }),
         queryClient.invalidateQueries({ queryKey: resilienceQuery.queryKey }),
         queryClient.invalidateQueries({ queryKey: ticketsQuery.queryKey }),
+      ]),
+  })
+}
+
+/** Schedules a run-now; the run history and queue refresh as the executor picks it up. */
+export function useRunNow() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (scope: RunNowScope) => runNow(scope),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: runsQuery.queryKey }),
+        queryClient.invalidateQueries({ queryKey: queueQuery.queryKey }),
       ]),
   })
 }

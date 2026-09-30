@@ -731,3 +731,93 @@ button:disabled {
   white-space: normal;
   min-width: 160px;
 }
+
+/* Run now (gate G10) */
+.page-header-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.run-now-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #e0e8ff;
+  color: var(--accent);
+}
+
+.run-now-status p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.run-now-status.run-completed {
+  background: #dcfae6;
+  color: var(--ok);
+}
+
+.run-now-status.run-failed,
+.run-now-status.run-aborted {
+  background: #fee4e2;
+  color: var(--critical);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(16, 24, 40, 0.45);
+  z-index: 10;
+}
+
+.modal {
+  width: min(520px, calc(100vw - 32px));
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 20px 24px;
+  box-shadow: 0 12px 32px rgba(16, 24, 40, 0.2);
+}
+
+.modal h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.modal-warning {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #fef0e7;
+  color: var(--high);
+  font-weight: 600;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* Text cells wrap and padding tightens so the four row actions fit on one line at laptop widths. */
+.queue-table .data-table th,
+.queue-table .data-table td {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.queue-table .data-table td {
+  white-space: normal;
+}
+
+.queue-table .data-table td:nth-child(3),
+.queue-table .data-table td:nth-child(7),
+.queue-table .data-table td:last-child {
+  white-space: nowrap;
+}

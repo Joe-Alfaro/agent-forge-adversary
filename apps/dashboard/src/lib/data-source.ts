@@ -3,6 +3,7 @@ import type { RerunRequest } from '@agentforge/contracts'
 import type { AgentEvent } from './activity.js'
 import type { ApprovalDecision, ApprovalItem } from './approvals.js'
 import type { ResilienceTrend } from './resilience.js'
+import type { RunNowScope } from './run-now.js'
 import type { JudgeHealth, ReviewInput, ReviewItem, ReviewResolution } from './judge.js'
 import type { CostSummary, CoverageMatrix, MorningReport, RunSummary, TonightQueue } from './models.js'
 import type { MoveDirection } from './queue.js'
@@ -16,6 +17,7 @@ import {
   getMorningReportFn,
   getQueueFn,
   getResilienceTrendFn,
+  getRunFn,
   getTicketFn,
   listAgentEventsFn,
   listApprovalsFn,
@@ -25,6 +27,7 @@ import {
   moveQueueItemFn,
   removeQueueItemFn,
   resolveReviewFn,
+  runNowFn,
   updateTicketFn,
 } from './server-fns.js'
 import type { TicketRow, TicketUpdate } from './tickets.js'
@@ -113,4 +116,12 @@ export function fetchJudgeHealth(): Promise<JudgeHealth> {
 
 export function resolveReview(verdictId: string, review: ReviewInput): Promise<ReviewResolution> {
   return resolveReviewFn({ data: { verdictId, ...review } })
+}
+
+export function fetchRun(runId: string): Promise<RunSummary | null> {
+  return getRunFn({ data: runId })
+}
+
+export function runNow(scope: RunNowScope): Promise<RunSummary> {
+  return runNowFn({ data: scope })
 }
