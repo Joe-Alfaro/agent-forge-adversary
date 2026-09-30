@@ -438,3 +438,21 @@ button:disabled {
   outline: 2px dashed var(--text);
   outline-offset: -2px;
 }
+
+.sign-out {
+  margin: 24px 8px 0;
+}
+
+.sign-out button {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: #9ca3af;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.sign-out button:hover {
+  color: #e5e7eb;
+}

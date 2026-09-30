@@ -9,7 +9,7 @@
     "dev:fixtures": "DASHBOARD_DATA_SOURCE=fixtures npm run dev",
     "prebuild": "tsc -b ../../packages/contracts ../../packages/db",
     "build": "vite build",
-    "start": "vite preview",
+    "start": "srvx serve --prod --static ../client --entry dist/server/server.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json"
   },
@@ -24,7 +24,8 @@
     "@tanstack/react-table": "^8.21.3",
     "pg": "^8.23.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "srvx": "^0.11.22"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",
