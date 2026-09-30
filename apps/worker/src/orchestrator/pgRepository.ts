@@ -94,11 +94,16 @@ export class PgOrchestratorRepository implements OrchestratorRepository {
   }
 
   async upsertExploit(row: ExploitRow): Promise<{ id: string; isNew: boolean }> {
+    // Conflict behavior is kept identical to packages/db import-writer.ts (the
+    // shared row-shape authority): a re-found exploit merges its family_ids and
+    // never touches the operator's status or assignee.
     const result = await this.pool.query(
       `INSERT INTO exploits (id, fingerprint, severity, category, subcategory, owasp_ids, min_repro, discovered_version_id, family_ids)
        VALUES ('AF-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('agentforge_exploit_seq')::text, 4, '0'),
                $1,$2,$3,$4,$5,$6,$7,$8)
-       ON CONFLICT (fingerprint) DO UPDATE SET updated_at = now()
+       ON CONFLICT (fingerprint) DO UPDATE
+         SET family_ids = ARRAY(SELECT DISTINCT unnest(exploits.family_ids || EXCLUDED.family_ids)),
+             updated_at = now()
        RETURNING id, (xmax = 0) AS is_new`,
       [
         row.fingerprint,
