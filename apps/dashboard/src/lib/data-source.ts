@@ -28,6 +28,7 @@ import {
   removeQueueItemFn,
   resolveReviewFn,
   runNowFn,
+  updateNightlyBudgetFn,
   updateTicketFn,
 } from './server-fns.js'
 import type { TicketRow, TicketUpdate } from './tickets.js'
@@ -124,4 +125,8 @@ export function fetchRun(runId: string): Promise<RunSummary | null> {
 
 export function runNow(scope: RunNowScope): Promise<RunSummary> {
   return runNowFn({ data: scope })
+}
+
+export function updateNightlyBudget(budgetUsd: number): Promise<TonightQueue> {
+  return updateNightlyBudgetFn({ data: budgetUsd })
 }

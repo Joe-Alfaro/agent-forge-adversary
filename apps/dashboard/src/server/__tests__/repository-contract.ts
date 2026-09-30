@@ -152,6 +152,8 @@ export const contractReviews: ReviewItem[] = [
   {
     verdictId: contractReviewIds.injection,
     attemptId: '50000000-0000-4000-8000-000000000001',
+    // A variant in AF-T-0001's family, so its resolution changes that ticket.
+    exploitId: 'AF-T-0001',
     category: 'prompt_injection',
     subcategory: 'direct',
     targetVersion: 'copilot@9.0.0',
@@ -325,6 +327,21 @@ export function describeRepositoryContract(name: string, options: ContractOption
       })
     })
 
+    describe('nightly budget', () => {
+      it('persists a new envelope, and tonight’s queue uses it at once', async () => {
+        const queue = await repo.updateNightlyBudget('40.5', 'operator')
+        expect(queue.envelopeUsd).toBe(40.5)
+        expect((await repo.getQueue()).envelopeUsd).toBe(40.5)
+      })
+
+      it('refuses budgets that are not positive, too large, or not numbers, and keeps the old one', async () => {
+        await expect(repo.updateNightlyBudget(0, 'operator')).rejects.toThrow('more than $0')
+        await expect(repo.updateNightlyBudget(5000, 'operator')).rejects.toThrow('at most $1000')
+        await expect(repo.updateNightlyBudget('lots', 'operator')).rejects.toThrow('must be a number')
+        expect((await repo.getQueue()).envelopeUsd).toBe(25)
+      })
+    })
+
     describe('run now', () => {
       it('schedules one run_now run for the whole queue, outside run history until it starts', async () => {
         const run = await repo.runNow({ kind: 'queue' }, 'operator')
@@ -456,6 +473,16 @@ export function describeRepositoryContract(name: string, options: ContractOption
           ],
           groundTruthLabels: 2,
         })
+      })
+
+      it('confirming a success updates the linked ticket: last verdict success at full confidence', async () => {
+        await repo.resolveReview(contractReviewIds.injection, { decision: 'confirm' }, 'operator')
+        expect(await repo.getTicket('AF-T-0001')).toMatchObject({ lastVerdict: 'success', confidence: 1 })
+      })
+
+      it('overturning updates the linked ticket’s last verdict', async () => {
+        await repo.resolveReview(contractReviewIds.injection, { decision: 'overturn', outcome: 'fail' }, 'operator')
+        expect((await repo.getTicket('AF-T-0001'))?.lastVerdict).toBe('fail')
       })
 
       it('refuses an overturn that changes nothing, and leaves the verdict pending', async () => {

@@ -5,6 +5,7 @@ import { formatDateTime, formatPercent, humanize } from '../lib/format.js'
 import { overturnOptions, type ReviewItem } from '../lib/judge.js'
 import { useResolveReview } from '../lib/mutations.js'
 import { useNeedsReview } from '../lib/queries.js'
+import { TicketLink } from './TicketLink.js'
 
 type ResolveReview = ReturnType<typeof useResolveReview>
 
@@ -57,6 +58,11 @@ function ReviewCard({ item, mutation }: { item: ReviewItem; mutation: ResolveRev
   return (
     <li className="review-card">
       <h2>{cell}</h2>
+      {item.exploitId && (
+        <p>
+          Ticket <TicketLink id={item.exploitId} />
+        </p>
+      )}
       <p className="muted">
         {item.targetVersion ?? 'unknown version'} · flagged {formatDateTime(item.flaggedAt)} · rubric{' '}
         <code>{item.rubricVersion}</code>

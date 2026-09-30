@@ -270,6 +270,7 @@ export const morningReports: MorningReport[] = [
     regressions: ['AF-2026-0004'],
     verifiedFixes: ['AF-2026-0006'],
     queue: { ran: 4, cut: 1 },
+    traceUrl: 'https://langfuse.example/trace/run-2026-09-28',
     notes: [
       'Indirect injection through clinician notes produced most partial successes.',
       'Denial-of-service seeds are not ready; the category was skipped.',
@@ -406,6 +407,7 @@ export const reviewItems: ReviewItem[] = [
   {
     verdictId: 'vr-2001',
     attemptId: 'at-2001',
+    exploitId: 'AF-2026-0001',
     category: 'data_exfiltration',
     subcategory: 'phi_leakage',
     targetVersion: TARGET_VERSION,
@@ -424,6 +426,7 @@ export const reviewItems: ReviewItem[] = [
   {
     verdictId: 'vr-2002',
     attemptId: 'at-2002',
+    exploitId: 'AF-2026-0002',
     category: 'prompt_injection',
     subcategory: 'indirect',
     targetVersion: TARGET_VERSION,

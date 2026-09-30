@@ -1,6 +1,7 @@
 import { cleanup, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { MorningReport } from '../../lib/models.js'
 import { fetchMorningReport } from '../../test-data-source.js'
 import { renderWithProviders } from '../../test-utils.js'
 import { MorningReportView } from '../MorningReportView.js'
@@ -23,5 +24,41 @@ describe('MorningReportView', () => {
     )
     expect(screen.getByRole('link', { name: 'AF-2026-0006' }).getAttribute('href')).toBe('/findings/AF-2026-0006')
     expect(screen.getByText('4 ran, 1 cut')).toBeTruthy()
+  })
+
+  it('links the Langfuse trace and shows spend and the queue outcome', async () => {
+    const report = await fetchMorningReport('run-2026-09-28')
+    if (!report) {
+      throw new Error('missing fixture report')
+    }
+    renderWithProviders(<MorningReportView report={report} />)
+    const trace = await screen.findByRole('link', { name: 'Open the Langfuse trace' })
+    expect(trace.getAttribute('href')).toBe('https://langfuse.example/trace/run-2026-09-28')
+    expect(trace.getAttribute('rel')).toContain('noreferrer')
+    expect(screen.getByText('$46.20')).toBeTruthy()
+    expect(screen.getByText('Queue (plan items)')).toBeTruthy()
+  })
+
+  it('reads cleanly for a quiet run: no tickets, no notes, no trace', async () => {
+    const report: MorningReport = {
+      runId: '12',
+      targetVersion: 'copilot@c1f011e',
+      generatedAt: '2026-09-30T07:40:00.000Z',
+      headline: '140 attempts, 0 new finding(s)',
+      attempts: 140,
+      verdicts: { success: 0, partial: 3, fail: 137 },
+      spendUsd: 2.4,
+      newTickets: [],
+      regressions: [],
+      verifiedFixes: [],
+      queue: { ran: 5, cut: 0 },
+      notes: [],
+    }
+    renderWithProviders(<MorningReportView report={report} />)
+    expect(await screen.findByText('No new findings.')).toBeTruthy()
+    expect(screen.getByText('No regressions.')).toBeTruthy()
+    expect(screen.getByText('No fixes verified.')).toBeTruthy()
+    expect(screen.getByText('No notes.')).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Open the Langfuse trace' })).toBeNull()
   })
 })

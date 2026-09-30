@@ -8,6 +8,7 @@ import type { QueueConfig } from '../config.js'
 import type { DashboardRepository } from '../repository.js'
 import { createIsolatedSchema, type IsolatedSchema } from './pg-schema.js'
 import {
+  ensurePlatformSettings,
   resetDatabase,
   seedEvents,
   seedQueue,
@@ -59,6 +60,7 @@ describe.skipIf(!url)('Postgres repository', () => {
     await seedEvents(pool, contractEvents)
     await seedReviews(pool, contractReviews, versions)
     await seedScheduledPlan(pool, contractScheduledPlan)
+    await ensurePlatformSettings(pool)
     return createPgRepository({ pool, config: { ...config, ...overrides }, now: () => contractNow })
   }
 
@@ -116,6 +118,28 @@ describe.skipIf(!url)('Postgres repository', () => {
       )
       const { plan } = await repo.getQueue()
       expect(plan?.items[2]?.owaspIds).toEqual(['LLM01', 'LLM05'])
+    })
+  })
+
+  describe('nightly budget storage', () => {
+    it('writes platform_settings row 1 with who changed it and when', async () => {
+      const repo = await seededRepo()
+      await repo.updateNightlyBudget(33.333, 'priya')
+      const row = await pool.query('SELECT nightly_budget_usd, updated_at, updated_by FROM platform_settings WHERE id = 1')
+      expect(Number(row.rows[0]?.nightly_budget_usd)).toBe(33.33)
+      expect(row.rows[0]?.updated_at).toBeInstanceOf(Date)
+      expect(row.rows[0]?.updated_by).toBe('priya')
+    })
+
+    it('falls back to NIGHTLY_BUDGET_USD and refuses to save until platform_settings is migrated', async () => {
+      const repo = await seededRepo({ envelopeUsd: 18 })
+      await pool.query('DROP TABLE platform_settings')
+      try {
+        expect((await repo.getQueue()).envelopeUsd).toBe(18)
+        await expect(repo.updateNightlyBudget(30, 'operator')).rejects.toThrow('platform_settings')
+      } finally {
+        await ensurePlatformSettings(pool)
+      }
     })
   })
 
@@ -189,6 +213,13 @@ describe.skipIf(!url)('Postgres repository', () => {
   })
 
   describe('review storage', () => {
+    it('no longer counts an overturned Judge success toward the ticket’s confidence', async () => {
+      const repo = await seededRepo()
+      expect((await repo.getTicket('AF-T-0001'))?.confidence).toBe(0.55)
+      await repo.resolveReview(contractReviewIds.injection, { decision: 'overturn', outcome: 'partial' }, 'priya')
+      expect(await repo.getTicket('AF-T-0001')).toMatchObject({ lastVerdict: 'partial', confidence: 0 })
+    })
+
     it('adds a human verdict and a ground-truth row, and leaves the Judge verdict as it was', async () => {
       const repo = await seededRepo()
       await repo.resolveReview(contractReviewIds.injection, { decision: 'overturn', outcome: 'fail' }, 'priya')

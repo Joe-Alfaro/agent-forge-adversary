@@ -8,6 +8,7 @@ import {
   resolvedOutcome,
   summarizeJudgeHealth,
 } from '../lib/judge.js'
+import { parseNightlyBudget } from '../lib/budget.js'
 import { mergeCoverage } from '../lib/coverage.js'
 import * as fixtures from '../lib/fixtures.js'
 import type { MorningReport, QueueItem, RunStatus, RunSummary, TonightQueue } from '../lib/models.js'
@@ -127,6 +128,8 @@ export function createFixtureRepository({
     groundTruthLabels: seed.groundTruthLabels ?? 0,
     resolved: new Set<string>(),
     runNowRuns: [] as SimulatedRun[],
+    /** Stands in for platform_settings.nightly_budget_usd; starts at NIGHTLY_BUDGET_USD. */
+    budgetUsd: config.envelopeUsd,
     reports: (seed.reports ?? []).map((report) =>
       shiftOptional({ ...report, createdAt: shift(report.createdAt, createdOffset) }, 'publishedAt', createdOffset),
     ),
@@ -268,7 +271,7 @@ export function createFixtureRepository({
   function queue(): TonightQueue {
     return structuredClone({
       runDate: nextRunDate(now(), config),
-      envelopeUsd: config.envelopeUsd,
+      envelopeUsd: store.budgetUsd,
       items: pendingItems(),
       runNowEnabled: isRunNowEnabled(config),
       plan: tonightPlan(),
@@ -369,6 +372,12 @@ export function createFixtureRepository({
       return queue()
     },
 
+    // The demo store keeps only the value; Postgres also records updated_by.
+    async updateNightlyBudget(value) {
+      store.budgetUsd = parseNightlyBudget(value)
+      return queue()
+    },
+
     async removeQueueItem(id) {
       store.queueItems = store.queueItems.filter((item) => item.id !== id)
       return queue()
@@ -404,6 +413,17 @@ export function createFixtureRepository({
       store.resolved.add(verdictId)
       store.reviewHistory = [...store.reviewHistory, { category: review.category, judged: review.outcome, human: outcome }]
       store.groundTruthLabels += 1
+      // The human verdict is now the family's latest, as the Postgres ticket read derives it.
+      const { exploitId } = review
+      if (exploitId) {
+        store.tickets = store.tickets.map((ticket) => {
+          if (ticket.id !== exploitId) {
+            return ticket
+          }
+          const confidence = outcome === 'success' ? 1 : ticket.confidence
+          return { ...ticket, lastVerdict: outcome, confidence }
+        })
+      }
       return { verdictId, decision: input.decision, outcome, reviewer, resolvedAt: now().toISOString() }
     },
 

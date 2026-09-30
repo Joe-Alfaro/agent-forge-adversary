@@ -6,6 +6,7 @@ import { isReportStatus, sortApprovals } from '../lib/approvals.js'
 import { isVerdictOutcome, resolvedOutcome } from '../lib/judge.js'
 import { buildRunNowPlan } from '../lib/run-now.js'
 import { parseTonightPlan } from '../lib/tonight.js'
+import { parseNightlyBudget } from '../lib/budget.js'
 import { cellKey, mergeCoverage } from '../lib/coverage.js'
 import type { CostSummary, CoverageCell, RunSpend } from '../lib/models.js'
 import { estimateRerunCostUsd, moveItem } from '../lib/queue.js'
@@ -46,8 +47,8 @@ export interface PgRepositoryOptions {
 type Queryable = pg.Pool | pg.PoolClient
 
 /*
- * Tickets are `exploits` rows. Confidence is the strongest successful verdict in
- * the exploit's family, and the last verdict comes from the family's most recent
+ * Tickets are `exploits` rows. Confidence is the strongest success among the
+ * latest verdicts of the exploit's family (a human verdict supersedes the Judge's), and the last verdict comes from the family's most recent
  * verdict (family = family_ids plus the fingerprint). The last verified version
  * is the newest regression result's target version, or failing that the
  * version of the latest verdict.
@@ -62,9 +63,13 @@ const TICKETS_SQL = `
   FROM exploits e
   LEFT JOIN target_versions dv ON dv.id = e.discovered_version_id
   LEFT JOIN LATERAL (
-    SELECT max(v.confidence) AS max_confidence
-    FROM attempts a JOIN verdicts v ON v.attempt_id = a.id
-    WHERE (a.id = ANY(e.family_ids) OR a.fingerprint = e.fingerprint) AND v.outcome = 'success'
+    -- Each attempt's latest verdict only, so a Judge success a human overturned no longer counts.
+    SELECT max(lv.confidence) AS max_confidence
+    FROM attempts a
+    JOIN LATERAL (
+      SELECT v.outcome, v.confidence FROM verdicts v WHERE v.attempt_id = a.id ORDER BY v.created_at DESC, v.id LIMIT 1
+    ) lv ON true
+    WHERE (a.id = ANY(e.family_ids) OR a.fingerprint = e.fingerprint) AND lv.outcome = 'success'
   ) conf ON true
   LEFT JOIN LATERAL (
     SELECT v.outcome, tv.version
@@ -189,7 +194,10 @@ const UNRESOLVED = `
 
 const REVIEW_COLUMNS = `
   SELECT v.id, v.attempt_id, v.outcome, v.confidence, v.stage, v.rubric_version, v.judge_model, v.evidence,
-         v.created_at, a.category, a.subcategory, a.transcript, tv.version AS target_version
+         v.created_at, a.category, a.subcategory, a.transcript, tv.version AS target_version,
+         (SELECT e.id FROM exploits e
+          WHERE a.id = ANY(e.family_ids) OR a.fingerprint = e.fingerprint
+          ORDER BY e.created_at, e.id LIMIT 1) AS exploit_id
   FROM verdicts v
   JOIN attempts a ON a.id = v.attempt_id
   LEFT JOIN target_versions tv ON tv.id = a.target_version_id`
@@ -308,12 +316,27 @@ export function createPgRepository({
     return plan
   }
 
+  async function hasPlatformSettings(db: Queryable): Promise<boolean> {
+    const result = await db.query(`SELECT to_regclass('platform_settings') IS NOT NULL AS present`)
+    return result.rows[0]?.present === true
+  }
+
+  /** The operator's in-app budget (platform_settings row 1), or NIGHTLY_BUDGET_USD until that table exists. */
+  async function readBudget(db: Queryable): Promise<number> {
+    if (!(await hasPlatformSettings(db))) {
+      return config.envelopeUsd
+    }
+    const result = await db.query('SELECT nightly_budget_usd FROM platform_settings WHERE id = 1')
+    const [row] = result.rows
+    return row ? Number(row.nightly_budget_usd) : config.envelopeUsd
+  }
+
   async function readQueue(db: Queryable) {
     const runDate = nextRunDate(now(), config)
     const result = await db.query(queueSql(false), [runDate])
     return {
       runDate,
-      envelopeUsd: config.envelopeUsd,
+      envelopeUsd: await readBudget(db),
       items: result.rows.map(mapQueueItem),
       runNowEnabled: isRunNowEnabled(config),
       plan: await readTonightPlan(db),
@@ -521,6 +544,22 @@ export function createPgRepository({
           ],
         )
       })
+      return readQueue(pool)
+    },
+
+    async updateNightlyBudget(value, updatedBy) {
+      const budgetUsd = parseNightlyBudget(value)
+      if (!(await hasPlatformSettings(pool))) {
+        throw new Error(
+          'The platform_settings table is not migrated yet, so the budget comes from NIGHTLY_BUDGET_USD and cannot be changed here',
+        )
+      }
+      await pool.query(
+        `INSERT INTO platform_settings (id, nightly_budget_usd, updated_at, updated_by) VALUES (1, $1, now(), $2)
+         ON CONFLICT (id) DO UPDATE
+           SET nightly_budget_usd = EXCLUDED.nightly_budget_usd, updated_at = now(), updated_by = EXCLUDED.updated_by`,
+        [budgetUsd, updatedBy],
+      )
       return readQueue(pool)
     },
 

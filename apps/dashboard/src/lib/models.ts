@@ -124,4 +124,6 @@ export interface MorningReport {
   verifiedFixes: string[]
   queue: { ran: number; cut: number }
   notes: string[]
+  /** The run's Langfuse trace (NightlyRunSummary `trace_url`), http(s) only. */
+  traceUrl?: string
 }

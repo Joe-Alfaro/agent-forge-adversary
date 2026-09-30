@@ -66,6 +66,52 @@ describe('QueueView plan', () => {
   })
 })
 
+describe('QueueView nightly budget', () => {
+  async function changeBudget(value: string) {
+    fireEvent.click(screen.getByRole('button', { name: 'Change nightly budget' }))
+    fireEvent.change(screen.getByLabelText('Nightly budget (USD)'), { target: { value } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save budget' }))
+  }
+
+  it('shows the current budget', async () => {
+    await renderQueue()
+    expect(screen.getByText('Nightly budget: $25.00')).toBeTruthy()
+  })
+
+  it('saves a new budget and recomputes run and cut against it at once', async () => {
+    await renderQueue()
+    await changeBudget('40')
+    expect(await screen.findByText(/14 of 14 items will run for \$31\.80 of the \$40\.00 envelope\./)).toBeTruthy()
+    expect(screen.getByText('Nightly budget: $40.00')).toBeTruthy()
+    expect(
+      screen.getByText(
+        'Tonight’s plan was made with a $25.00 envelope; run and cut above use $40.00, and the Orchestrator re-plans against it on its next preview.',
+      ),
+    ).toBeTruthy()
+    expect((await fetchQueue()).envelopeUsd).toBe(40)
+  })
+
+  it('cuts more when the budget goes down', async () => {
+    await renderQueue()
+    await changeBudget('10')
+    expect(await screen.findByText(/items will run for \$[\d.]+ of the \$10\.00 envelope; \d+ cut\./)).toBeTruthy()
+  })
+
+  it('refuses an invalid budget before saving, and keeps the old one', async () => {
+    await renderQueue()
+    await changeBudget('0')
+    expect(await screen.findByText('The nightly budget must be more than $0')).toBeTruthy()
+    expect((await fetchQueue()).envelopeUsd).toBe(25)
+  })
+
+  it('cancelling leaves the budget alone', async () => {
+    await renderQueue()
+    fireEvent.click(screen.getByRole('button', { name: 'Change nightly budget' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel budget change' }))
+    expect(screen.getByText('Nightly budget: $25.00')).toBeTruthy()
+  })
+})
+
 describe('QueueView run now', () => {
   it('shows the whole-plan estimate, item count, and envelope before anything runs', async () => {
     await renderQueue()

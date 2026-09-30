@@ -11,6 +11,7 @@ import {
   removeQueueItem,
   resolveReview,
   runNow,
+  updateNightlyBudget,
   type TicketUpdate,
   updateTicket,
 } from './data-source.js'
@@ -101,5 +102,14 @@ export function useRunNow() {
         queryClient.invalidateQueries({ queryKey: runsQuery.queryKey }),
         queryClient.invalidateQueries({ queryKey: queueQuery.queryKey }),
       ]),
+  })
+}
+
+/** Saves the nightly budget; the queue comes back with the new envelope. */
+export function useUpdateNightlyBudget() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (budgetUsd: number) => updateNightlyBudget(budgetUsd),
+    onSuccess: (queue) => queryClient.setQueryData(queueQuery.queryKey, queue),
   })
 }
