@@ -9,8 +9,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { validateNightlyPlan, type AttackTranscript, type NightlyPlan, type Verdict } from '@agentforge/contracts'
 import { importPlan, planRunImport, type RunArtifact } from '@agentforge/db'
 
-import { loadEvalSuite } from '../../evals/index.js'
 import { previewNightlyPlan, readPlanPreviewConfig } from '../planPreview.js'
+import { SEED_INDEX } from '../seedIndex.js'
+import { planTonightNow } from '../index.js'
 import { createMigratedSchema, type MigratedSchema } from './pgSchema.js'
 
 /*
@@ -21,8 +22,8 @@ import { createMigratedSchema, type MigratedSchema } from './pgSchema.js'
  */
 const url = process.env.PLAN_PREVIEW_TEST_DATABASE_URL ?? process.env.ORCH_TEST_DATABASE_URL
 
-const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url))
-const seeds = loadEvalSuite(`${repoRoot}evals/seeds`)
+const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url))
+const seeds = [...SEED_INDEX]
 const evalFile = JSON.parse(readFileSync(`${repoRoot}evals/results/2026-09-29-copilot-c1f011e.json`, 'utf8')) as {
   cases: { transcript: AttackTranscript }[]
 }
@@ -289,5 +290,23 @@ describe.skipIf(!url)('plan:preview against Postgres (dry run)', () => {
     await pool.query('DELETE FROM platform_settings')
     const fallback = await previewNightlyPlan({ pool, seeds, config: { ...config, budgetUsd: 7 }, now })
     expect(fallback.plan.budget_usd).toBe(7)
+  })
+
+  it('planTonightNow: plans from env + the embedded seed suite and upserts the single standing row (no drain)', async () => {
+    const before = await pool.query(`SELECT count(*)::int AS n FROM operator_requests WHERE status = 'queued'`)
+    const result = await planTonightNow({
+      pool,
+      now,
+      env: { NIGHTLY_BUDGET_USD: '3', PLAN_TOP_K: '3', PLAN_MAX_ATTEMPTS: '2', PLAN_COST_PER_ATTEMPT_USD: '0.05' },
+    })
+    expect(validateNightlyPlan(result.plan).errors).toEqual([])
+    expect(result.plan.items.filter((i) => i.kind === 'coverage_campaign')).toHaveLength(3)
+    result.plan.items.filter((i) => i.kind === 'coverage_campaign').forEach((i) => expect(i.owasp_ids?.length).toBeGreaterThan(0))
+    const rows = await pool.query(
+      `SELECT id FROM nightly_runs WHERE trigger = 'cron' AND status = 'scheduled' ORDER BY scheduled_for DESC, id DESC`,
+    )
+    expect(Number(rows.rows[0]?.id)).toBe(result.nightlyRunId)
+    const after = await pool.query(`SELECT count(*)::int AS n FROM operator_requests WHERE status = 'queued'`)
+    expect(after.rows[0]?.n).toBe(before.rows[0]?.n)
   })
 })

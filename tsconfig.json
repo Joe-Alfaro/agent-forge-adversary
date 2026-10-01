@@ -1,9 +1,20 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/contracts" },
-    { "path": "./packages/db" },
-    { "path": "./apps/worker" },
-    { "path": "./apps/dashboard" }
+    {
+      "path": "./packages/contracts"
+    },
+    {
+      "path": "./packages/db"
+    },
+    {
+      "path": "./packages/planner"
+    },
+    {
+      "path": "./apps/worker"
+    },
+    {
+      "path": "./apps/dashboard"
+    }
   ]
 }

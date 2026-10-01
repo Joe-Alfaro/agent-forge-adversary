@@ -1,0 +1,19 @@
+{
+  "name": "@agentforge/planner",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "seeds:sync": "node scripts/sync-seed-index.mjs"
+  },
+  "dependencies": {
+    "@agentforge/contracts": "*",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10",
+    "@agentforge/db": "*"
+  }
+}

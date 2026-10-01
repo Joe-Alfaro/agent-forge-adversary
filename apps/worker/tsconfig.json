@@ -3,7 +3,8 @@
   "compilerOptions": { "rootDir": "./src", "outDir": "./dist" },
   "references": [
     { "path": "../../packages/contracts" },
-    { "path": "../../packages/db" }
+    { "path": "../../packages/db" },
+    { "path": "../../packages/planner" }
   ],
   "include": ["src"]
 }

@@ -5,8 +5,9 @@ import type pg from 'pg'
 import { isAttackCategory, type NightlyPlan, type PriorityTerms } from '@agentforge/contracts'
 
 import { DEFAULT_NIGHTLY_BUDGET_USD } from './budget.js'
-import { buildCellOwaspMap, unmappedCells, type OwaspMappedCase } from './owasp.js'
-import { PgOrchestratorRepository } from './pgRepository.js'
+import { buildCellOwaspMap, unmappedCells } from './owasp.js'
+import type { PlanningSeed } from './seeds.js'
+import { PgPlanningRepository } from './pgPlanningRepository.js'
 import { buildNightlyPlan, REGRESSION_REPLAYS } from './planner.js'
 import { DEFAULT_WEIGHTS } from './priority.js'
 import { DEFAULT_NIGHTLY_HOUR, DEFAULT_NIGHTLY_TIME_ZONE, nextNightlyWindow, type NightlyWindowConfig } from './schedule.js'
@@ -88,14 +89,10 @@ export function readPlanPreviewConfig(env: NodeJS.ProcessEnv = process.env): Pla
   }
 }
 
-export interface PreviewSeed extends OwaspMappedCase {
-  id: string
-}
-
 export interface PlanPreviewParams {
   pool: Pick<pg.Pool, 'query' | 'connect'>
   /** The seed suite (evals/seeds): seeds per cell and the cell → OWASP mapping. */
-  seeds: PreviewSeed[]
+  seeds: PlanningSeed[]
   config: PlanPreviewConfig
   now: Date
   /** The window to plan for; defaults to the next window after `now` (the cron passes its own). */
@@ -114,7 +111,7 @@ export interface PlanPreviewResult {
 /** Builds tonight's plan from Postgres without executing or persisting anything. */
 export async function buildPreviewPlan(params: Omit<PlanPreviewParams, 'pool'> & { pool: Pick<pg.Pool, 'query'> }): Promise<{ plan: NightlyPlan; scheduledFor: Date }> {
   const { config, now } = params
-  const repo = new PgOrchestratorRepository(params.pool)
+  const repo = new PgPlanningRepository(params.pool)
 
   const owaspByCell = buildCellOwaspMap(params.seeds)
   const missing = unmappedCells(owaspByCell)
