@@ -14,8 +14,7 @@ import { loadEvalSuite, type EvalCase } from '../../evals/index.js'
 import type { CampaignSeed } from '../../redteam/index.js'
 import { NIGHTLY_QUEUE, registerNightlyCron, runNightlyJob } from '../nightlyJob.js'
 import { PgOrchestratorRepository } from '../pgRepository.js'
-import { previewNightlyPlan, readPlanPreviewConfig } from '../planPreview.js'
-import { planNextNightly } from '../../planning/index.js'
+import { previewNightlyPlan, readPlanPreviewConfig, planTonightNow } from '@agentforge/planner'
 import { runScheduledNightly } from '../run.js'
 import { detectorContext, failJudge, fakeTracer, FakeClock, transcript } from './fakes.js'
 import { createMigratedSchema, type MigratedSchema } from './pgSchema.js'
@@ -288,7 +287,7 @@ describe.skipIf(!url)('scheduled nightly against Postgres (offline target, no sp
         },
         findStandingPlan: () => repo.findStandingPlan(),
         preview: ({ targetVersion, scheduledFor }) =>
-          planNextNightly({ pool, env: planEnv, now: clock, ...(scheduledFor ? { scheduledFor } : {}), ...(targetVersion ? { targetVersion } : {}) }),
+          planTonightNow({ pool, env: planEnv, now: clock, ...(scheduledFor ? { scheduledFor } : {}), ...(targetVersion ? { targetVersion } : {}) }),
         execute: (claimId) => runScheduledNightly({ ...consumerParams(), claimId }),
       })
     try {

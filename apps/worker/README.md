@@ -221,16 +221,16 @@ only (ARCHITECTURE 4.2).
 
 ## Orchestrator (`src/orchestrator/`)
 
-- `priority.ts` — the ARCHITECTURE 7.2 priority score over coverage cells (gap,
+- `priority.ts` (now in `@agentforge/planner`) — the ARCHITECTURE 7.2 priority score over coverage cells (gap,
   open-severity, regression, signal-per-dollar, staleness, minus cost) with
   config weights logged on every plan.
-- `planner.ts` — `buildNightlyPlan` composes a schema-valid `NightlyPlan v1`:
+- `planner.ts` (now in `@agentforge/planner`) — `buildNightlyPlan` composes a schema-valid `NightlyPlan v1`:
   operator reruns first, then regressions owed to a changed target or to tickets
   moved to `fixed`, then coverage campaigns ranked by priority, each marked `run`
   or `cut` against the budget envelope. `skip`/`focus`/`note` directives reshape
   the plan. Given a cell → OWASP map (`owasp.ts`, derived from the seed suite),
   every coverage campaign carries `owasp_ids`.
-- `planPreview.ts` — the DRY-RUN nightly plan preview (see below).
+- `planPreview.ts` (now in `@agentforge/planner`) — the DRY-RUN nightly plan preview (see below).
 - `run.ts` `runScheduledNightly` — the scheduled-run consumer: claims the
   scheduled cron row (SKIP LOCKED) and executes its plan in order within the
   lower of the envelope and the hard cap. `regression` items are the Regression
@@ -243,11 +243,10 @@ only (ARCHITECTURE 4.2).
   day) → plan the NEXT window, even when the run failed. With no standing plan,
   or one made for an older target version, tonight is planned first. Exactly one
   standing scheduled cron row is kept. Registered only when `NIGHTLY_ENABLED=true`.
-- `src/planning` (`@agentforge/worker/planning`) — `planNextNightly({ pool, env?,
-  now?, scheduledFor?, targetVersion? })`, the server-importable planning core
-  that `plan:preview`, the cron's re-plan, and the dashboard's "Plan now" share.
-  Dry run; upserts the standing row; seeds from `evals/seeds`
-  (`AGENTFORGE_SEED_DIR` overrides).
+- The planner itself (priority score, `buildNightlyPlan`, the plan:preview
+  core) lives in `packages/planner` (`@agentforge/planner`), re-exported from
+  `src/orchestrator`. `planTonightNow` is the one planner that `plan:preview`,
+  the cron's re-plan, and the dashboard's "Plan now" all call.
 - `run.ts` — `runPlan`, the RUN executor: red team → target → detectors → judge →
   persist attempts/verdicts, dedupe confirmed exploits by fingerprint,
   materialize `coverage_snapshots` (asserts `isTaxonomyCell`, fills

@@ -29,8 +29,7 @@ import {
   type CampaignSeed,
   type VariantTurns,
 } from '../redteam/index.js'
-import { buildNightlyPlan, REGRESSION_REPLAYS, type QueuedRequest } from './planner.js'
-import { DEFAULT_NIGHTLY_BUDGET_USD } from './budget.js'
+import { buildNightlyPlan, REGRESSION_REPLAYS, type QueuedRequest, DEFAULT_NIGHTLY_BUDGET_USD } from '@agentforge/planner'
 import type { AgentEventRow, CoverageSnapshotRow, OrchestratorRepository, RegressionFamily } from './repository.js'
 
 /**
@@ -724,7 +723,7 @@ export interface RunScheduledParams extends Omit<RunPlanParams, 'plan' | 'schedu
   maxAttemptsPerCampaign: number
   topK: number
   /** Coverage inputs (optional; the button scope is operator-request-driven). */
-  coverageCells?: import('./priority.js').CoverageCellInput[]
+  coverageCells?: import('@agentforge/planner').CoverageCellInput[]
   seedsByCell?: Record<string, string[]>
   runDate: string
   targetVersion: string
