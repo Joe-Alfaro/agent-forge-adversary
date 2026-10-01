@@ -78,6 +78,9 @@ function toCampaignSeed(c: EvalCase): CampaignSeed {
     session_role: c.session_role in ROLE_USER_IDS ? c.session_role : 'clinician',
     turns: c.turns.map((t) => t.message),
     technique_tags: c.technique_tags,
+    owasp_llm_ids: c.owasp_llm_ids,
+    owasp_ids: c.owasp_ids,
+    severity: c.severity,
   }
 }
 

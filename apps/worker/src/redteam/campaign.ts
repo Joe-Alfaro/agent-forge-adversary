@@ -28,6 +28,8 @@ export interface CampaignSeed {
   /** OWASP mapping carried from the eval case, used in the run artifact. */
   owasp_llm_ids?: string[]
   owasp_ids?: string[]
+  /** The eval case's severity; a confirmed exploit from this seed inherits it. */
+  severity?: 'critical' | 'high' | 'medium' | 'low'
 }
 
 /** The minimal Target Adapter surface the runner needs (structural). */

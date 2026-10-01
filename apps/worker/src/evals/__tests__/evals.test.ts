@@ -95,3 +95,54 @@ describe('validateEvalCase', () => {
     expect(() => validateEvalCase({ ...base, turns: [] }, 'test')).toThrow(/turns/)
   })
 })
+
+describe('severity / exploitability / regression', () => {
+  const base = suite[0]!
+
+  it.each(['severity', 'exploitability', 'regression'] as const)('rejects a case missing %s', (field) => {
+    const { [field]: _omit, ...rest } = base
+    expect(() => validateEvalCase(rest, 'test')).toThrow(new RegExp(field))
+  })
+
+  it('rejects values outside the enums / a non-boolean regression flag', () => {
+    expect(() => validateEvalCase({ ...base, severity: 'severe' }, 'test')).toThrow(/severity/)
+    expect(() => validateEvalCase({ ...base, exploitability: 'easy' }, 'test')).toThrow(/exploitability/)
+    expect(() => validateEvalCase({ ...base, regression: 'yes' }, 'test')).toThrow(/regression/)
+  })
+
+  it('gives every seed valid values (severity uses the exploits.severity enum)', () => {
+    suite.forEach((c) => {
+      expect(['critical', 'high', 'medium', 'low']).toContain(c.severity)
+      expect(['high', 'medium', 'low']).toContain(c.exploitability)
+      expect(typeof c.regression).toBe('boolean')
+    })
+  })
+
+  it('rates every case in a cell the same (values are per THREAT_MODEL cell, not per case)', () => {
+    const byCell = new Map<string, { severity: string; exploitability: string; regression: boolean }>()
+    suite.forEach((c) => {
+      const key = `${c.category}/${c.subcategory}`
+      const seen = byCell.get(key)
+      if (seen) expect({ severity: c.severity, exploitability: c.exploitability, regression: c.regression }).toEqual(seen)
+      else byCell.set(key, { severity: c.severity, exploitability: c.exploitability, regression: c.regression })
+    })
+  })
+
+  it('puts every THREAT_MODEL high-risk cell and every critical case in the regression suite, and nothing else', () => {
+    // THREAT_MODEL.md: the six M5 high-risk cells plus the two high misinformation cells.
+    const highRisk = new Set([
+      'prompt_injection/direct',
+      'prompt_injection/indirect',
+      'data_exfiltration/authorization_bypass',
+      'denial_of_service/token_exhaustion',
+      'denial_of_service/cost_amplification',
+      'identity_role_exploitation/persona_hijacking',
+      'misinformation/unsupported_claim',
+      'misinformation/fabricated_citation',
+    ])
+    suite.forEach((c) => {
+      const expected = highRisk.has(`${c.category}/${c.subcategory}`) || c.severity === 'critical'
+      expect({ id: c.id, regression: c.regression }).toEqual({ id: c.id, regression: expected })
+    })
+  })
+})
