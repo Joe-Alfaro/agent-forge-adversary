@@ -1,6 +1,8 @@
 import type { NightlyRunSummary } from '@agentforge/contracts'
 import type pg from 'pg'
 
+import { recomputeCoverage } from './coverage.js'
+
 /**
  * The normalized form every importer produces (live eval files, run
  * artifacts), written by one transactional, idempotent writer. The dashboard
@@ -23,7 +25,10 @@ export interface ImportPlan {
   attempts: PlannedAttempt[]
   exploits: PlannedExploit[]
   events: PlannedEvent[]
-  /** When present, written to coverage_snapshots for the target version. */
+  /**
+   * The emitter's coverage rows, validated but not written: the writer
+   * recomputes coverage_snapshots from the destination database instead.
+   */
   coverage: PlannedCoverage[] | null
   /** Operator requests this run drained; marked `ran` and linked to the run. */
   requestIds: string[]
@@ -226,18 +231,8 @@ export async function importPlan(pool: pg.Pool, plan: ImportPlan): Promise<Impor
       ),
     )
 
-    if (plan.coverage) {
-      await sequentially(plan.coverage, (cell) =>
-        client.query(
-          `INSERT INTO coverage_snapshots (target_version_id, category, subcategory, attempts, confirmed, last_run_at, families_exercised)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           ON CONFLICT (target_version_id, category, subcategory) DO UPDATE
-             SET attempts = EXCLUDED.attempts, confirmed = EXCLUDED.confirmed,
-                 last_run_at = EXCLUDED.last_run_at, families_exercised = EXCLUDED.families_exercised`,
-          [versionId, cell.category, cell.subcategory, cell.attempts, cell.confirmed, cell.lastRunAt, cell.familiesExercised],
-        ),
-      )
-    }
+    // Counted here, from this database, after the new attempts and exploits are in.
+    await recomputeCoverage(client, versionId)
 
     if (plan.requestIds.length > 0) {
       await client.query(

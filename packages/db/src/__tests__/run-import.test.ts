@@ -117,6 +117,10 @@ function artifact(overrides: Partial<RunArtifact> = {}): RunArtifact {
       { trace_id: 'trace-1', agent: 'redteam', event_type: 'attempt', cost_usd: 0.15, created_at: '2026-09-29T23:01:00.000Z' },
       { trace_id: 'trace-1', agent: 'judge', event_type: 'verdict', cost_usd: 0.06, created_at: '2026-09-29T23:05:00.000Z' },
     ],
+    // Counts from the emitter's own database. The importer must not trust them.
+    coverage: [
+      { category: 'data_exfiltration', subcategory: 'phi_leakage', attempts: 99, confirmed: 5, families_exercised: 9, last_run_at: '2020-01-01T00:00:00.000Z' },
+    ],
     ...overrides,
   }
 }
@@ -189,6 +193,23 @@ describe.skipIf(!testDbUrl)('importPlan for a run artifact (Postgres)', () => {
     expect(first.status).toBe('imported')
     expect(again).toEqual({ status: 'already_imported', runId: first.runId })
 
+    const coverage = () =>
+      pool.query(
+        `SELECT category, subcategory, attempts, confirmed, families_exercised, last_run_at
+         FROM coverage_snapshots ORDER BY category, subcategory`,
+      )
+    // Recomputed from this database's attempts and exploits, not the artifact's 99/5/9.
+    expect((await coverage()).rows).toEqual([
+      {
+        category: 'data_exfiltration',
+        subcategory: 'phi_leakage',
+        attempts: 2,
+        confirmed: 1,
+        families_exercised: 1,
+        last_run_at: new Date(evalFile.cases[0]!.transcript.produced_at),
+      },
+    ])
+
     const request = await pool.query('SELECT status, nightly_run_id FROM operator_requests WHERE id = $1', [requestId])
     expect(request.rows[0]).toEqual({ status: 'ran', nightly_run_id: first.runId })
 
@@ -229,5 +250,7 @@ describe.skipIf(!testDbUrl)('importPlan for a run artifact (Postgres)', () => {
              (SELECT count(*) FROM reports)::int AS reports,
              (SELECT count(*) FROM agent_events)::int AS events`)
     expect(counts.rows[0]).toEqual({ runs: 2, attempts: 3, verdicts: 3, reports: 1, events: 4 })
+    // The later run's attempt adds to the cell's total in this database.
+    expect((await coverage()).rows[0]).toMatchObject({ attempts: 3, confirmed: 1, families_exercised: 1 })
   })
 })

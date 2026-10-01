@@ -22,7 +22,8 @@
     "lint": "eslint .",
     "db:import-eval": "node packages/db/dist/scripts/import-eval-results.js",
     "db:import-run": "node packages/db/dist/scripts/import-run.js",
-    "judge:model-eval": "npm run judge:model-eval -w @agentforge/worker --"
+    "judge:model-eval": "npm run judge:model-eval -w @agentforge/worker --",
+    "db:recompute-coverage": "node packages/db/dist/scripts/recompute-coverage.js"
   },
   "devDependencies": {
     "typescript": "~5.9.2",
