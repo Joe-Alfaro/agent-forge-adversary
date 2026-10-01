@@ -51,7 +51,8 @@ import type { AgentEventRow, CoverageSnapshotRow, OrchestratorRepository, Regres
  * Modeled spend, deliberately conservative so the hard cap holds: every rate is
  * Sonnet-class ($3 / $15 per MTok) even where a cheaper model runs (Haiku
  * variants), and a target that reports no token usage is charged a flat
- * per-turn estimate (the top of ARCHITECTURE 13.3's $0.02–0.05 per case).
+ * per-turn estimate. $0.15/turn is measured: the 2026-09-30 nightly drew ~$9.24
+ * of target-side spend over 58 turns (~$0.16/turn) on the shared pool.
  */
 export interface CostModel {
   /** Rough per-token target rates (USD) for the estimate. */
@@ -73,7 +74,7 @@ export interface CostModel {
 export const DEFAULT_COST_MODEL: CostModel = {
   targetInputPerToken: 3 / 1_000_000,
   targetOutputPerToken: 15 / 1_000_000,
-  targetFallbackPerTurnUsd: 0.05,
+  targetFallbackPerTurnUsd: 0.15,
   judgePerCallUsd: 0.008,
   judgeInputPerToken: 3 / 1_000_000,
   judgeOutputPerToken: 15 / 1_000_000,

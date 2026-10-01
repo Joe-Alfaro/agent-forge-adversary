@@ -289,7 +289,7 @@ persisting).
   `RUN_MODEL_VARIANTS_PER_SEED`, default 3). Each generation is charged to spend
   as it happens and skipped once it could cross the cap.
 - Modeled spend is conservative: Sonnet-class rates everywhere, the Judge's
-  reported usage (floor $0.008/call), a $0.05/turn charge when the target reports
+  reported usage (floor $0.008/call), a $0.15/turn charge (measured) when the target reports
   zero tokens, and no item starts if its estimate would cross the hard cap.
 - Cron: `NIGHTLY_ENABLED=true NIGHTLY_SPEND_CAP_USD=5 NIGHTLY_BUDGET_USD=5
   DATABASE_URL=… npm run nightly:worker -w apps/worker` (long-running).
