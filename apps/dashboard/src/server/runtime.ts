@@ -6,7 +6,7 @@ import { type DataSourceMode, resolveDashboardConfig } from './config.js'
 import { createFixtureRepository } from './fixture-repository.js'
 import { createPgRepository } from './pg-repository.js'
 import type { DashboardRepository } from './repository.js'
-import { createWorkerPlanner } from './worker-planner.js'
+import { createOrchestratorPlanner } from './orchestrator-planner.js'
 
 interface Runtime {
   mode: DataSourceMode
@@ -21,8 +21,8 @@ function createRuntime(): Runtime {
     return { mode: config.mode, repository: createFixtureRepository({ config }) }
   }
   const pool = new pg.Pool({ connectionString: config.connectionString, max: 5 })
-  // "Plan tonight now" runs the Orchestrator's planner (@agentforge/worker/planning) against the same pool.
-  return { mode: config.mode, repository: createPgRepository({ pool, config, planner: createWorkerPlanner(pool) }) }
+  // "Plan tonight now" runs the Orchestrator's planner (@agentforge/planner) against the same pool.
+  return { mode: config.mode, repository: createPgRepository({ pool, config, planner: createOrchestratorPlanner(pool) }) }
 }
 
 /** One repository (and one Postgres pool) per server process, chosen by DASHBOARD_DATA_SOURCE. */

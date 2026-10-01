@@ -85,7 +85,7 @@ never alters or truncates `public` and can share a database with the other
 suites:
 
 ```bash
-npx tsc -b apps/worker   # the Plan-tonight-now suite runs the worker's built planner
+npx tsc -b packages/planner   # the Plan-tonight-now suite runs the built planner
 DASHBOARD_TEST_DATABASE_URL=postgres://af:af@127.0.0.1:54339/af_dashboard_test npm test -w apps/dashboard
 ```
 
@@ -141,19 +141,18 @@ How the read models are derived:
 - **Plan tonight now** (Tonight's queue) regenerates tonight's scheduled cron
   plan on demand, the manual version of the Orchestrator's planning step (the
   nightly cron also re-plans after it runs). The server function calls
-  `planNextNightly({ pool, env, now })` from `@agentforge/worker/planning`
-  (wired in `src/server/runtime.ts` through `src/server/worker-planner.ts`): a
-  dry run that upserts the one standing scheduled row, with no target or model
-  call, no spend, and no draining of operator requests. The page shows the
-  returned plan, then refetches the queue. `@agentforge/worker` is an SSR
-  external, so it stays out of the client bundle; it reads `evals/seeds`
-  relative to its own `dist` (or `AGENTFORGE_SEED_DIR`), so apps/worker must be
+  `planTonightNow({ pool, env, now })` from `@agentforge/planner` (wired in
+  `src/server/runtime.ts` through `src/server/orchestrator-planner.ts`): a dry
+  run that upserts the one standing scheduled row, with no target or model
+  call, no spend, and no draining of operator requests. Its seed index is
+  embedded, so no `evals/` directory is needed at runtime. The page shows the
+  returned plan, then refetches the queue. `@agentforge/planner` is an SSR
+  external, so it stays out of the client bundle; `packages/planner` must be
   built before the dashboard runs (`predev`/`prebuild` and the Dockerfile do
-  this). A repository without a planner reports the button unavailable and the
-  server refuses. Fixtures mode re-plans the demo preview against the live
-  queue: skipped categories drop out, focused ones get the planner's +1000
-  boost, campaigns are re-ranked, and the plan is stamped with the time and
-  current budget.
+  this). Fixtures mode re-plans the demo preview against the live queue:
+  skipped categories drop out, focused ones get the planner's +1000 boost,
+  campaigns are re-ranked, and the plan is stamped with the time and current
+  budget.
 - **Nightly budget** is `platform_settings.nightly_budget_usd` (row `id = 1`;
   table from `packages/db/migrations/1727900000000_platform-settings.cjs`),
   shown and edited on Tonight's queue (gate G3). A new value must be more than

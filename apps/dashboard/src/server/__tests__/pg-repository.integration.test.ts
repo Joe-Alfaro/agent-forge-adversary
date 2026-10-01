@@ -16,6 +16,7 @@ import {
   seedReviews,
   seedScheduledPlan,
   seedTickets,
+  unusedPlanner,
 } from './pg-seed.js'
 import {
   contractNow,
@@ -66,7 +67,7 @@ describe.skipIf(!url)('Postgres repository', () => {
     },
   }
 
-  async function seededRepo(overrides: Partial<QueueConfig> = {}, planner: TonightPlanner | null = fakePlanner) {
+  async function seededRepo(overrides: Partial<QueueConfig> = {}) {
     const versions = await resetDatabase(pool, ['copilot@9.0.0'])
     await seedTickets(pool, contractTickets, versions)
     await seedQueue(pool, contractQueue, contractRunDate)
@@ -78,7 +79,7 @@ describe.skipIf(!url)('Postgres repository', () => {
       pool,
       config: { ...config, ...overrides },
       now: () => contractNow,
-      ...(planner ? { planner } : {}),
+      planner: fakePlanner,
     })
   }
 
@@ -136,14 +137,6 @@ describe.skipIf(!url)('Postgres repository', () => {
       )
       const { plan } = await repo.getQueue()
       expect(plan?.items[2]?.owaspIds).toEqual(['LLM01', 'LLM05'])
-    })
-  })
-
-  describe('plan tonight now without a planner', () => {
-    it('is reported unavailable and refused until the Orchestrator’s planner is connected', async () => {
-      const repo = await seededRepo({}, null)
-      expect((await repo.getQueue()).planningAvailable).toBe(false)
-      await expect(repo.planTonight('operator')).rejects.toThrow('not connected')
     })
   })
 
@@ -288,7 +281,7 @@ describe.skipIf(!url)('Postgres repository', () => {
     let repo: DashboardRepository
 
     beforeEach(async () => {
-      repo = createPgRepository({ pool, config, now: () => contractNow })
+      repo = createPgRepository({ pool, config, now: () => contractNow, planner: unusedPlanner })
       const versions = await resetDatabase(pool, ['copilot@9.0.0', 'copilot@9.1.0'])
       const v1 = versions.get('copilot@9.0.0')
       const v2 = versions.get('copilot@9.1.0')
@@ -406,6 +399,7 @@ describe.skipIf(!url)('Postgres repository', () => {
     it('shows every taxonomy cell, untested ones with zero attempts', async () => {
       const withTaxonomy = createPgRepository({
         pool,
+        planner: unusedPlanner,
         config,
         now: () => contractNow,
         taxonomy: [

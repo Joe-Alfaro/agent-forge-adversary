@@ -25,7 +25,6 @@ import {
   assertReportDecision,
   assertRerunRequest,
   assertRunNow,
-  assertPlanningAvailable,
   assertRunNowEnabled,
   assertTransition,
   normalizeAssignee,
@@ -146,8 +145,6 @@ export interface FixtureRepositoryOptions {
   taxonomy?: readonly TaxonomyCell[]
   /** Demo pacing for the simulated executor (fixtures mode only). */
   runNowTimings?: RunNowTimings
-  /** False mimics a Postgres deployment without the Orchestrator's planner connected. */
-  planningAvailable?: boolean
 }
 
 /**
@@ -161,7 +158,6 @@ export function createFixtureRepository({
   seed = demoSeed(),
   taxonomy = listTaxonomyCells(),
   runNowTimings = DEFAULT_RUN_NOW_TIMINGS,
-  planningAvailable = true,
 }: FixtureRepositoryOptions): DashboardRepository {
   // Seeded queue items move once, at creation; items enqueued later already use now().
   const createdOffset = dayOffsetMs(now())
@@ -329,7 +325,6 @@ export function createFixtureRepository({
       items: pendingItems(),
       runNowEnabled: isRunNowEnabled(config),
       plan: tonightPlan(),
-      planningAvailable,
     })
   }
 
@@ -429,7 +424,6 @@ export function createFixtureRepository({
 
     // The demo store keeps only the value; Postgres also records updated_by.
     async planTonight() {
-      assertPlanningAvailable(planningAvailable)
       const base = store.replanned ?? seed.scheduledPlan
       store.replanned = {
         scheduledFor: store.replanned?.scheduledFor ?? (base ? shift(base.scheduledFor, createdOffset) : now().toISOString()),

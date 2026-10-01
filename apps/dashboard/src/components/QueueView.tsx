@@ -66,7 +66,7 @@ export function QueueView({ runId, onRunScheduled, onDismissRun, pollMs = 3_000 
             {formatUsd(envelopeUsd)} envelope{cutCount > 0 ? `; ${cutCount} cut.` : '.'}
           </p>
           <BudgetControl budgetUsd={envelopeUsd} />
-          <PlanTonightButton available={queue.planningAvailable} />
+          <PlanTonightButton />
           {queue.plan && planBudgetDiffers && (
             <p className="muted">
               Tonight’s plan was made with a {formatUsd(queue.plan.budgetUsd)} envelope; run and cut above use{' '}

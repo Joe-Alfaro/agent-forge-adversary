@@ -11,6 +11,7 @@ import { buildTrendSeries } from '../../lib/resilience.js'
 import { createPgRepository } from '../pg-repository.js'
 import type { DashboardRepository } from '../repository.js'
 import { createIsolatedSchema, type IsolatedSchema } from './pg-schema.js'
+import { unusedPlanner } from './pg-seed.js'
 
 /*
  * Every dashboard view against one realistic multi-item run, written by the
@@ -256,7 +257,7 @@ describe.skipIf(!url)('dashboard views over an imported multi-item run', () => {
     const ids = await pool.query<{ id: string; category: string }>('SELECT id, category FROM exploits')
     const byCategory = new Map(ids.rows.map((row) => [row.category, row.id]))
     tickets = { exfil: byCategory.get('data_exfiltration') ?? '', injection: byCategory.get('prompt_injection') ?? '' }
-    repo = createPgRepository({ pool, config, now: () => NOW })
+    repo = createPgRepository({ pool, config, now: () => NOW, planner: unusedPlanner })
   })
 
   it('run history: one completed run with its verdict split, new tickets, spend, and trace', async () => {

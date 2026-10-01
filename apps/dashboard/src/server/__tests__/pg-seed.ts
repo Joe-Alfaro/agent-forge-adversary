@@ -1,6 +1,7 @@
 import type pg from 'pg'
 
 import type { AgentEvent } from '../../lib/activity.js'
+import type { TonightPlanner } from '../planner.js'
 import type { ReportRecord } from '../../lib/approvals.js'
 import type { ReviewItem } from '../../lib/judge.js'
 import type { QueueItem } from '../../lib/models.js'
@@ -168,4 +169,11 @@ export async function seedScheduledPlan(pool: pg.Pool, scheduled: { scheduledFor
     `INSERT INTO nightly_runs (scheduled_for, trigger, status, plan) VALUES ($1, 'cron', 'scheduled', $2)`,
     [scheduled.scheduledFor, scheduled.plan],
   )
+}
+
+/** For suites that never press "Plan tonight now". */
+export const unusedPlanner: TonightPlanner = {
+  async planTonight() {
+    throw new Error('This suite does not plan')
+  },
 }

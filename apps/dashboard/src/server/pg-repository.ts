@@ -30,7 +30,6 @@ import type { DashboardRepository } from './repository.js'
 import {
   assertCanRecheck,
   assertReportDecision,
-  assertPlanningAvailable,
   assertRunNow,
   assertRunNowEnabled,
   assertRerunRequest,
@@ -44,8 +43,8 @@ export interface PgRepositoryOptions {
   now?: () => Date
   /** Every cell the Coverage panel must show, tested or not (defaults to AttackTaxonomy v1). */
   taxonomy?: readonly TaxonomyCell[]
-  /** The Orchestrator's planner for "Plan tonight now"; without it the button is unavailable. */
-  planner?: TonightPlanner
+  /** The Orchestrator's planner for "Plan tonight now" (@agentforge/planner in production). */
+  planner: TonightPlanner
 }
 
 type Queryable = pg.Pool | pg.PoolClient
@@ -345,7 +344,6 @@ export function createPgRepository({
       items: result.rows.map(mapQueueItem),
       runNowEnabled: isRunNowEnabled(config),
       plan: await readTonightPlan(db),
-      planningAvailable: planner !== undefined,
     }
   }
 
@@ -554,8 +552,7 @@ export function createPgRepository({
     },
 
     async planTonight(requestedBy) {
-      assertPlanningAvailable(planner !== undefined)
-      await planner?.planTonight({ now: now(), requestedBy })
+      await planner.planTonight({ now: now(), requestedBy })
       return readQueue(pool)
     },
 

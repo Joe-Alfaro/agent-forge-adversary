@@ -8,7 +8,6 @@ import {
   fetchRun,
   removeQueueItem,
   resetTestData,
-  setPlanningAvailable,
   setRunNowEnabled,
   setScheduledPlan,
 } from '../../test-data-source.js'
@@ -94,13 +93,6 @@ describe('QueueView plan tonight now', () => {
     // Once from the mutation's result, once from the refetch it triggers.
     await waitFor(() => expect(updates()).toBe(3))
     plan.mockRestore()
-  })
-
-  it('is disabled, with a note, where the Orchestrator’s planner is not connected', async () => {
-    setPlanningAvailable(false)
-    await renderQueue()
-    expect(screen.getByRole('button', { name: 'Plan tonight now' })).toHaveProperty('disabled', true)
-    expect(screen.getByText('Planning from the dashboard is not connected yet; run plan:preview from the worker.')).toBeTruthy()
   })
 })
 

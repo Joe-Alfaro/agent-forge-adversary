@@ -10,7 +10,7 @@ import { createIsolatedSchema, type IsolatedSchema } from './pg-schema.js'
 
 /*
  * "Plan tonight now" through agentforge-10's real planner
- * (@agentforge/worker/planning) in a throwaway schema. Needs apps/worker built
+ * (@agentforge/planner) in a throwaway schema. Needs packages/planner built
  * (its dist) and DASHBOARD_TEST_DATABASE_URL.
  */
 const url = process.env.DASHBOARD_TEST_DATABASE_URL
@@ -22,10 +22,10 @@ describe.skipIf(!url)('Plan tonight now with the Orchestrator’s planner', () =
   let planner: TonightPlanner
 
   beforeAll(async () => {
-    // Imported here, not at the top, so a skipped run never needs apps/worker's dist.
-    const { createWorkerPlanner } = await import('../worker-planner.js')
+    // Imported here, not at the top, so a skipped run never needs packages/planner's dist.
+    const { createOrchestratorPlanner } = await import('../orchestrator-planner.js')
     isolated = await createIsolatedSchema(url ?? '')
-    planner = createWorkerPlanner(isolated.pool, { NIGHTLY_BUDGET_USD: '25' })
+    planner = createOrchestratorPlanner(isolated.pool, { NIGHTLY_BUDGET_USD: '25' })
     pool = isolated.pool
     const versions = await resetDatabase(pool, ['copilot@9.0.0'])
     await seedTickets(pool, contractTickets, versions)
@@ -42,7 +42,6 @@ describe.skipIf(!url)('Plan tonight now with the Orchestrator’s planner', () =
 
   it('writes tonight’s scheduled plan and the queue shows it, without draining operator requests', async () => {
     const repo = repository()
-    expect((await repo.getQueue()).planningAvailable).toBe(true)
     const queue = await repo.planTonight('operator')
     expect(queue.plan?.targetVersion).toBe('copilot@9.0.0')
     const campaigns = queue.plan?.items.filter((item) => item.kind === 'coverage_campaign') ?? []

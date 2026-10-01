@@ -66,9 +66,3 @@ export function assertRunNowEnabled(enabled: boolean): void {
     throw new Error('Run now is disabled on this deployment (RUN_NOW_ENABLED=false); it executes in the local demo')
   }
 }
-
-export function assertPlanningAvailable(available: boolean): void {
-  if (!available) {
-    throw new Error('Planning from the dashboard is not connected yet; run plan:preview from the worker')
-  }
-}
