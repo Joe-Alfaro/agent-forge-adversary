@@ -238,8 +238,16 @@ only (ARCHITECTURE 4.2).
   unchanged, majority verdict; results go to `regression_results` and the
   summary's `regressions` / `verified_fixes` (ticket status stays
   operator-owned).
-- `nightlyJob.ts` — the pg-boss cron: poll target version → plan:preview for
-  this window → consumer. Registered only when `NIGHTLY_ENABLED=true`.
+- `nightlyJob.ts` — the pg-boss cron, **plan-after-execute**: poll the target
+  version → execute the standing scheduled plan (the one the dashboard showed all
+  day) → plan the NEXT window, even when the run failed. With no standing plan,
+  or one made for an older target version, tonight is planned first. Exactly one
+  standing scheduled cron row is kept. Registered only when `NIGHTLY_ENABLED=true`.
+- `src/planning` (`@agentforge/worker/planning`) — `planNextNightly({ pool, env?,
+  now?, scheduledFor?, targetVersion? })`, the server-importable planning core
+  that `plan:preview`, the cron's re-plan, and the dashboard's "Plan now" share.
+  Dry run; upserts the standing row; seeds from `evals/seeds`
+  (`AGENTFORGE_SEED_DIR` overrides).
 - `run.ts` — `runPlan`, the RUN executor: red team → target → detectors → judge →
   persist attempts/verdicts, dedupe confirmed exploits by fingerprint,
   materialize `coverage_snapshots` (asserts `isTaxonomyCell`, fills

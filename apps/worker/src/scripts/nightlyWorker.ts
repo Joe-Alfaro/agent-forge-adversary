@@ -1,8 +1,8 @@
 /**
  * The nightly cron worker (pg-boss, ARCHITECTURE 7.0). Long-running: registers
  * the NIGHTLY_CRON schedule (default `0 1 * * *` in NIGHTLY_TZ, default
- * America/Chicago) and, on each firing, polls the target version, runs
- * plan:preview for that window, then executes the scheduled row.
+ * America/Chicago) and, on each firing, executes the standing plan and then
+ * plans the next window (plan-after-execute), so a plan is visible all day.
  *
  * Nothing is scheduled unless NIGHTLY_ENABLED=true — otherwise it removes any
  * existing schedule and exits — so starting this worker cannot spend by
@@ -19,13 +19,13 @@ import { PgBoss } from 'pg-boss'
 
 import {
   PgOrchestratorRepository,
-  previewNightlyPlan,
   readNightlyCronConfig,
   readPlanPreviewConfig,
   registerNightlyCron,
   runNightlyJob,
   runScheduledNightly,
 } from '../orchestrator/index.js'
+import { planNextNightly } from '../planning/index.js'
 import { liveDeps, requirePositiveUsd } from './liveDeps.js'
 import { loadAgentforgeEnv } from './loadEnv.js'
 import { printRunResult } from './runReport.js'
@@ -63,13 +63,15 @@ async function main(): Promise<void> {
       recordTargetVersion: async (version) => {
         await repo.ensureTargetVersion(deps.copilotBase, version)
       },
+      findStandingPlan: () => repo.findStandingPlan(),
+      // The same planning core the dashboard's "Plan now" calls.
       preview: ({ targetVersion, scheduledFor }) =>
-        previewNightlyPlan({
+        planNextNightly({
           pool,
-          seeds: deps.suite,
-          config: { ...previewConfig, ...(targetVersion ? { targetVersion } : {}) },
+          env: process.env,
           now: new Date(),
-          scheduledFor,
+          ...(scheduledFor ? { scheduledFor } : {}),
+          ...(targetVersion ? { targetVersion } : {}),
         }),
       execute: (claimId) =>
         runScheduledNightly({ ...deps, repo, spendCapUsd, fallbackBudgetUsd: previewConfig.budgetUsd, targetBaseUrl: deps.copilotBase, claimId }),
