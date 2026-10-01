@@ -19,9 +19,11 @@ export default defineConfig({
     ],
   },
   // Load the workspace packages from node_modules at runtime instead of inlining them:
-  // @agentforge/contracts requires its JSON schemas by a path relative to its own dist.
+  // @agentforge/contracts requires its JSON schemas by a path relative to its own dist,
+  // and @agentforge/worker/planning reads evals/seeds relative to its own dist. Only
+  // server code (src/server/runtime.ts) imports the worker, so it never reaches the client.
   ssr: {
-    external: ['@agentforge/contracts', '@agentforge/db'],
+    external: ['@agentforge/contracts', '@agentforge/db', '@agentforge/worker'],
   },
   // Start's plugin must run before the React plugin so route files are transformed first.
   plugins: [tanstackStart(), viteReact()],
