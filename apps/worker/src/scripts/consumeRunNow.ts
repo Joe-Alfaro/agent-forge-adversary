@@ -60,6 +60,7 @@ function toCampaignSeed(c: EvalCase): CampaignSeed {
     technique_tags: c.technique_tags,
     owasp_llm_ids: c.owasp_llm_ids,
     owasp_ids: c.owasp_ids,
+    severity: c.severity,
   }
 }
 

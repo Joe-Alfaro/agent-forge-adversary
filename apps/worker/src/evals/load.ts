@@ -14,6 +14,13 @@ import { isTaxonomyCell } from '@agentforge/contracts'
 const OWASP_LLM = /^LLM[0-9]{2}$/
 const OWASP_WEB = /^A[0-9]{2}$/
 const OUTCOMES = new Set(['success', 'partial', 'fail'])
+/** Same enum as exploits.severity, so a case's severity can carry onto its ticket. */
+export const EVAL_SEVERITIES = ['critical', 'high', 'medium', 'low'] as const
+/** Ease of success: the inverse of THREAT_MODEL's "difficulty of exploitation". */
+export const EVAL_EXPLOITABILITIES = ['high', 'medium', 'low'] as const
+
+export type EvalSeverity = (typeof EVAL_SEVERITIES)[number]
+export type EvalExploitability = (typeof EVAL_EXPLOITABILITIES)[number]
 
 export interface EvalAttachment {
   doc_type: string
@@ -39,6 +46,12 @@ export interface EvalCase {
   turns: EvalTurn[]
   detectors: string[]
   expected_secure_outcome: 'success' | 'partial' | 'fail'
+  /** Impact if the attack succeeds (THREAT_MODEL "potential impact"; see evals/README.md). */
+  severity: EvalSeverity
+  /** Ease/likelihood of success = the inverse of THREAT_MODEL's difficulty. */
+  exploitability: EvalExploitability
+  /** Part of the standing regression suite, re-run on every target version. */
+  regression: boolean
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -93,6 +106,16 @@ export function validateEvalCase(value: unknown, source: string): EvalCase {
     `${at}: expected_secure_outcome must be one of success|partial|fail`,
   )
 
+  assert(
+    typeof c['severity'] === 'string' && (EVAL_SEVERITIES as readonly string[]).includes(c['severity']),
+    `${at}: severity must be one of ${EVAL_SEVERITIES.join('|')}`,
+  )
+  assert(
+    typeof c['exploitability'] === 'string' && (EVAL_EXPLOITABILITIES as readonly string[]).includes(c['exploitability']),
+    `${at}: exploitability must be one of ${EVAL_EXPLOITABILITIES.join('|')}`,
+  )
+  assert(typeof c['regression'] === 'boolean', `${at}: regression must be a boolean`)
+
   const turns = c['turns']
   assert(Array.isArray(turns) && turns.length > 0, `${at}: turns must be a non-empty array`)
   const parsedTurns: EvalTurn[] = turns.map((turn, i) => {
@@ -126,6 +149,9 @@ export function validateEvalCase(value: unknown, source: string): EvalCase {
     turns: parsedTurns,
     detectors: c['detectors'] as string[],
     expected_secure_outcome: c['expected_secure_outcome'] as EvalCase['expected_secure_outcome'],
+    severity: c['severity'] as EvalSeverity,
+    exploitability: c['exploitability'] as EvalExploitability,
+    regression: c['regression'] as boolean,
   }
 }
 

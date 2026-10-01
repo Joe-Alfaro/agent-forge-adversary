@@ -135,6 +135,7 @@ export interface RunPlanResult {
   artifact: RunArtifact
 }
 
+/** Fallback exploit severity when the seed case carries none (eval cases do: evals/README.md). */
 const SEVERITY_BY_CATEGORY: Record<string, string> = {
   data_exfiltration: 'critical',
   prompt_injection: 'high',
@@ -186,6 +187,9 @@ async function executePlan(
   const artifactExploits = new Map<string, RunArtifactExploit>()
   const artifactEvents: RunArtifactEvent[] = []
   // A seed's OWASP mapping (LLM Top 10 first, then web Top 10), persisted on attempts and exploits.
+  // A confirmed exploit inherits its seed case's severity (the per-category default is the fallback).
+  const severityFor = (seedId: string, category: string): RunArtifactExploit['severity'] =>
+    params.seedsById.get(seedId)?.severity ?? ((SEVERITY_BY_CATEGORY[category] ?? 'medium') as RunArtifactExploit['severity'])
   const seedOwaspFor = (seedId: string) => {
     const seed = params.seedsById.get(seedId)
     return [...(seed?.owasp_llm_ids ?? []), ...(seed?.owasp_ids ?? [])]
@@ -491,7 +495,7 @@ async function executePlan(
           entry.confirmed += 1
           const upserted = await params.repo.upsertExploit({
             fingerprint: detail.fingerprint,
-            severity: SEVERITY_BY_CATEGORY[item.category] ?? 'medium',
+            severity: severityFor(detail.seedId, item.category),
             category: item.category,
             subcategory: item.subcategory,
             owaspIds: seedOwaspFor(detail.seedId),
@@ -504,7 +508,7 @@ async function executePlan(
             artifactExploits.set(detail.fingerprint, {
               id: `AF-${new Date(params.clock.now()).getFullYear()}-${detail.fingerprint.slice(0, 8)}`,
               fingerprint: detail.fingerprint,
-              severity: (SEVERITY_BY_CATEGORY[item.category] ?? 'medium') as RunArtifactExploit['severity'],
+              severity: severityFor(detail.seedId, item.category),
               category: item.category,
               subcategory: item.subcategory,
               owasp_ids: seedOwaspFor(detail.seedId),
