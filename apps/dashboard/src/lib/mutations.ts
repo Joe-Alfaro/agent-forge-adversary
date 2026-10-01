@@ -8,6 +8,7 @@ import {
   decideApproval,
   enqueueRerun,
   moveQueueItem,
+  planTonight,
   removeQueueItem,
   resolveReview,
   runNow,
@@ -111,5 +112,17 @@ export function useUpdateNightlyBudget() {
   return useMutation({
     mutationFn: (budgetUsd: number) => updateNightlyBudget(budgetUsd),
     onSuccess: (queue) => queryClient.setQueryData(queueQuery.queryKey, queue),
+  })
+}
+
+/** "Plan tonight now": shows the regenerated plan at once, then refetches the queue. */
+export function usePlanTonight() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => planTonight(),
+    onSuccess: async (queue) => {
+      queryClient.setQueryData(queueQuery.queryKey, queue)
+      await queryClient.invalidateQueries({ queryKey: queueQuery.queryKey })
+    },
   })
 }

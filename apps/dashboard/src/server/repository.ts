@@ -31,6 +31,8 @@ export interface DashboardRepository {
   enqueueRerun(request: unknown): Promise<TonightQueue>
   removeQueueItem(id: string): Promise<TonightQueue>
   moveQueueItem(id: string, direction: MoveDirection): Promise<TonightQueue>
+  /** Regenerates tonight's scheduled plan through the Orchestrator's planner, then reads the queue. */
+  planTonight(requestedBy: string): Promise<TonightQueue>
   /** Sets the nightly budget envelope (platform_settings), recording who; takes untrusted input and validates it. */
   updateNightlyBudget(value: unknown, updatedBy: string): Promise<TonightQueue>
   /** The newest `limit` agent_events, newest first. */

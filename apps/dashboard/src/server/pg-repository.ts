@@ -25,6 +25,7 @@ import {
   mapTicket,
   stringArray,
 } from './pg-mappers.js'
+import type { TonightPlanner } from './planner.js'
 import type { DashboardRepository } from './repository.js'
 import {
   assertCanRecheck,
@@ -42,6 +43,8 @@ export interface PgRepositoryOptions {
   now?: () => Date
   /** Every cell the Coverage panel must show, tested or not (defaults to AttackTaxonomy v1). */
   taxonomy?: readonly TaxonomyCell[]
+  /** The Orchestrator's planner for "Plan tonight now" (@agentforge/planner in production). */
+  planner: TonightPlanner
 }
 
 type Queryable = pg.Pool | pg.PoolClient
@@ -281,6 +284,7 @@ export function createPgRepository({
   config,
   now = () => new Date(),
   taxonomy = listTaxonomyCells(),
+  planner,
 }: PgRepositoryOptions): DashboardRepository {
   async function transaction<T>(work: (client: pg.PoolClient) => Promise<T>): Promise<T> {
     const client = await pool.connect()
@@ -544,6 +548,11 @@ export function createPgRepository({
           ],
         )
       })
+      return readQueue(pool)
+    },
+
+    async planTonight(requestedBy) {
+      await planner.planTonight({ now: now(), requestedBy })
       return readQueue(pool)
     },
 

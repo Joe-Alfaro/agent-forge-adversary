@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { createPgRepository } from '../pg-repository.js'
 import type { QueueConfig } from '../config.js'
+import type { TonightPlanner } from '../planner.js'
 import type { DashboardRepository } from '../repository.js'
 import { createIsolatedSchema, type IsolatedSchema } from './pg-schema.js'
 import {
@@ -15,6 +16,7 @@ import {
   seedReviews,
   seedScheduledPlan,
   seedTickets,
+  unusedPlanner,
 } from './pg-seed.js'
 import {
   contractNow,
@@ -51,6 +53,20 @@ describe.skipIf(!url)('Postgres repository', () => {
     await isolated?.drop()
   })
 
+  /**
+   * Stands in for the Orchestrator's plan:preview core: rewrites the single
+   * scheduled cron row's plan, stamped with the planning time.
+   */
+  const fakePlanner: TonightPlanner = {
+    async planTonight({ now }) {
+      await pool.query(
+        `UPDATE nightly_runs SET plan = jsonb_set(plan, '{produced_at}', to_jsonb($1::text))
+         WHERE trigger = 'cron' AND status = 'scheduled'`,
+        [now.toISOString()],
+      )
+    },
+  }
+
   async function seededRepo(overrides: Partial<QueueConfig> = {}) {
     const versions = await resetDatabase(pool, ['copilot@9.0.0'])
     await seedTickets(pool, contractTickets, versions)
@@ -59,7 +75,12 @@ describe.skipIf(!url)('Postgres repository', () => {
     await seedEvents(pool, contractEvents)
     await seedReviews(pool, contractReviews, versions)
     await seedScheduledPlan(pool, contractScheduledPlan)
-    return createPgRepository({ pool, config: { ...config, ...overrides }, now: () => contractNow })
+    return createPgRepository({
+      pool,
+      config: { ...config, ...overrides },
+      now: () => contractNow,
+      planner: fakePlanner,
+    })
   }
 
   describeRepositoryContract('Postgres', { setup: seededRepo })
@@ -260,7 +281,7 @@ describe.skipIf(!url)('Postgres repository', () => {
     let repo: DashboardRepository
 
     beforeEach(async () => {
-      repo = createPgRepository({ pool, config, now: () => contractNow })
+      repo = createPgRepository({ pool, config, now: () => contractNow, planner: unusedPlanner })
       const versions = await resetDatabase(pool, ['copilot@9.0.0', 'copilot@9.1.0'])
       const v1 = versions.get('copilot@9.0.0')
       const v2 = versions.get('copilot@9.1.0')
@@ -378,6 +399,7 @@ describe.skipIf(!url)('Postgres repository', () => {
     it('shows every taxonomy cell, untested ones with zero attempts', async () => {
       const withTaxonomy = createPgRepository({
         pool,
+        planner: unusedPlanner,
         config,
         now: () => contractNow,
         taxonomy: [

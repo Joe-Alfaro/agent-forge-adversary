@@ -25,6 +25,7 @@ import {
   listRunsFn,
   listTicketsFn,
   moveQueueItemFn,
+  planTonightFn,
   removeQueueItemFn,
   resolveReviewFn,
   runNowFn,
@@ -129,4 +130,8 @@ export function runNow(scope: RunNowScope): Promise<RunSummary> {
 
 export function updateNightlyBudget(budgetUsd: number): Promise<TonightQueue> {
   return updateNightlyBudgetFn({ data: budgetUsd })
+}
+
+export function planTonight(): Promise<TonightQueue> {
+  return planTonightFn()
 }

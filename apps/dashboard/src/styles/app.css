@@ -890,3 +890,21 @@ button:disabled {
   flex-basis: 100%;
   margin: 0;
 }
+
+/* Plan tonight now */
+.plan-tonight {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 8px;
+  font-size: 13px;
+}
+
+.toast-ok {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #dcfae6;
+  color: var(--ok);
+  font-weight: 600;
+}

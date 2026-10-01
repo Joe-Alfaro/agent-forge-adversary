@@ -14,7 +14,7 @@ import type { DashboardRepository } from './server/repository.js'
 export const TEST_NOW = new Date('2026-09-29T20:00:00Z')
 
 const clock = { now: TEST_NOW }
-const flags: { runNowEnabled: boolean; noPlan: boolean } = { runNowEnabled: true, noPlan: false }
+const flags = { runNowEnabled: true, noPlan: false }
 
 /** Simulated run-nows start after 1 s and complete after 10 s of test-clock time. */
 function freshRepository(): DashboardRepository {
@@ -85,3 +85,4 @@ export const fetchRun: typeof DataSource.fetchRun = (runId) => state.repository.
 export const runNow: typeof DataSource.runNow = (scope) => state.repository.runNow(scope, 'operator')
 export const updateNightlyBudget: typeof DataSource.updateNightlyBudget = (budgetUsd) =>
   state.repository.updateNightlyBudget(budgetUsd, 'operator')
+export const planTonight: typeof DataSource.planTonight = () => state.repository.planTonight('operator')
