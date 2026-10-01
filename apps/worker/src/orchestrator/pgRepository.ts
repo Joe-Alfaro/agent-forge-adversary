@@ -187,6 +187,17 @@ export class PgOrchestratorRepository implements OrchestratorRepository {
     }
   }
 
+  /** The standing scheduled cron plan the dashboard reads (latest by scheduled_for DESC, id DESC). */
+  async findStandingPlan(): Promise<{ nightlyRunId: number; targetVersion: string | null } | null> {
+    const result = await this.pool.query(
+      `SELECT id, plan->>'target_version' AS target_version FROM nightly_runs
+       WHERE trigger = 'cron' AND status = 'scheduled'
+       ORDER BY scheduled_for DESC, id DESC LIMIT 1`,
+    )
+    const row = result.rows[0]
+    return row ? { nightlyRunId: Number(row.id), targetVersion: row.target_version ? String(row.target_version) : null } : null
+  }
+
   async claimScheduledCron(id?: number): Promise<{ nightlyRunId: number; plan: unknown } | null> {
     // Same row the dashboard's Tonight's queue reads: latest by scheduled_for DESC, id DESC.
     const result = await this.pool.query(
