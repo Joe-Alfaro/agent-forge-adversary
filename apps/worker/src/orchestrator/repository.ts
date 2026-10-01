@@ -106,7 +106,7 @@ export interface OrchestratorRepository {
    */
   claimRunNow(id?: number): Promise<{ nightlyRunId: number; plan: unknown } | null>
   /** Drains queued operator_requests in position order, optionally a single id. */
-  drainOperatorRequests(runDate: string, singleId?: string): Promise<import('./planner.js').QueuedRequest[]>
+  drainOperatorRequests(runDate: string, singleId?: string): Promise<import('@agentforge/planner').QueuedRequest[]>
   /** Loads an exploit's category/subcategory and its min_repro turns, for a rerun. */
   getExploitReproduction(exploitId: string): Promise<ExploitReproduction | null>
   createCampaign(row: { nightlyRunId: number; plan: NightlyPlanItem; budgetUsd: number }): Promise<string>

@@ -16,7 +16,7 @@
  */
 import pg from 'pg'
 
-import { planNextNightly } from '../planning/index.js'
+import { planTonightNow } from '@agentforge/planner'
 import { loadAgentforgeEnv } from './loadEnv.js'
 
 async function main(): Promise<void> {
@@ -29,7 +29,7 @@ async function main(): Promise<void> {
 
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 2 })
   try {
-    const result = await planNextNightly({ pool, env: process.env })
+    const result = await planTonightNow({ pool, env: process.env })
     const { plan } = result
     console.log(`\n=== Plan preview (dry run: nothing executed, $0 spent) ===`)
     console.log(`nightly_runs.id ${result.nightlyRunId} (${result.created ? 'created' : 'refreshed'}), trigger=cron status=scheduled`)

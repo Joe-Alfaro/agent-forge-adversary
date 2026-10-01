@@ -25,7 +25,7 @@ import {
   runNightlyJob,
   runScheduledNightly,
 } from '../orchestrator/index.js'
-import { planNextNightly } from '../planning/index.js'
+import { planTonightNow } from '@agentforge/planner'
 import { liveDeps, requirePositiveUsd } from './liveDeps.js'
 import { loadAgentforgeEnv } from './loadEnv.js'
 import { printRunResult } from './runReport.js'
@@ -66,7 +66,7 @@ async function main(): Promise<void> {
       findStandingPlan: () => repo.findStandingPlan(),
       // The same planning core the dashboard's "Plan now" calls.
       preview: ({ targetVersion, scheduledFor }) =>
-        planNextNightly({
+        planTonightNow({
           pool,
           env: process.env,
           now: new Date(),

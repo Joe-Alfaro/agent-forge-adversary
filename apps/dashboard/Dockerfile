@@ -12,6 +12,7 @@ COPY apps/dashboard/package.json apps/dashboard/
 COPY apps/worker/package.json apps/worker/
 COPY packages/contracts/package.json packages/contracts/
 COPY packages/db/package.json packages/db/
+COPY packages/planner/package.json packages/planner/
 RUN npm ci --no-audit --no-fund
 
 COPY . .

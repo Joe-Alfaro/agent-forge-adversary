@@ -1,13 +1,9 @@
-import { fileURLToPath } from 'node:url'
-
 import { describe, expect, it } from 'vitest'
 
 import { listTaxonomyCells } from '@agentforge/contracts'
 
-import { loadEvalSuite } from '../../evals/index.js'
 import { buildCellOwaspMap, unmappedCells } from '../owasp.js'
-
-const seedDir = fileURLToPath(new URL('../../../../../evals/seeds', import.meta.url))
+import { SEED_INDEX } from '../seedIndex.js'
 
 describe('buildCellOwaspMap', () => {
   it('unions LLM ids then web ids per cell, deduplicated', () => {
@@ -26,7 +22,7 @@ describe('buildCellOwaspMap', () => {
   })
 
   it('maps every AttackTaxonomy v1 cell to at least one OWASP id from the seed suite', () => {
-    const map = buildCellOwaspMap(loadEvalSuite(seedDir))
+    const map = buildCellOwaspMap([...SEED_INDEX])
     expect(unmappedCells(map)).toEqual([])
     listTaxonomyCells().forEach((cell) => {
       const ids = map[`${cell.category}/${cell.subcategory}`] ?? []
