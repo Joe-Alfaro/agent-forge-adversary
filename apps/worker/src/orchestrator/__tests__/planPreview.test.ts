@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { DEFAULT_WEIGHTS } from '../priority.js'
 import { parseNightlyBudgetUsd } from '../budget.js'
-import { readPlanPreviewConfig } from '../planPreview.js'
+import { readPlanPreviewConfig, scopeCellsToCategories } from '../planPreview.js'
 
 describe('readPlanPreviewConfig', () => {
   it('defaults the envelope to the dashboard default and the window to 01:00 CT', () => {
@@ -51,5 +51,19 @@ describe('parseNightlyBudgetUsd', () => {
 
   it('rejects out-of-range or non-numeric values so the caller falls back', () => {
     ;[0, -1, 1000.01, 'lots', null, undefined, Number.NaN].forEach((v) => expect(parseNightlyBudgetUsd(v)).toBeNull())
+  })
+})
+
+describe('PLAN_CATEGORIES scoping', () => {
+  it('reads a csv of taxonomy categories and rejects unknown ones', () => {
+    expect(readPlanPreviewConfig({ PLAN_CATEGORIES: 'prompt_injection, data_exfiltration' }).categories).toEqual(['prompt_injection', 'data_exfiltration'])
+    expect(readPlanPreviewConfig({}).categories).toBeUndefined()
+    expect(() => readPlanPreviewConfig({ PLAN_CATEGORIES: 'prompt_injection,vibes' })).toThrow(/PLAN_CATEGORIES/)
+  })
+
+  it('keeps only cells in the scoped categories (all cells when unscoped)', () => {
+    const cells = [{ category: 'prompt_injection' }, { category: 'misinformation' }, { category: 'data_exfiltration' }]
+    expect(scopeCellsToCategories(cells, ['prompt_injection', 'data_exfiltration']).map((c) => c.category)).toEqual(['prompt_injection', 'data_exfiltration'])
+    expect(scopeCellsToCategories(cells, undefined)).toHaveLength(3)
   })
 })

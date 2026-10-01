@@ -273,7 +273,7 @@ row in place. The envelope is `platform_settings.nightly_budget_usd` (the
 operator sets it on the dashboard's Tonight's queue), else `NIGHTLY_BUDGET_USD`,
 else $25. Knobs:
 `NIGHTLY_HOUR`/`NIGHTLY_TZ` (default 01:00 `America/Chicago`), `PLAN_TOP_K`,
-`PLAN_MAX_ATTEMPTS`, `PLAN_COST_PER_ATTEMPT_USD`, `PLAN_TARGET_VERSION`. The
+`PLAN_MAX_ATTEMPTS`, `PLAN_COST_PER_ATTEMPT_USD`, `PLAN_TARGET_VERSION`, `PLAN_CATEGORIES` (csv scope for coverage cells). The
 importable core is `previewNightlyPlan` (`buildPreviewPlan` builds without
 persisting).
 

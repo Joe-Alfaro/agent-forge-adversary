@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 
 import type pg from 'pg'
 
-import type { NightlyPlan, PriorityTerms } from '@agentforge/contracts'
+import { isAttackCategory, type NightlyPlan, type PriorityTerms } from '@agentforge/contracts'
 
 import { DEFAULT_NIGHTLY_BUDGET_USD } from './budget.js'
 import { buildCellOwaspMap, unmappedCells, type OwaspMappedCase } from './owasp.js'
@@ -33,6 +33,13 @@ export interface PlanPreviewConfig {
   window: NightlyWindowConfig
   /** Plan for this target version; defaults to the most recently seen one. */
   targetVersion?: string
+  /** Restrict coverage campaigns to these taxonomy categories (PLAN_CATEGORIES); all when absent. */
+  categories?: string[]
+}
+
+/** Keeps the cells in `categories`; every cell when unscoped. */
+export function scopeCellsToCategories<T extends { category: string }>(cells: T[], categories: string[] | undefined): T[] {
+  return categories === undefined ? cells : cells.filter((c) => categories.includes(c.category))
 }
 
 export const DEFAULT_COST_PER_ATTEMPT_USD = 0.05
@@ -58,6 +65,14 @@ function readNumber(env: NodeJS.ProcessEnv, name: string, fallback: number, inte
  */
 export function readPlanPreviewConfig(env: NodeJS.ProcessEnv = process.env): PlanPreviewConfig {
   const targetVersion = (env.PLAN_TARGET_VERSION ?? '').trim()
+  const categories = (env.PLAN_CATEGORIES ?? '')
+    .split(',')
+    .map((c) => c.trim())
+    .filter((c) => c.length > 0)
+  const unknown = categories.filter((c) => !isAttackCategory(c))
+  if (unknown.length > 0) {
+    throw new Error(`PLAN_CATEGORIES has unknown taxonomy categories: ${unknown.join(', ')}`)
+  }
   return {
     budgetUsd: readNumber(env, 'NIGHTLY_BUDGET_USD', DEFAULT_NIGHTLY_BUDGET_USD),
     weights: DEFAULT_WEIGHTS,
@@ -69,6 +84,7 @@ export function readPlanPreviewConfig(env: NodeJS.ProcessEnv = process.env): Pla
       timeZone: (env.NIGHTLY_TZ ?? '').trim() || DEFAULT_NIGHTLY_TIME_ZONE,
     },
     ...(targetVersion ? { targetVersion } : {}),
+    ...(categories.length > 0 ? { categories } : {}),
   }
 }
 
@@ -142,7 +158,13 @@ export async function buildPreviewPlan(params: Omit<PlanPreviewParams, 'pool'> &
     req.kind === 'rerun' && req.estimatedCostUsd === undefined ? { ...req, estimatedCostUsd: rerunFallbackUsd } : req,
   )
 
-  const coverageCells = await repo.getCoverageCells(target?.id ?? -1, config.maxAttemptsPerCampaign * config.costPerAttemptUsd)
+  const coverageCells = scopeCellsToCategories(
+    await repo.getCoverageCells(target?.id ?? -1, config.maxAttemptsPerCampaign * config.costPerAttemptUsd),
+    config.categories,
+  )
+  if (config.categories) {
+    notes.push(`Coverage scoped to ${config.categories.join(', ')} (PLAN_CATEGORIES).`)
+  }
 
   const plan = buildNightlyPlan({
     trigger: 'cron',
