@@ -72,7 +72,11 @@ are keyed by `fingerprint`. The importer assigns each new one an `AF-<year>-NNNN
 id from `agentforge_exploit_seq`, the same format the run executor uses, and
 ignores any `id` in the artifact. It also writes those new ids into the run's
 `summary.new_tickets`. A re-found exploit keeps its id, merges its family, and
-keeps the operator's status and assignee:
+keeps the operator's status and assignee. Coverage is recomputed from the
+destination database's own attempts and exploits. The artifact's coverage rows
+were counted in the emitter's database, so they are validated but never
+written. `npm run db:recompute-coverage` applies the same recompute to every
+target version on its own:
 
 ```bash
 npm run db:import-run -- <run-artifact>.json
