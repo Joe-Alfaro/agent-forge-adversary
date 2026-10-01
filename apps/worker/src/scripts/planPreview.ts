@@ -16,10 +16,8 @@
  */
 import pg from 'pg'
 
-import { loadEvalSuite } from '../evals/index.js'
-import { previewNightlyPlan, readPlanPreviewConfig } from '../orchestrator/index.js'
+import { planNextNightly } from '../planning/index.js'
 import { loadAgentforgeEnv } from './loadEnv.js'
-import { seedDir } from './paths.js'
 
 async function main(): Promise<void> {
   const envFile = loadAgentforgeEnv()
@@ -29,10 +27,9 @@ async function main(): Promise<void> {
     throw new Error('DATABASE_URL is not set.')
   }
 
-  const config = readPlanPreviewConfig(process.env)
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 2 })
   try {
-    const result = await previewNightlyPlan({ pool, seeds: loadEvalSuite(seedDir()), config, now: new Date() })
+    const result = await planNextNightly({ pool, env: process.env })
     const { plan } = result
     console.log(`\n=== Plan preview (dry run: nothing executed, $0 spent) ===`)
     console.log(`nightly_runs.id ${result.nightlyRunId} (${result.created ? 'created' : 'refreshed'}), trigger=cron status=scheduled`)

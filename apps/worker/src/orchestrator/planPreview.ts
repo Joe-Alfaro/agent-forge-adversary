@@ -99,7 +99,7 @@ export interface PlanPreviewParams {
   config: PlanPreviewConfig
   now: Date
   /** The window to plan for; defaults to the next window after `now` (the cron passes its own). */
-  scheduledFor?: Date
+  scheduledFor?: Date | undefined
 }
 
 export interface PlanPreviewResult {

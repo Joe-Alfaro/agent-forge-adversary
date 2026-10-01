@@ -15,6 +15,7 @@ import type { CampaignSeed } from '../../redteam/index.js'
 import { NIGHTLY_QUEUE, registerNightlyCron, runNightlyJob } from '../nightlyJob.js'
 import { PgOrchestratorRepository } from '../pgRepository.js'
 import { previewNightlyPlan, readPlanPreviewConfig } from '../planPreview.js'
+import { planNextNightly } from '../../planning/index.js'
 import { runScheduledNightly } from '../run.js'
 import { detectorContext, failJudge, fakeTracer, FakeClock, transcript } from './fakes.js'
 import { createMigratedSchema, type MigratedSchema } from './pgSchema.js'
@@ -272,43 +273,58 @@ describe.skipIf(!url)('scheduled nightly against Postgres (offline target, no sp
     })
   })
 
-  it('pg-boss: registers the cron idempotently and a queued job runs preview then the consumer', async () => {
+  it('pg-boss: a queued job executes tonight, then leaves a standing plan for the next window (plan-after-execute)', async () => {
     const boss = new PgBoss({ connectionString: url!, schema: `${schema.name}_boss`, max: 3 })
     boss.on('error', () => {})
     await boss.start()
+    const planEnv = { NIGHTLY_BUDGET_USD: '2', PLAN_TOP_K: '2', PLAN_MAX_ATTEMPTS: '2', PLAN_COST_PER_ATTEMPT_USD: '0.05' }
+    let clock = new Date('2026-10-01T06:00:04Z')
+    const job = () =>
+      runNightlyJob({
+        now: () => clock,
+        pollTargetVersion: async () => TARGET.version,
+        recordTargetVersion: async (version) => {
+          await repo.ensureTargetVersion(TARGET.base_url, version)
+        },
+        findStandingPlan: () => repo.findStandingPlan(),
+        preview: ({ targetVersion, scheduledFor }) =>
+          planNextNightly({ pool, env: planEnv, now: clock, ...(scheduledFor ? { scheduledFor } : {}), ...(targetVersion ? { targetVersion } : {}) }),
+        execute: (claimId) => runScheduledNightly({ ...consumerParams(), claimId }),
+      })
     try {
       let resolveJob: (value: Awaited<ReturnType<typeof runNightlyJob>>) => void = () => {}
       const jobDone = new Promise<Awaited<ReturnType<typeof runNightlyJob>>>((resolve) => {
         resolveJob = resolve
       })
-      const handler = async () => {
-        const done = await runNightlyJob({
-          now: () => new Date('2026-10-01T06:00:04Z'),
-          pollTargetVersion: async () => TARGET.version,
-          recordTargetVersion: async (version) => {
-            await repo.ensureTargetVersion(TARGET.base_url, version)
-          },
-          preview: ({ targetVersion, scheduledFor }) =>
-            previewNightlyPlan({ pool, seeds: suite, config: { ...config, ...(targetVersion ? { targetVersion } : {}) }, now, scheduledFor }),
-          execute: (claimId) => runScheduledNightly({ ...consumerParams(), claimId }),
-        })
-        resolveJob(done)
-      }
       const cron = { enabled: true, cron: '0 1 * * *', timeZone: 'America/Chicago' }
-      expect(await registerNightlyCron(boss, cron, handler)).toBe('scheduled')
-      const schedules = await boss.getSchedules()
-      expect(schedules.filter((s) => s.name === NIGHTLY_QUEUE)).toEqual([
+      expect(await registerNightlyCron(boss, cron, async () => resolveJob(await job()))).toBe('scheduled')
+      expect((await boss.getSchedules()).filter((s) => s.name === NIGHTLY_QUEUE)).toEqual([
         expect.objectContaining({ cron: '0 1 * * *', timezone: 'America/Chicago' }),
       ])
 
+      // First tick after enabling: no standing plan -> plan tonight, run it, plan tomorrow.
+      expect(await repo.findStandingPlan()).toBeNull()
       await boss.send(NIGHTLY_QUEUE, {})
-      const done = await jobDone
-      expect(done.preview.scheduledFor).toBe('2026-10-01T06:00:00.000Z')
-      expect(done.result?.nightlyRunId).toBe(done.preview.nightlyRunId)
-      expect(done.result?.status).toBe('completed')
+      const first = await jobDone
+      expect(first.result?.status).toBe('completed')
+      expect(first.nextPlan?.scheduledFor).toBe('2026-10-02T06:00:00.000Z')
+      const standing = await pool.query(`SELECT id, scheduled_for FROM nightly_runs WHERE trigger = 'cron' AND status = 'scheduled'`)
+      expect(standing.rows).toHaveLength(1)
+      expect(Number(standing.rows[0]?.id)).toBe(first.nextPlan?.nightlyRunId)
+      const ran = await pool.query('SELECT status FROM nightly_runs WHERE id = $1', [first.executedRowId])
+      expect(ran.rows[0]?.status).toBe('completed')
+
+      // Next night: the standing plan (visible all day) is what executes, then the day after is planned.
+      clock = new Date('2026-10-02T06:00:03Z')
+      const second = await job()
+      expect(second.executedRowId).toBe(first.nextPlan?.nightlyRunId)
+      expect(second.result?.status).toBe('completed')
+      expect(second.nextPlan?.scheduledFor).toBe('2026-10-03T06:00:00.000Z')
+      const after = await pool.query(`SELECT count(*)::int AS n FROM nightly_runs WHERE trigger = 'cron' AND status = 'scheduled'`)
+      expect(after.rows[0]?.n).toBe(1)
 
       // Disabling removes the schedule.
-      expect(await registerNightlyCron(boss, { ...cron, enabled: false }, handler)).toBe('disabled')
+      expect(await registerNightlyCron(boss, { ...cron, enabled: false }, async () => {})).toBe('disabled')
       expect((await boss.getSchedules()).filter((s) => s.name === NIGHTLY_QUEUE)).toEqual([])
     } finally {
       await boss.stop({ graceful: false })

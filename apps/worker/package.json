@@ -3,6 +3,16 @@
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./planning": {
+      "types": "./dist/planning/index.d.ts",
+      "default": "./dist/planning/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc -b",
     "start": "node dist/index.js",

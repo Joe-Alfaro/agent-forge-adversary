@@ -9,6 +9,7 @@ import {
   type NightlyJobDeps,
 } from '../nightlyJob.js'
 
+/** Standing plan row 5 for copilot@new; previews write row 6 (tonight) or 7 (next window). */
 function fakeDeps(calls: string[], over: Partial<NightlyJobDeps> = {}): NightlyJobDeps {
   return {
     now: () => new Date('2026-09-30T06:00:07.500Z'),
@@ -19,9 +20,14 @@ function fakeDeps(calls: string[], over: Partial<NightlyJobDeps> = {}): NightlyJ
     async recordTargetVersion(version) {
       calls.push(`record:${version}`)
     },
+    async findStandingPlan() {
+      calls.push('standing?')
+      return { nightlyRunId: 5, targetVersion: 'copilot@new' }
+    },
     async preview({ targetVersion, scheduledFor }) {
-      calls.push(`preview:${targetVersion}:${scheduledFor.toISOString()}`)
-      return { nightlyRunId: 5, created: false, scheduledFor: scheduledFor.toISOString(), plan: {} as never }
+      calls.push(`preview:${targetVersion ?? '(latest)'}:${scheduledFor ? scheduledFor.toISOString() : 'next'}`)
+      const id = scheduledFor ? 6 : 7
+      return { nightlyRunId: id, created: true, scheduledFor: (scheduledFor ?? new Date('2026-10-01T06:00:00Z')).toISOString(), plan: { run_count: 1, cut_count: 0 } as never }
     },
     async execute(claimId) {
       calls.push(`execute:${claimId}`)
@@ -69,19 +75,74 @@ describe('readNightlyCronConfig', () => {
   })
 })
 
-describe('runNightlyJob', () => {
-  it('polls the target version, previews tonight’s plan for this window, then executes that row', async () => {
+describe('runNightlyJob (plan-after-execute)', () => {
+  it('executes the standing plan, then plans the NEXT window so a plan is visible all day', async () => {
     const calls: string[] = []
-    await runNightlyJob(fakeDeps(calls))
+    const done = await runNightlyJob(fakeDeps(calls))
+    expect(calls).toEqual(['poll', 'record:copilot@new', 'standing?', 'execute:5', 'preview:copilot@new:next'])
+    expect(done.executedRowId).toBe(5)
+    expect(done.nextPlan?.nightlyRunId).toBe(7)
+  })
+
+  it('with no standing plan (first run after enable): plans this window, runs it, then plans the next', async () => {
+    const calls: string[] = []
+    await runNightlyJob(fakeDeps(calls, { findStandingPlan: async () => (calls.push('standing?'), null) }))
     expect(calls).toEqual([
       'poll',
       'record:copilot@new',
+      'standing?',
       'preview:copilot@new:2026-09-30T06:00:00.000Z',
-      'execute:5',
+      'execute:6',
+      'preview:copilot@new:next',
     ])
   })
 
-  it('does not execute when the preview fails', async () => {
+  it('re-plans this window when the target version changed since the standing plan was made', async () => {
+    const calls: string[] = []
+    await runNightlyJob(
+      fakeDeps(calls, { findStandingPlan: async () => (calls.push('standing?'), { nightlyRunId: 5, targetVersion: 'copilot@old' }) }),
+    )
+    // The refresh upserts the same standing row (the preview's single-row rule), then runs and re-plans.
+    expect(calls).toEqual([
+      'poll',
+      'record:copilot@new',
+      'standing?',
+      'preview:copilot@new:2026-09-30T06:00:00.000Z',
+      'execute:6',
+      'preview:copilot@new:next',
+    ])
+  })
+
+  it('a run that FAILS still re-plans the next window, then surfaces the failure', async () => {
+    const calls: string[] = []
+    const deps = fakeDeps(calls, {
+      async execute(claimId) {
+        calls.push(`execute:${claimId}`)
+        throw new Error('credit balance is too low')
+      },
+    })
+    await expect(runNightlyJob(deps)).rejects.toThrow('credit balance is too low')
+    expect(calls.at(-1)).toBe('preview:copilot@new:next')
+  })
+
+  it('a failing re-plan does not mask a failed run (the run error wins)', async () => {
+    const calls: string[] = []
+    const logs: string[] = []
+    const deps = fakeDeps(calls, {
+      async execute() {
+        throw new Error('run failed')
+      },
+      async preview({ scheduledFor }) {
+        if (!scheduledFor) throw new Error('db down')
+        return { nightlyRunId: 6, created: true, scheduledFor: scheduledFor.toISOString(), plan: {} as never }
+      },
+      log: (m) => logs.push(m),
+    })
+    await expect(runNightlyJob(deps)).rejects.toThrow('run failed')
+    expect(logs.some((m) => m.includes('db down'))).toBe(true)
+  })
+
+  it('a failing re-plan after a successful run is surfaced', async () => {
     const calls: string[] = []
     const deps = fakeDeps(calls, {
       async preview() {
@@ -89,7 +150,6 @@ describe('runNightlyJob', () => {
       },
     })
     await expect(runNightlyJob(deps)).rejects.toThrow('db down')
-    expect(calls.some((c) => c.startsWith('execute'))).toBe(false)
   })
 
   it('falls back to the recorded version when the target version endpoint is unreachable', async () => {
@@ -98,13 +158,10 @@ describe('runNightlyJob', () => {
       async pollTargetVersion() {
         throw new Error('ECONNREFUSED')
       },
-      async preview({ targetVersion, scheduledFor }) {
-        calls.push(`preview:${targetVersion ?? '(latest recorded)'}`)
-        return { nightlyRunId: 6, created: true, scheduledFor: scheduledFor.toISOString(), plan: {} as never }
-      },
     })
     await runNightlyJob(deps)
-    expect(calls).toEqual(['preview:(latest recorded)', 'execute:6'])
+    // Unknown live version: the standing plan is trusted as-is.
+    expect(calls).toEqual(['standing?', 'execute:5', 'preview:(latest):next'])
   })
 })
 

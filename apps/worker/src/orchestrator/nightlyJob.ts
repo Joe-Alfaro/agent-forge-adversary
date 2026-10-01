@@ -5,8 +5,8 @@ import { DEFAULT_NIGHTLY_TIME_ZONE } from './schedule.js'
 /**
  * The nightly cron (ARCHITECTURE 7.0: pg-boss, default 01:00 CT). Each firing
  * polls the target version (a version change owes the full regression suite,
- * 7.4), refreshes tonight's plan with plan:preview for THIS window, then hands
- * that exact row to the scheduled-run consumer. The schedule is registered only
+ * 7.4), executes the standing plan, then plans the next window
+ * ({@link runNightlyJob}). The schedule is registered only
  * when NIGHTLY_ENABLED=true, so deploying the worker never starts spending by
  * accident; while disabled any previously registered schedule is removed.
  */
@@ -40,36 +40,87 @@ export interface NightlyJobDeps {
   pollTargetVersion(): Promise<string>
   /** Records the version so the planner sees a change (target_versions). */
   recordTargetVersion(version: string): Promise<void>
-  /** plan:preview for this window; `targetVersion` undefined means the latest recorded. */
-  preview(args: { targetVersion?: string; scheduledFor: Date }): Promise<PlanPreviewResult>
-  /** The scheduled-run consumer, claiming exactly the previewed row. */
+  /** The standing scheduled cron plan (the row the dashboard shows), if any. */
+  findStandingPlan(): Promise<{ nightlyRunId: number; targetVersion: string | null } | null>
+  /**
+   * plan:preview (upserts the ONE standing scheduled row). `scheduledFor` set =
+   * this firing's window; undefined = the NEXT window. `targetVersion`
+   * undefined = the latest recorded.
+   */
+  preview(args: { targetVersion?: string; scheduledFor?: Date }): Promise<PlanPreviewResult>
+  /** The scheduled-run consumer, claiming exactly that row. */
   execute(claimId: number): Promise<RunPlanResult | null>
   log?(message: string): void
 }
 
 export interface NightlyJobResult {
-  preview: PlanPreviewResult
+  /** The row that was executed tonight. */
+  executedRowId: number
   result: RunPlanResult | null
+  /** Tomorrow's standing plan, generated right after the run. */
+  nextPlan: PlanPreviewResult | null
 }
 
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
+/**
+ * Plan-after-execute: run tonight's standing plan (the one the dashboard showed
+ * all day), then immediately plan the NEXT window — whether the run succeeded
+ * or failed — so a fresh standing plan is visible for the coming day. With no
+ * standing plan (first run after enabling), or one made for a target version
+ * that has since changed (its regressions are stale and its attempts would be
+ * mislabeled), tonight is planned first.
+ */
 export async function runNightlyJob(deps: NightlyJobDeps): Promise<NightlyJobResult> {
   const log = deps.log ?? (() => {})
-  // This firing's window: the fire time to the minute, so the row is for tonight, not tomorrow.
-  const scheduledFor = new Date(Math.floor(deps.now().getTime() / 60_000) * 60_000)
+  // This firing's window: the fire time to the minute, so a tick-time plan is for tonight, not tomorrow.
+  const tonight = new Date(Math.floor(deps.now().getTime() / 60_000) * 60_000)
 
   let targetVersion: string | undefined
   try {
     targetVersion = await deps.pollTargetVersion()
     await deps.recordTargetVersion(targetVersion)
   } catch (error) {
-    log(`Target version poll failed (${error instanceof Error ? error.message : 'unknown'}); planning against the latest recorded version.`)
+    log(`Target version poll failed (${message(error)}); trusting the standing plan / latest recorded version.`)
+  }
+  const versionArg = targetVersion ? { targetVersion } : {}
+
+  const standing = await deps.findStandingPlan()
+  const stale = standing !== null && targetVersion !== undefined && standing.targetVersion !== targetVersion
+  let executedRowId: number
+  if (standing === null || stale) {
+    log(
+      standing === null
+        ? 'No standing plan; planning tonight first.'
+        : `Standing plan is for ${standing.targetVersion}, target is now ${targetVersion}; re-planning tonight.`,
+    )
+    const planned = await deps.preview({ ...versionArg, scheduledFor: tonight })
+    executedRowId = planned.nightlyRunId
+  } else {
+    executedRowId = standing.nightlyRunId
   }
 
-  const preview = await deps.preview({ ...(targetVersion ? { targetVersion } : {}), scheduledFor })
-  log(`Plan for ${preview.scheduledFor}: ${preview.plan.run_count} run / ${preview.plan.cut_count} cut (row ${preview.nightlyRunId}).`)
-  const result = await deps.execute(preview.nightlyRunId)
-  log(result === null ? `Row ${preview.nightlyRunId} was already claimed; nothing executed.` : `Run ${result.nightlyRunId}: ${result.status}, spend $${result.spendUsd.toFixed(3)}.`)
-  return { preview, result }
+  let result: RunPlanResult | null = null
+  let runError: unknown
+  try {
+    result = await deps.execute(executedRowId)
+    log(result === null ? `Row ${executedRowId} was already claimed; nothing executed.` : `Run ${result.nightlyRunId}: ${result.status}, spend $${result.spendUsd.toFixed(3)}.`)
+  } catch (error) {
+    runError = error
+    log(`Run of row ${executedRowId} failed: ${message(error)}`)
+  }
+
+  // Always leave a standing plan for the next window, even after a failed run.
+  let nextPlan: PlanPreviewResult | null = null
+  try {
+    nextPlan = await deps.preview(versionArg)
+    log(`Next plan for ${nextPlan.scheduledFor}: ${nextPlan.plan.run_count} run / ${nextPlan.plan.cut_count} cut (row ${nextPlan.nightlyRunId}).`)
+  } catch (error) {
+    if (runError === undefined) throw error
+    log(`Re-plan after the failed run also failed: ${message(error)}`)
+  }
+  if (runError !== undefined) throw runError
+  return { executedRowId, result, nextPlan }
 }
 
 /** The pg-boss surface the cron needs (structural, so it can be faked in tests). */
