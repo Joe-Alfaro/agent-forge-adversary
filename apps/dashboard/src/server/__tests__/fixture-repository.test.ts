@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { listTaxonomyCells } from '@agentforge/contracts'
 
 import { buildTrendSeries } from '../../lib/resilience.js'
+import { buildRerunRequest } from '../../lib/queue.js'
 import { planTonightRows } from '../../lib/tonight.js'
 import { createFixtureRepository } from '../fixture-repository.js'
 import {
@@ -136,5 +137,26 @@ describe('fixture repository defaults', () => {
     const rows = planTonightRows(queue.items, campaigns, queue.plan?.budgetUsd ?? queue.envelopeUsd)
     expect(rows.some((row) => row.source === 'orchestrator' && row.decision === 'cut')).toBe(true)
     expect(rows.some((row) => row.source === 'orchestrator' && row.decision === 'run')).toBe(true)
+  })
+
+  it('regenerates the demo plan from the live queue: skipped categories drop out, focus boosts', async () => {
+    const repo = createFixtureRepository({ config, now: () => contractNow })
+    await repo.removeQueueItem('req-102')
+    await repo.removeQueueItem('req-105')
+    const before = (await repo.getQueue()).items
+    expect(before.some((item) => item.kind === 'skip' && item.category === 'denial_of_service')).toBe(true)
+    await repo.enqueueRerun(buildRerunRequest({
+      messageId: '99999999-9999-4999-8999-999999999999',
+      exploitId: 'AF-2026-0002',
+      requestedBy: 'operator',
+      requestedFor: '2026-09-30',
+    }))
+    const { plan } = await repo.planTonight('operator')
+    expect(plan?.producedAt).toBe(contractNow.toISOString())
+    const campaigns = plan?.items.filter((item) => item.kind === 'coverage_campaign') ?? []
+    // No focus requests left, so no campaign carries the +1000 focus boost.
+    expect(campaigns.every((item) => (item.priority ?? 0) < 1000)).toBe(true)
+    expect(campaigns.some((item) => item.category === 'denial_of_service')).toBe(false)
+    expect(campaigns.map((item) => item.priority)).toEqual([...campaigns.map((item) => item.priority)].sort((a, b) => (b ?? 0) - (a ?? 0)))
   })
 })

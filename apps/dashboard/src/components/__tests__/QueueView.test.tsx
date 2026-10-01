@@ -8,6 +8,7 @@ import {
   fetchRun,
   removeQueueItem,
   resetTestData,
+  setPlanningAvailable,
   setRunNowEnabled,
   setScheduledPlan,
 } from '../../test-data-source.js'
@@ -63,6 +64,43 @@ describe('QueueView plan', () => {
     setScheduledPlan(null)
     await renderQueue()
     expect(screen.getByText('The Orchestrator has not planned tonight yet; showing operator requests only.')).toBeTruthy()
+  })
+})
+
+describe('QueueView plan tonight now', () => {
+  it('regenerates the plan from the live queue and shows it at once', async () => {
+    await removeQueueItem('req-102')
+    await removeQueueItem('req-105')
+    await renderQueue()
+    // The preview was made while the focus requests were queued.
+    expect(screen.getAllByText(/\+ focus/).length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Plan tonight now' }))
+    expect((await screen.findByRole('status')).textContent).toBe('Tonight’s plan regenerated at 2026-09-29 20:00 UTC.')
+    expect(screen.queryAllByText(/\+ focus/)).toEqual([])
+    expect(screen.getByText(/Planned by the Orchestrator at 2026-09-29 20:00 UTC/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Plan tonight now' })).toHaveProperty('disabled', false)
+  })
+
+  it('calls the planning function once, then refetches the queue', async () => {
+    const dataSource = await import('../../lib/data-source.js')
+    const plan = vi.spyOn(dataSource, 'planTonight')
+    const { queryClient } = await renderReady(<QueueView pollMs={20} />, (client) => client.ensureQueryData(queueQuery))
+    const updates = () => queryClient.getQueryState(queueQuery.queryKey)?.dataUpdateCount ?? 0
+    const button = await screen.findByRole('button', { name: 'Plan tonight now' })
+    expect(updates()).toBe(1)
+    fireEvent.click(button)
+    await screen.findByRole('status')
+    expect(plan).toHaveBeenCalledTimes(1)
+    // Once from the mutation's result, once from the refetch it triggers.
+    await waitFor(() => expect(updates()).toBe(3))
+    plan.mockRestore()
+  })
+
+  it('is disabled, with a note, where the Orchestrator’s planner is not connected', async () => {
+    setPlanningAvailable(false)
+    await renderQueue()
+    expect(screen.getByRole('button', { name: 'Plan tonight now' })).toHaveProperty('disabled', true)
+    expect(screen.getByText('Planning from the dashboard is not connected yet; run plan:preview from the worker.')).toBeTruthy()
   })
 })
 

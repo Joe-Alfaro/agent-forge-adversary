@@ -6,6 +6,7 @@ import { useQueue } from '../lib/queries.js'
 import { estimateRunNow, type RunNowScope } from '../lib/run-now.js'
 import { planTonightRows } from '../lib/tonight.js'
 import { BudgetControl } from './BudgetControl.js'
+import { PlanTonightButton } from './PlanTonightButton.js'
 import { QueueTable } from './QueueTable.js'
 import { RunNowDialog } from './RunNowDialog.js'
 import { RunNowStatus } from './RunNowStatus.js'
@@ -65,6 +66,7 @@ export function QueueView({ runId, onRunScheduled, onDismissRun, pollMs = 3_000 
             {formatUsd(envelopeUsd)} envelope{cutCount > 0 ? `; ${cutCount} cut.` : '.'}
           </p>
           <BudgetControl budgetUsd={envelopeUsd} />
+          <PlanTonightButton available={queue.planningAvailable} />
           {queue.plan && planBudgetDiffers && (
             <p className="muted">
               Tonight’s plan was made with a {formatUsd(queue.plan.budgetUsd)} envelope; run and cut above use{' '}

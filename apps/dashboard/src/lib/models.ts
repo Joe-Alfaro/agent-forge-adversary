@@ -108,6 +108,8 @@ export interface TonightQueue {
   runNowEnabled: boolean
   /** The scheduled cron run's NightlyPlan preview, or null before the Orchestrator has planned tonight. */
   plan: TonightPlan | null
+  /** Whether "Plan tonight now" can reach the Orchestrator's planner from this deployment. */
+  planningAvailable: boolean
 }
 
 /** The Documentation Agent's summary of one finished run. */

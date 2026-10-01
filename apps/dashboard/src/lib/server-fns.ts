@@ -76,6 +76,11 @@ export const enqueueRerunFn = createServerFn({ method: 'POST' })
   .validator((request: unknown) => request)
   .handler(({ data }) => getRepository().enqueueRerun(data))
 
+/** Regenerates tonight's plan through the Orchestrator's planner (no attacks, no spend). */
+export const planTonightFn = createServerFn({ method: 'POST' }).handler(() =>
+  getRepository().planTonight(operatorName(process.env)),
+)
+
 /** Gate G3 (raise a budget envelope) is the operator's; validated here and again in the repository. */
 export const updateNightlyBudgetFn = createServerFn({ method: 'POST' })
   .validator((value: unknown) => parseNightlyBudget(value))

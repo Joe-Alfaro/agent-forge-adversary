@@ -327,6 +327,18 @@ export function describeRepositoryContract(name: string, options: ContractOption
       })
     })
 
+    describe('plan tonight now', () => {
+      it('reports that planning is available', async () => {
+        expect((await repo.getQueue()).planningAvailable).toBe(true)
+      })
+
+      it('regenerates tonight’s plan and returns the queue with it', async () => {
+        const queue = await repo.planTonight('operator')
+        expect(queue.plan?.producedAt).toBe(contractNow.toISOString())
+        expect((await repo.getQueue()).plan?.producedAt).toBe(contractNow.toISOString())
+      })
+    })
+
     describe('nightly budget', () => {
       it('persists a new envelope, and tonight’s queue uses it at once', async () => {
         const queue = await repo.updateNightlyBudget('40.5', 'operator')

@@ -137,6 +137,17 @@ How the read models are derived:
   `estimated_cost_usd`; requests without one show a family-size estimate
   (reruns) or $0 (focus, skip, note, which reshape the plan rather than spend).
   Without a scheduled plan the queue shows operator requests only.
+- **Plan tonight now** (Tonight's queue) regenerates tonight's scheduled cron
+  plan on demand, the manual version of the Orchestrator's planning step: no
+  attacks, no spend, operator requests are not drained. The server function
+  calls a `TonightPlanner` (`src/server/planner.ts`) injected into the Postgres
+  repository; until agentforge-10's shared plan:preview core is wired in
+  (`src/server/runtime.ts`), Postgres deployments show the button disabled with
+  a note and the server function refuses. The page then shows the returned plan
+  and refetches the queue. Fixtures mode re-plans the demo preview against the
+  live queue: skipped categories drop out, focused ones get the planner's +1000
+  boost, campaigns are re-ranked, and the plan is stamped with the time and
+  current budget.
 - **Nightly budget** is `platform_settings.nightly_budget_usd` (row `id = 1`;
   table from `packages/db/migrations/1727900000000_platform-settings.cjs`),
   shown and edited on Tonight's queue (gate G3). A new value must be more than

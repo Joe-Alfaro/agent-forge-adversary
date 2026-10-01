@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { createPgRepository } from '../pg-repository.js'
 import type { QueueConfig } from '../config.js'
+import type { TonightPlanner } from '../planner.js'
 import type { DashboardRepository } from '../repository.js'
 import { createIsolatedSchema, type IsolatedSchema } from './pg-schema.js'
 import {
@@ -51,7 +52,21 @@ describe.skipIf(!url)('Postgres repository', () => {
     await isolated?.drop()
   })
 
-  async function seededRepo(overrides: Partial<QueueConfig> = {}) {
+  /**
+   * Stands in for the Orchestrator's plan:preview core: rewrites the single
+   * scheduled cron row's plan, stamped with the planning time.
+   */
+  const fakePlanner: TonightPlanner = {
+    async planTonight({ now }) {
+      await pool.query(
+        `UPDATE nightly_runs SET plan = jsonb_set(plan, '{produced_at}', to_jsonb($1::text))
+         WHERE trigger = 'cron' AND status = 'scheduled'`,
+        [now.toISOString()],
+      )
+    },
+  }
+
+  async function seededRepo(overrides: Partial<QueueConfig> = {}, planner: TonightPlanner | null = fakePlanner) {
     const versions = await resetDatabase(pool, ['copilot@9.0.0'])
     await seedTickets(pool, contractTickets, versions)
     await seedQueue(pool, contractQueue, contractRunDate)
@@ -59,7 +74,12 @@ describe.skipIf(!url)('Postgres repository', () => {
     await seedEvents(pool, contractEvents)
     await seedReviews(pool, contractReviews, versions)
     await seedScheduledPlan(pool, contractScheduledPlan)
-    return createPgRepository({ pool, config: { ...config, ...overrides }, now: () => contractNow })
+    return createPgRepository({
+      pool,
+      config: { ...config, ...overrides },
+      now: () => contractNow,
+      ...(planner ? { planner } : {}),
+    })
   }
 
   describeRepositoryContract('Postgres', { setup: seededRepo })
@@ -116,6 +136,14 @@ describe.skipIf(!url)('Postgres repository', () => {
       )
       const { plan } = await repo.getQueue()
       expect(plan?.items[2]?.owaspIds).toEqual(['LLM01', 'LLM05'])
+    })
+  })
+
+  describe('plan tonight now without a planner', () => {
+    it('is reported unavailable and refused until the Orchestrator’s planner is connected', async () => {
+      const repo = await seededRepo({}, null)
+      expect((await repo.getQueue()).planningAvailable).toBe(false)
+      await expect(repo.planTonight('operator')).rejects.toThrow('not connected')
     })
   })
 
