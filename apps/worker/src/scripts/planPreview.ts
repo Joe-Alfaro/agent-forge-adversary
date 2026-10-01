@@ -12,7 +12,7 @@
  * Envelope: platform_settings.nightly_budget_usd (set in the dashboard), else
  * NIGHTLY_BUDGET_USD, else 25. Env knobs: NIGHTLY_HOUR / NIGHTLY_TZ (default
  * 01:00 America/Chicago), PLAN_TOP_K, PLAN_MAX_ATTEMPTS,
- * PLAN_COST_PER_ATTEMPT_USD, PLAN_TARGET_VERSION.
+ * PLAN_COST_PER_ATTEMPT_USD, PLAN_TARGET_VERSION, PLAN_CATEGORIES (csv).
  */
 import pg from 'pg'
 

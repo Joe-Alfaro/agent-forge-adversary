@@ -273,7 +273,7 @@ row in place. The envelope is `platform_settings.nightly_budget_usd` (the
 operator sets it on the dashboard's Tonight's queue), else `NIGHTLY_BUDGET_USD`,
 else $25. Knobs:
 `NIGHTLY_HOUR`/`NIGHTLY_TZ` (default 01:00 `America/Chicago`), `PLAN_TOP_K`,
-`PLAN_MAX_ATTEMPTS`, `PLAN_COST_PER_ATTEMPT_USD`, `PLAN_TARGET_VERSION`. The
+`PLAN_MAX_ATTEMPTS`, `PLAN_COST_PER_ATTEMPT_USD`, `PLAN_TARGET_VERSION`, `PLAN_CATEGORIES` (csv scope for coverage cells). The
 importable core is `previewNightlyPlan` (`buildPreviewPlan` builds without
 persisting).
 
@@ -289,7 +289,7 @@ persisting).
   `RUN_MODEL_VARIANTS_PER_SEED`, default 3). Each generation is charged to spend
   as it happens and skipped once it could cross the cap.
 - Modeled spend is conservative: Sonnet-class rates everywhere, the Judge's
-  reported usage (floor $0.008/call), a $0.05/turn charge when the target reports
+  reported usage (floor $0.008/call), a $0.15/turn charge (measured) when the target reports
   zero tokens, and no item starts if its estimate would cross the hard cap.
 - Cron: `NIGHTLY_ENABLED=true NIGHTLY_SPEND_CAP_USD=5 NIGHTLY_BUDGET_USD=5
   DATABASE_URL=… npm run nightly:worker -w apps/worker` (long-running).

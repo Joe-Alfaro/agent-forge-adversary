@@ -72,8 +72,8 @@ describe('conservative spend accounting', () => {
     const result = await runPlan(baseParams({ repo, adapter: zeroTokenAdapter() }) as never)
     const target = repo.events.filter((e) => e.agent === 'target')
     expect(target.length).toBe(result.attempts)
-    // One turn per attempt at the $0.05 fallback.
-    target.forEach((e) => expect(e.costUsd).toBeCloseTo(0.05, 6))
+    // One turn per attempt at the $0.15 fallback.
+    target.forEach((e) => expect(e.costUsd).toBeCloseTo(0.15, 6))
   })
 
   it('charges the judge by its reported token usage, never below the flat per-call estimate', async () => {
