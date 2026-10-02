@@ -26,7 +26,7 @@ const STRATEGY_MODEL = 'claude-sonnet-5-5'
  * Model-backed Red Team variants, on only with RUN_MODEL_VARIANTS=true (they
  * spend). Uses its own key, ANTHROPIC_API_KEY_REDTEAM, separate from the Judge.
  */
-function modelVariantDeps(env: NodeJS.ProcessEnv): { variantGenerator: ModelVariantGenerator; modelVariantsPerSeed: number; secret: string } | null {
+export function modelVariantDeps(env: NodeJS.ProcessEnv): { variantGenerator: ModelVariantGenerator; modelVariantsPerSeed: number; secret: string } | null {
   if (env.RUN_MODEL_VARIANTS !== 'true') return null
   const key = (env.ANTHROPIC_API_KEY_REDTEAM ?? '').trim()
   if (key === '') throw new Error('RUN_MODEL_VARIANTS=true needs ANTHROPIC_API_KEY_REDTEAM in the env file')

@@ -16,7 +16,10 @@
  *
  * Env knobs: RUN_SPEND_CAP_USD (required, hard cap), RUN_CATEGORIES (csv, subset
  * of taxonomy categories), RUN_PER_FAMILY (default 1), RUN_MAX_ATTEMPTS (per
- * campaign, default 4), RUN_TOP_K (default 3), RUN_TRIGGER (run_now|cron).
+ * campaign, default 4), RUN_TOP_K (default 3), RUN_TRIGGER (run_now|cron),
+ * RUN_SEED_DIR (override the seed suite dir, e.g. a focused chase set),
+ * RUN_MODEL_VARIANTS=true (+ ANTHROPIC_API_KEY_REDTEAM, RUN_MODEL_VARIANTS_PER_SEED)
+ * to add Haiku-variant + Sonnet-strategy generation.
  */
 import pg from 'pg'
 import Anthropic from '@anthropic-ai/sdk'
@@ -41,6 +44,7 @@ import {
   runPlan,
 } from '../orchestrator/index.js'
 import type { CampaignSeed } from '../redteam/index.js'
+import { modelVariantDeps } from './liveDeps.js'
 import { loadAgentforgeEnv } from './loadEnv.js'
 import { seedDir } from './paths.js'
 import { writeRunArtifact } from './artifact.js'
@@ -125,6 +129,10 @@ async function main(): Promise<void> {
   const buildCommit = version.includes('@') ? version.split('@')[1]! : version
   console.log(`Target version: ${version}`)
 
+  // Model-backed Red Team variants (Haiku variants + Sonnet strategy), on only
+  // with RUN_MODEL_VARIANTS=true; its key is redacted from transcripts and traces.
+  const variants = modelVariantDeps(process.env)
+
   const sessionTokens: string[] = []
   // A redacting adapter: transcripts are stored unredacted of evidence, but any
   // minted token / API key substring is scrubbed before persistence (reuse of
@@ -134,12 +142,12 @@ async function main(): Promise<void> {
     getVersion: () => realAdapter.getVersion(),
     async runAttempt(params: Parameters<TargetAdapter['runAttempt']>[0]): Promise<AttackTranscript> {
       const transcript = await realAdapter.runAttempt(params)
-      return redactForTrace(transcript, [...sessionTokens, tokenSecret, judgeKey]) as AttackTranscript
+      return redactForTrace(transcript, [...sessionTokens, tokenSecret, judgeKey, ...(variants ? [variants.secret] : [])]) as AttackTranscript
     },
   }
 
   const judgeModel = new AnthropicJudgeModel({ client: new Anthropic({ apiKey: judgeKey }) })
-  const tracer = createTracer(process.env, { secrets: [tokenSecret, judgeKey] })
+  const tracer = createTracer(process.env, { secrets: [tokenSecret, judgeKey, ...(variants ? [variants.secret] : [])] })
 
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 4 })
   const repo = new PgOrchestratorRepository(pool)
@@ -200,7 +208,9 @@ async function main(): Promise<void> {
       targetBaseUrl: copilotBase,
       buildCommit,
       perFamily,
+      ...(variants ? { variantGenerator: variants.variantGenerator, modelVariantsPerSeed: variants.modelVariantsPerSeed } : {}),
     })
+    if (variants) console.log(`Model variants ON (${variants.modelVariantsPerSeed}/seed).`)
 
     // A minted-token collector is not populated because sessions are opened lazily
     // inside the adapter; the token secret itself is redacted, which covers any
