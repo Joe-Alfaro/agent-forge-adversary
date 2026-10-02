@@ -8,15 +8,21 @@ function here(): string {
 
 /**
  * The seed suite directory. Defaults to the repo's `evals/seeds`; `RUN_SEED_DIR`
- * overrides it (resolved against cwd if relative) so a focused chase/attack set
- * can be run in isolation without adding cases to the standing suite.
+ * overrides it so a focused chase/attack set can be run in isolation without
+ * adding cases to the standing suite. A relative override resolves against the
+ * repo root (not cwd), so it works the same under `npm run -w apps/worker`,
+ * which runs with cwd set to the workspace directory.
  */
+function repoRoot(): string {
+  return join(here(), '..', '..', '..', '..')
+}
+
 export function seedDir(env: NodeJS.ProcessEnv = process.env): string {
   const override = (env.RUN_SEED_DIR ?? '').trim()
   if (override) {
-    return isAbsolute(override) ? override : resolve(process.cwd(), override)
+    return isAbsolute(override) ? override : resolve(repoRoot(), override)
   }
-  return join(here(), '..', '..', '..', '..', 'evals', 'seeds')
+  return join(repoRoot(), 'evals', 'seeds')
 }
 
 /** dist/scripts -> repo root -> evals/ground_truth. */

@@ -13,9 +13,10 @@ describe('seedDir', () => {
     expect(seedDir({ RUN_SEED_DIR: '/tmp/chase/pi-003' })).toBe('/tmp/chase/pi-003')
   })
 
-  it('resolves a relative RUN_SEED_DIR against cwd to an absolute path', () => {
+  it('resolves a relative RUN_SEED_DIR against the repo root (not cwd), so it works under npm -w', () => {
     const resolved = seedDir({ RUN_SEED_DIR: 'evals/chase/pi-003' })
     expect(isAbsolute(resolved)).toBe(true)
-    expect(resolved).toMatch(/evals\/chase\/pi-003$/)
+    // The repo-root form the default seedDir uses, with the override path appended.
+    expect(resolved).toBe(seedDir({}).replace(/evals\/seeds$/, 'evals/chase/pi-003'))
   })
 })
