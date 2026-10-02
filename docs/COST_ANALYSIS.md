@@ -251,7 +251,7 @@ Bounds and sensitivities:
 |---|---|
 | Seed eval $0.056, 7 cases, trace 27ce2306 | `evals/results/2026-09-29-copilot-c1f011e.json`; `evals/README.md` |
 | Deterministic nightly $0.192, 24 attempts / 33 turns, role split, trace 6ab90da1 | `evals/results/run-nightly-validation-20260930-150946.json` (`summary`, `agent_events`) |
-| Model-variant nightly $3.395, 42 attempts / 58 turns, role split, `model_variants`, generation tokens, trace e38382bc | `run-nightly-model-variants-20260930-225112.json` (local `nightly_runs` row 4; referenced in `evals/results/near-misses.md`; the file itself is not committed) |
+| Model-variant nightly $3.395, 42 attempts / 58 turns, role split, `model_variants`, generation tokens, trace e38382bc | `evals/results/run-nightly-model-variants-20260930-225112.json` (`summary`, `agent_events`, `coverage`; local `nightly_runs` row 4) |
 | ~$9.24 observed target-side draw over 58 turns; fallback raised $0.05 → $0.15/turn | commit `bdc0b4d`; `apps/worker/src/orchestrator/run.ts` (`DEFAULT_COST_MODEL`) |
 | Co-Pilot self-reported `cost_estimate_usd` sums | the `observability` block of each turn in the run files above |
 | Judge comparison table | `evals/results/judge-model-eval-2026-09-30-live.{json,md}`; truncated run in `…-live-partial.{json,md}` |
