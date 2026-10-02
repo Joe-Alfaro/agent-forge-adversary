@@ -258,6 +258,7 @@ export function createFixtureRepository({
     const drained = run.items.length
     return {
       runId: run.id,
+      status: summary.status,
       targetVersion: summary.targetVersion,
       generatedAt: summary.finishedAt,
       headline: `Run now: ${drained} operator request${drained === 1 ? '' : 's'} drained; no new findings (simulated).`,

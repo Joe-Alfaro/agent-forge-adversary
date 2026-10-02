@@ -12,14 +12,15 @@ import {
 import { type AgentEvent, eventSummary, payloadTraceUrl, safeTraceUrl } from '../lib/activity.js'
 import { type ApprovalItem, buildApprovalItem, isReportStatus } from '../lib/approvals.js'
 import { type ReviewItem, transcriptExcerpt } from '../lib/judge.js'
-import type {
-  CoverageCell,
-  MorningReport,
-  QueueItem,
-  QueueItemKind,
-  RunStatus,
-  RunSummary,
-  RunTrigger,
+import {
+  type CoverageCell,
+  FINISHED_RUN_STATUSES,
+  type MorningReport,
+  type QueueItem,
+  type QueueItemKind,
+  type RunStatus,
+  type RunSummary,
+  type RunTrigger,
 } from '../lib/models.js'
 import { estimateRerunCostUsd } from '../lib/queue.js'
 import { isExploitStatus, isSeverity, type TicketRow } from '../lib/tickets.js'
@@ -203,8 +204,18 @@ function runTrigger(value: unknown): RunTrigger {
   return value === 'run_now' ? 'run_now' : 'cron'
 }
 
+/** Any finished run with a valid summary has a report: runs that stop at the spend cap end `aborted`. */
 function hasReport(row: unknown, summary: NightlyRunSummary | null): summary is NightlyRunSummary {
-  return summary !== null && field(row, 'status') === 'completed'
+  const status = field(row, 'status')
+  return summary !== null && FINISHED_RUN_STATUSES.some((finished) => finished === status)
+}
+
+/** An explicit `abort_reason`, else the executor's note on why it stopped (e.g. "Spend cap $X reached; aborted ..."). */
+function abortReason(summary: NightlyRunSummary): string | undefined {
+  if (typeof summary.abort_reason === 'string' && summary.abort_reason.trim() !== '') {
+    return summary.abort_reason
+  }
+  return summary.notes.find((note) => /abort|spend cap/i.test(note))
 }
 
 export function mapRunSummary(row: unknown): RunSummary {
@@ -234,6 +245,7 @@ export function mapMorningReport(row: unknown): MorningReport | null {
   const run = mapRunSummary(row)
   const report: MorningReport = {
     runId: run.id,
+    status: run.status,
     targetVersion: summary.target_version,
     generatedAt: summary.generated_at,
     headline: summary.headline,
@@ -246,7 +258,8 @@ export function mapMorningReport(row: unknown): MorningReport | null {
     queue: { ran: summary.queue.ran, cut: summary.queue.cut },
     notes: summary.notes,
   }
-  return withOptional(report, 'traceUrl', safeTraceUrl(summary.trace_url))
+  const withTrace = withOptional(report, 'traceUrl', safeTraceUrl(summary.trace_url))
+  return withOptional(withTrace, 'abortReason', run.status === 'completed' ? undefined : abortReason(summary))
 }
 
 const QUEUE_KINDS: readonly QueueItemKind[] = ['rerun', 'focus', 'skip', 'note']

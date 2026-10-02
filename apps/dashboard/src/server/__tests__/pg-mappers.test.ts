@@ -132,6 +132,43 @@ describe('mapMorningReport', () => {
     expect(mapMorningReport({ ...runRow, summary })).not.toHaveProperty('traceUrl')
   })
 
+  it('reports a run the spend cap stopped (aborted), with why it stopped', () => {
+    const summary = {
+      ...runRow.summary,
+      headline: '84 attempts, 0 new finding(s), 0 success / 0 partial / 84 fail; spend $0.359 (aborted at cap)',
+      notes: ['Planned 3 campaigns.', 'Spend cap $0.35 reached; aborted before completing cell-prompt_injection/direct.'],
+    }
+    const aborted = { ...runRow, status: 'aborted', summary }
+    expect(mapRunSummary(aborted).hasMorningReport).toBe(true)
+    expect(mapMorningReport(aborted)).toMatchObject({
+      status: 'aborted',
+      abortReason: 'Spend cap $0.35 reached; aborted before completing cell-prompt_injection/direct.',
+    })
+  })
+
+  it('prefers an explicit abort_reason in the summary', () => {
+    const summary = { ...runRow.summary, abort_reason: 'Operator stopped the run.', notes: [] }
+    expect(mapMorningReport({ ...runRow, status: 'aborted', summary })?.abortReason).toBe('Operator stopped the run.')
+  })
+
+  it('reports a failed run that wrote a summary', () => {
+    const summary = { ...runRow.summary, notes: ['Aborted by an error before completion.'] }
+    expect(mapMorningReport({ ...runRow, status: 'failed', summary })).toMatchObject({
+      status: 'failed',
+      abortReason: 'Aborted by an error before completion.',
+    })
+  })
+
+  it('has no report while the run is still going, even with a summary', () => {
+    expect(mapRunSummary({ ...runRow, status: 'running' }).hasMorningReport).toBe(false)
+    expect(mapMorningReport({ ...runRow, status: 'running' })).toBeNull()
+  })
+
+  it('a completed run has no abort reason', () => {
+    expect(mapMorningReport(runRow)).toMatchObject({ status: 'completed' })
+    expect(mapMorningReport(runRow)).not.toHaveProperty('abortReason')
+  })
+
   it('has no report until the run has a summary', () => {
     expect(mapMorningReport({ ...runRow, summary: null })).toBeNull()
   })

@@ -98,7 +98,11 @@ How the read models are derived:
 - **Run history** counts attempts and the latest verdict per attempt through
   `campaigns.nightly_run_id`. New tickets, regressions, the trace link, and the
   **morning report** come from `nightly_runs.summary`, validated as
-  `NightlyRunSummary v1` from `@agentforge/contracts`. A missing or invalid
+  `NightlyRunSummary v1` from `@agentforge/contracts`. Any finished run (completed,
+  aborted, or failed) with a valid summary has a morning report: nightly runs
+  normally end `aborted` at the spend cap. Such a report says the run stopped
+  early and why (`abort_reason` in the summary if present, else the executor's
+  note, e.g. "Spend cap $X reached; aborted ..."). A missing or invalid
   summary (logged) means derived counts and no report; new tickets are then
   exploits created during the run.
 - **Coverage** reads `coverage_snapshots` for the newest target version, and is

@@ -908,3 +908,21 @@ button:disabled {
   color: var(--ok);
   font-weight: 600;
 }
+
+/* A report for a run that stopped early (aborted at the spend cap, or failed). */
+.report-stopped {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fef0e7;
+  color: var(--high);
+}
+
+.report-stopped p {
+  margin: 0;
+}
+
+.report-stopped p + p {
+  margin-top: 4px;
+  color: var(--text);
+}
