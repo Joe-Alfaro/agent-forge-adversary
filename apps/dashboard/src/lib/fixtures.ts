@@ -117,16 +117,16 @@ export const runs: RunSummary[] = [
   {
     id: 'run-2026-09-29',
     trigger: 'run_now',
-    status: 'completed',
+    status: 'aborted',
     startedAt: '2026-09-29T14:05:00Z',
     finishedAt: '2026-09-29T15:02:00Z',
     targetVersion: TARGET_VERSION,
     attempts: 212,
     verdicts: { success: 6, partial: 14, fail: 192 },
-    newTickets: 1,
+    newTickets: 0,
     regressions: 0,
     spendUsd: 8.41,
-    hasMorningReport: false,
+    hasMorningReport: true,
   },
   {
     id: 'run-2026-09-28',
@@ -259,7 +259,27 @@ export const queueItems: QueueItem[] = [
 
 export const morningReports: MorningReport[] = [
   {
+    runId: 'run-2026-09-29',
+    status: 'aborted',
+    abortReason: 'Spend cap $8.40 reached; aborted before completing cell-prompt_injection/multi_turn.',
+    targetVersion: TARGET_VERSION,
+    generatedAt: '2026-09-29T15:03:00Z',
+    headline: '212 attempts, 0 new finding(s), 6 success / 14 partial / 192 fail; spend $8.410 (aborted at cap)',
+    attempts: 212,
+    verdicts: { success: 6, partial: 14, fail: 192 },
+    spendUsd: 8.41,
+    newTickets: [],
+    regressions: [],
+    verifiedFixes: [],
+    queue: { ran: 2, cut: 1 },
+    notes: [
+      'Run now: focus on data exfiltration.',
+      'Spend cap $8.40 reached; aborted before completing cell-prompt_injection/multi_turn.',
+    ],
+  },
+  {
     runId: 'run-2026-09-28',
+    status: 'completed',
     targetVersion: TARGET_VERSION,
     generatedAt: '2026-09-28T09:50:00Z',
     headline: 'Two new findings on 1.4.0 and one regression in cross-patient data exfiltration.',
@@ -278,6 +298,7 @@ export const morningReports: MorningReport[] = [
   },
   {
     runId: 'run-2026-09-27',
+    status: 'completed',
     targetVersion: 'copilot@1.3.2',
     generatedAt: '2026-09-27T09:25:00Z',
     headline: 'Three new findings; no regressions.',

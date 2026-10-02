@@ -110,9 +110,16 @@ export interface TonightQueue {
   plan: TonightPlan | null
 }
 
+/** A run is finished, and can have a morning report, once it has completed, aborted, or failed. */
+export const FINISHED_RUN_STATUSES: readonly RunStatus[] = ['completed', 'aborted', 'failed']
+
 /** The Documentation Agent's summary of one finished run. */
 export interface MorningReport {
   runId: string
+  /** Aborted is normal: nightly runs stop at the spend cap. */
+  status: RunStatus
+  /** Why an aborted or failed run stopped, when the summary says. */
+  abortReason?: string
   targetVersion: string
   generatedAt: string
   headline: string

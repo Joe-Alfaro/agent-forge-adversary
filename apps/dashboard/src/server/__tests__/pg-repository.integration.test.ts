@@ -170,6 +170,40 @@ describe.skipIf(!url)('Postgres repository', () => {
     })
   })
 
+  describe('a run stopped at the spend cap', () => {
+    it('is in run history with its morning report, and the report says why it stopped', async () => {
+      const repo = await seededRepo()
+      const inserted = await pool.query<{ id: number }>(
+        `INSERT INTO nightly_runs (scheduled_for, started_at, finished_at, trigger, status, spend_usd, summary)
+         VALUES ('2026-09-29T06:00:00Z', '2026-09-29T06:00:00Z', '2026-09-29T06:40:00Z', 'cron', 'aborted', 0.359, $1)
+         RETURNING id`,
+        [
+          {
+            target_version: 'copilot@c1f011e',
+            headline: '84 attempts, 0 new finding(s), 0 success / 0 partial / 84 fail; spend $0.359 (aborted at cap)',
+            new_tickets: [],
+            regressions: [],
+            verified_fixes: [],
+            queue: { ran: 2, cut: 1 },
+            notes: ['Spend cap $0.35 reached; aborted before completing cell-prompt_injection/direct.'],
+            generated_at: '2026-09-29T06:41:00Z',
+          },
+        ],
+      )
+      const runId = String(inserted.rows[0]?.id)
+      expect((await repo.listRuns()).find((run) => run.id === runId)).toMatchObject({
+        status: 'aborted',
+        hasMorningReport: true,
+      })
+      expect(await repo.getMorningReport(runId)).toMatchObject({
+        status: 'aborted',
+        headline: '84 attempts, 0 new finding(s), 0 success / 0 partial / 84 fail; spend $0.359 (aborted at cap)',
+        abortReason: 'Spend cap $0.35 reached; aborted before completing cell-prompt_injection/direct.',
+        spendUsd: 0.359,
+      })
+    })
+  })
+
   describe('run history and cost', () => {
     it('leave out every scheduled run: the cron preview and a run-now not yet started', async () => {
       const repo = await seededRepo()

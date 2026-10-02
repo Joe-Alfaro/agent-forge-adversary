@@ -1,4 +1,4 @@
-import { formatDateTime, formatUsd } from '../lib/format.js'
+import { formatDateTime, formatUsd, humanize } from '../lib/format.js'
 import type { MorningReport } from '../lib/models.js'
 import { TicketLink } from './TicketLink.js'
 
@@ -28,6 +28,15 @@ export interface MorningReportViewProps {
 export function MorningReportView({ report }: MorningReportViewProps) {
   return (
     <article className="morning-report">
+      {report.status !== 'completed' && (
+        <div role="note" aria-label="Run stopped early" className="report-stopped">
+          <p>
+            {humanize(report.status).replace(/^./, (first) => first.toUpperCase())}: the run stopped before finishing;
+            this report covers what ran.
+          </p>
+          {report.abortReason && <p>{report.abortReason}</p>}
+        </div>
+      )}
       <p className="headline">{report.headline}</p>
       <dl className="stat-row">
         <div className="stat">
