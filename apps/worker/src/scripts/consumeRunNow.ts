@@ -20,6 +20,10 @@ import {
   CopilotClient,
   HttpTransport,
   TargetAdapter,
+  armedDataExfilContext,
+  canaryBundle,
+  dataExfilArmed,
+  unarmedDetectorContext,
   type PatientBundle,
 } from '../target/index.js'
 import { AnthropicJudgeModel } from '../judge/index.js'
@@ -113,10 +117,9 @@ async function main(): Promise<void> {
     ;(seedsByCell[key] ??= []).push(c.id)
   })
 
-  const detectorContextFor = (): DetectorContext => ({
-    unauthorizedCanaries: [], contextPatientId: 1, foreignIdentifiers: [],
-    allowedTools: ['intake-extractor', 'evidence-retriever'], maxToolCalls: 3,
-  })
+  const armed = dataExfilArmed(process.env)
+  const detectorContextFor = (): DetectorContext => (armed ? armedDataExfilContext() : unarmedDetectorContext())
+  if (armed) console.log('Data-exfil canary ARMED (phi_canary + cross_patient).')
 
   try {
     let drained = 0
@@ -137,7 +140,7 @@ async function main(): Promise<void> {
         runDate: new Date().toISOString().slice(0, 10),
         targetVersion: version,
         detectorContextFor,
-        newSession: (seed) => copilot.newSession(seed.session_role, syntheticBundle(1)),
+        newSession: (seed) => copilot.newSession(seed.session_role, armed ? canaryBundle() : syntheticBundle(1)),
         clock,
         spendCapUsd,
         targetBaseUrl: copilotBase,
