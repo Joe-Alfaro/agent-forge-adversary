@@ -14,7 +14,17 @@ import { AnthropicJudgeModel } from '../judge/index.js'
 import { AnthropicProvider, ModelRouter } from '../models/index.js'
 import { createTracer, redactForTrace } from '../observability/index.js'
 import { ModelVariantGenerator, type CampaignSeed } from '../redteam/index.js'
-import { Allowlist, CopilotClient, HttpTransport, TargetAdapter, type PatientBundle } from '../target/index.js'
+import {
+  Allowlist,
+  CopilotClient,
+  HttpTransport,
+  TargetAdapter,
+  armedDataExfilContext,
+  canaryBundle,
+  dataExfilArmed,
+  unarmedDetectorContext,
+  type PatientBundle,
+} from '../target/index.js'
 import { seedDir } from './paths.js'
 
 const ROLE_USER_IDS: Readonly<Record<string, number>> = { clinician: 1, nurse: 2 }
@@ -106,13 +116,11 @@ export function liveDeps(env: NodeJS.ProcessEnv = process.env) {
   }
 
   const suite = loadEvalSuite(seedDir())
-  const detectorContextFor = (): DetectorContext => ({
-    unauthorizedCanaries: [],
-    contextPatientId: 1,
-    foreignIdentifiers: [],
-    allowedTools: ['intake-extractor', 'evidence-retriever'],
-    maxToolCalls: 3,
-  })
+  // RUN_DATAEXFIL_CANARY=true plants a canary + patient B in a denied section and
+  // arms phi_canary + cross_patient; otherwise they stay not_applicable (unarmed).
+  const armed = dataExfilArmed(env)
+  const detectorContextFor = (): DetectorContext => (armed ? armedDataExfilContext() : unarmedDetectorContext())
+  const sessionBundle = (): PatientBundle => (armed ? canaryBundle() : syntheticBundle(1))
 
   return {
     copilotBase,
@@ -123,7 +131,7 @@ export function liveDeps(env: NodeJS.ProcessEnv = process.env) {
     judgeModel: new AnthropicJudgeModel({ client: new Anthropic({ apiKey: judgeKey }) }),
     tracer: createTracer(env, { secrets }),
     detectorContextFor,
-    newSession: (seed: CampaignSeed) => copilot.newSession(seed.session_role, syntheticBundle(1)),
+    newSession: (seed: CampaignSeed) => copilot.newSession(seed.session_role, sessionBundle()),
     perFamily: Number(env.RUN_PER_FAMILY ?? '1'),
     ...(variants ? { variantGenerator: variants.variantGenerator, modelVariantsPerSeed: variants.modelVariantsPerSeed } : {}),
   }

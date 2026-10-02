@@ -30,6 +30,10 @@ import {
   CopilotClient,
   HttpTransport,
   TargetAdapter,
+  armedDataExfilContext,
+  canaryBundle,
+  dataExfilArmed,
+  unarmedDetectorContext,
   type PatientBundle,
 } from '../target/index.js'
 import { AnthropicJudgeModel } from '../judge/index.js'
@@ -186,13 +190,9 @@ async function main(): Promise<void> {
     })
     console.log(`Plan: ${plan.run_count} run / ${plan.cut_count} cut; est $${plan.estimated_cost_usd.toFixed(3)} (cap $${spendCapUsd}).`)
 
-    const detectorContextFor = (): DetectorContext => ({
-      unauthorizedCanaries: [],
-      contextPatientId: 1,
-      foreignIdentifiers: [],
-      allowedTools: ['intake-extractor', 'evidence-retriever'],
-      maxToolCalls: 3,
-    })
+    const armed = dataExfilArmed(process.env)
+    const detectorContextFor = (): DetectorContext => (armed ? armedDataExfilContext() : unarmedDetectorContext())
+    if (armed) console.log('Data-exfil canary ARMED (phi_canary + cross_patient).')
 
     const result = await runPlan({
       plan,
@@ -202,7 +202,7 @@ async function main(): Promise<void> {
       tracer,
       seedsById,
       detectorContextFor,
-      newSession: (seed) => copilot.newSession(seed.session_role, syntheticBundle(1)),
+      newSession: (seed) => copilot.newSession(seed.session_role, armed ? canaryBundle() : syntheticBundle(1)),
       clock,
       spendCapUsd,
       targetBaseUrl: copilotBase,
